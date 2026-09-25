@@ -7,6 +7,7 @@
  *     animación, hoja de sprites y GIF animado.
  * Guarda en el proyecto (sustituye el recurso o crea uno nuevo) y exporta PNG/JPG/WebP/GIF. Táctil: pellizcar = zoom. */
 import { h, clear, toast, showMenu, dialog, confirm, downloadBlob, safeFileName } from './dom.js';
+import { makeZip } from './export.js';
 import { PaintDoc, PALETTES, BLENDS, FILTERS, makeCanvas, ctx2d, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, floodMask, maskToCanvas, combineSelection, invertSelection,
   selectionBounds, selectionEdges, maskBlend, encodeGIF, bresenham, pixelEllipse, bayer, blur as blurImg, parsePalette, imageColors, colorRamp } from './paintcore.js';
 
@@ -137,7 +138,14 @@ export class PaintPanel {
     const url = URL.createObjectURL(file);
     try {
       const img = await loadImage(url);
-      if (this.doc && await confirm('Importar imagen', '¿Añadirla como capa nueva en la imagen actual? (Cancelar = abrirla como imagen nueva)', 'Como capa')) this.pasteImage(img, file.name);
+      // con una imagen abierta se pregunta con botones claros (antes «Cancelar» significaba «abrir como imagen nueva»)
+      let how = 'new';
+      if (this.doc) {
+        how = await dialog('Abrir «' + file.name.slice(0, 60) + '»', (bd) => bd.appendChild(h('p', img.width + '×' + img.height + ' px. ¿Abrirla como imagen nueva o añadirla como capa a la imagen actual?')),
+          [{ label: 'Cancelar', value: null }, { label: '🖼 Imagen nueva', value: 'new' }, { label: '➕ Como capa', kind: 'primary', value: 'layer' }]);
+        if (!how) return;
+      }
+      if (how === 'layer') this.pasteImage(img, file.name);
       else { if (!(await this.confirmDiscard())) return; const doc = new PaintDoc(img.width, img.height, { mode: img.width <= 256 && img.height <= 256 ? 'pixel' : 'photo', background: false, name: file.name.replace(/\.[^.]+$/, '') }); ctx2d(doc.cel).drawImage(img, 0, 0); this.setDoc(doc); }
     } catch (e) { toast('No se pudo leer la imagen', 'error'); }
     finally { URL.revokeObjectURL(url); }
@@ -178,7 +186,12 @@ export class PaintPanel {
       downloadBlob(new Blob([encodeGIF(frames, d.w, d.h, true)], { type: 'image/gif' }), base + '.gif'); return;
     }
     if (kind === 'sheet') { downloadBlob(await canvasBlob(d.spritesheet(d.frames.length), 'image/png'), base + '-hoja.png'); return; }
-    if (kind === 'frames') { for (let i = 0; i < d.frames.length; i++) downloadBlob(await canvasBlob(d.composite(d.frames[i]), 'image/png'), base + '-' + String(i + 1).padStart(2, '0') + '.png'); return; }
+    if (kind === 'frames') {
+      // un solo .zip con un PNG por fotograma (varias descargas seguidas el navegador las bloquea o pregunta)
+      const files = [];
+      for (let i = 0; i < d.frames.length; i++) files.push({ path: base + '-' + String(i + 1).padStart(2, '0') + '.png', data: new Uint8Array(await (await canvasBlob(d.composite(d.frames[i]), 'image/png')).arrayBuffer()) });
+      downloadBlob(makeZip(files), base + '-fotogramas.zip'); toast(d.frames.length + ' fotogramas en ' + base + '-fotogramas.zip', 'ok'); return;
+    }
     let scale = 1;
     if (kind === 'png-x') { const v = await pick('Exportar ampliado', 'Escala (píxeles nítidos)', ['2', '4', '8', '16']); if (!v) return; scale = +v; kind = 'png'; }
     const src = d.composite(), c = scale > 1 ? makeCanvas(d.w * scale, d.h * scale) : src;
@@ -364,6 +377,8 @@ export class PaintPanel {
     if (!dr) return;
     if (dr.kind === 'pick' && dr.right === false) this.pushRecent(this.primary);
     if (dr.kind === 'moving') { this.endMove(); return; }
+    // cuentagotas y desplazar la vista no tienen rectángulo (antes seguían y lanzaban un error en cada uso)
+    if (dr.kind === 'pick' || dr.kind === 'pan' || !dr.p0 || !dr.p1) { this.renderStatus(); return; }
     const d = this.doc, r = normRect(dr.p0, dr.p1, this.pixel);
     const tiny = Math.abs(dr.p1.x - dr.p0.x) < 1 && Math.abs(dr.p1.y - dr.p0.y) < 1;
     switch (dr.kind) {
@@ -701,9 +716,11 @@ export class PaintPanel {
     const b = d.selection ? selectionBounds(d.selection) : { x: 0, y: 0, w: d.w, h: d.h }; if (!b) return;
     const out = makeCanvas(b.w, b.h); ctx2d(out).drawImage(c, -b.x, -b.y);
     this.clip = out;
-    try { if (navigator.clipboard && window.ClipboardItem) { const blob = await canvasBlob(out, 'image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } } catch (e) { /* solo portapapeles interno */ }
+    // el corte es inmediato y sobre ESTE documento; el portapapeles del sistema va aparte (puede tardar o pedir
+    // permiso: antes el borrado esperaba a él y, si entretanto se abría otra imagen, se borraba esa)
     if (cut) this.clearSel();
     toast(cut ? 'Cortado' : 'Copiado');
+    try { if (navigator.clipboard && window.ClipboardItem) { const blob = await canvasBlob(out, 'image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } } catch (e) { /* solo portapapeles interno */ }
   }
   paste() { if (this.clip && this.doc) this.pasteImage(this.clip, 'Pegado'); }
   onPaste(e) {
