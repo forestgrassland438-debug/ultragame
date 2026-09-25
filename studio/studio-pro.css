@@ -247,6 +247,8 @@ details.sub > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .swatches .sw { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.35); padding: 0; }
 .swatches.pal .sw { width: 22px; height: 22px; }
 .swatches .sw.on { outline: 2px solid var(--accent2); outline-offset: 1px; }
+.swatches.ramp-preview { margin: 8px 0; min-height: 30px; }
+.swatches.ramp-preview .sw { display: inline-block; width: 28px; height: 28px; }
 .paint-palette select { max-width: 150px; }
 .layer-props { display: grid; gap: 5px; }
 .layer-props .opt input { flex: 1; }

@@ -8,7 +8,7 @@
  * Guarda en el proyecto (sustituye el recurso o crea uno nuevo) y exporta PNG/JPG/WebP/GIF. Táctil: pellizcar = zoom. */
 import { h, clear, toast, showMenu, dialog, confirm, downloadBlob, safeFileName } from './dom.js';
 import { PaintDoc, PALETTES, BLENDS, FILTERS, makeCanvas, ctx2d, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, floodMask, maskToCanvas, combineSelection, invertSelection,
-  selectionBounds, selectionEdges, maskBlend, encodeGIF, bresenham, pixelEllipse, bayer, blur as blurImg } from './paintcore.js';
+  selectionBounds, selectionEdges, maskBlend, encodeGIF, bresenham, pixelEllipse, bayer, blur as blurImg, parsePalette, imageColors, colorRamp } from './paintcore.js';
 
 const TOOLS = {
   move: { icon: '✥', label: 'Mover (V)', key: 'v', modes: 'both' },
@@ -48,7 +48,7 @@ export class PaintPanel {
   constructor(app, host) {
     this.app = app; this.host = host; this.doc = null; this.tool = 'brush'; this.visible = false;
     this.primary = '#1b1e2b'; this.secondary = '#ffffff'; this.alpha = 1; this.recent = [];
-    this.o = { size: 12, pxSize: 1, pxRound: false, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: true, symX: false, symY: false,
+    this.o = { size: 12, pxSize: 1, pxRound: false, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: true, symX: false, symY: false, wrap: false,
       ditherLevel: 8, ditherTransparent: false, shadeAmt: 8, shapeFill: false, strokeW: 2, gradType: 'linear', font: 'system-ui', fontSize: 32, bold: false, textAA: true, selMode: 'new', strength: 0.5 };
     this.view = { z: 1, x: 0, y: 0 }; this.show = { grid: false, pixelGrid: true, tile: false, onion: false, gridSize: 16 }; this.palette = PALETTES.pico8.list.slice(); this.paletteKey = 'pico8';
     this.dirtyView = true; this.playing = false; this.edges = null; this.ant = 0;
@@ -66,6 +66,9 @@ export class PaintPanel {
       const col = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
       if (col(s.primary)) this.primary = s.primary; if (col(s.secondary)) this.secondary = s.secondary;
       if (Array.isArray(s.recent)) this.recent = s.recent.filter(col).slice(0, 16);
+      // paleta: las predefinidas por su nombre; la personalizada (importada, rampas…) con sus colores
+      if (typeof s.palKey === 'string' && Object.prototype.hasOwnProperty.call(PALETTES, s.palKey)) { this.palette = PALETTES[s.palKey].list.slice(); this.paletteKey = s.palKey; }
+      else if (s.palKey === '__custom' && Array.isArray(s.pal)) { const l = Array.from(new Set(s.pal.filter(col).map((c) => c.toLowerCase()))).slice(0, 256); if (l.length) { this.palette = l; this.paletteKey = '__custom'; } }
     } catch (e) { /* modo privado o datos dañados */ }
     app.editor.on('project', () => { this.doc = null; if (this.visible) this.render(); });
     document.addEventListener('keydown', (e) => this.onKey(e));
@@ -74,7 +77,12 @@ export class PaintPanel {
     window.addEventListener('blur', () => { this.space = false; if (this.stroke) this.endStroke(); });
     document.addEventListener('paste', (e) => this.onPaste(e));
   }
-  savePrefs() { try { localStorage.setItem('ugs-paint', JSON.stringify({ o: this.o, primary: this.primary, secondary: this.secondary, recent: this.recent })); } catch (e) { /* modo privado */ } }
+  savePrefs() {
+    const custom = this.paletteKey === '__custom' || this.paletteKey === '__doc';
+    try { localStorage.setItem('ugs-paint', JSON.stringify({ o: this.o, primary: this.primary, secondary: this.secondary, recent: this.recent, palKey: custom ? '__custom' : this.paletteKey, pal: custom ? this.palette.slice(0, 256) : undefined })); } catch (e) { /* modo privado */ }
+  }
+  /** Cambia la paleta y la recuerda (también entre sesiones) */
+  setPalette(list, key) { this.palette = list.slice(0, 256); this.paletteKey = key; this.savePrefs(); this.renderPalette(); }
   get pixel() { return this.doc && this.doc.mode === 'pixel'; }
   setVisible(on) { this.visible = on; if (on) { if (!this.el) this.render(); this.loop(); } else { cancelAnimationFrame(this.raf); this.raf = 0; this.stopAnim(); } }
 
@@ -480,7 +488,10 @@ export class PaintPanel {
       st.px = { pr, pg, pb, sr, sg, sb, a, fill: 'rgba(' + pr + ',' + pg + ',' + pb + ',' + a + ')', fill2: 'rgba(' + sr + ',' + sg + ',' + sb + ',' + a + ')', tip: this.tipOffsets(s), square: !(this.o.pxRound && s > 2) };
     }
     const P = st.px;
+    // mosaico continuo: lo que sale por un borde entra por el opuesto (texturas que se repiten sin costuras)
+    const wrap = !!this.o.wrap, W = d.w, Hh = d.h, wx = (x) => ((x % W) + W) % W, wy = (y) => ((y % Hh) + Hh) % Hh;
     const plot1 = (x, y) => {
+      if (wrap) { x = wx(x); y = wy(y); }
       if (x < 0 || y < 0 || x >= d.w || y >= d.h) return;
       if (selData && selData[(y * d.w + x) * 4 + 3] < 128) return;
       const key = y * d.w + x; if (st.plotted.has(key) && t !== 'eraser') return; st.plotted.add(key);
@@ -493,7 +504,7 @@ export class PaintPanel {
     };
     // bloque entero de una vez (punta cuadrada opaca sin selección ni bloqueo): mucho más rápido que píxel a píxel.
     // Con color semitransparente se pinta píxel a píxel para no acumular alfa donde se solapan los sellos.
-    const fast = (t === 'pencil' || t === 'eraser') && s > 1 && P.square && !selData && !d.curLayer.alphaLock && (t === 'eraser' || P.a >= 1);
+    const fast = (t === 'pencil' || t === 'eraser') && s > 1 && P.square && !selData && !d.curLayer.alphaLock && (t === 'eraser' || P.a >= 1) && !wrap;
     const plotBrush = (cx, cy) => {
       const [x0, y0] = this.tipOrigin(cx, cy, s);
       const pts = [[x0, y0]];
@@ -516,7 +527,7 @@ export class PaintPanel {
         if (Math.abs(A.x - x) === 1 && Math.abs(A.y - y) === 1 && ((B.x === A.x && B.y === y) || (B.y === A.y && B.x === x))) {
           const keys = [[B.x, B.y]];
           if (this.o.symX) keys.push([d.w - 1 - B.x, B.y]); if (this.o.symY) keys.push([B.x, d.h - 1 - B.y]); if (this.o.symX && this.o.symY) keys.push([d.w - 1 - B.x, d.h - 1 - B.y]);
-          keys.forEach(([kx, ky]) => { if (kx < 0 || ky < 0 || kx >= d.w || ky >= d.h) return; const k = ky * d.w + kx, bi = k * 4; st.plotted.delete(k); g.clearRect(kx, ky, 1, 1); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi], baseData[bi + 1], baseData[bi + 2], baseData[bi + 3]]), 1, 1), kx, ky); });
+          keys.forEach(([kx, ky]) => { if (wrap) { kx = wx(kx); ky = wy(ky); } if (kx < 0 || ky < 0 || kx >= d.w || ky >= d.h) return; const k = ky * d.w + kx, bi = k * 4; st.plotted.delete(k); g.clearRect(kx, ky, 1, 1); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi], baseData[bi + 1], baseData[bi + 2], baseData[bi + 3]]), 1, 1), kx, ky); });
           st.pts.pop();
         }
       }
@@ -727,17 +738,27 @@ export class PaintPanel {
   }
   async imageSize(canvasOnly) {
     const d = this.doc; if (!d) return;
-    let wI, hI, keep, anchor;
+    let wI, hI, keep, anchor, algo;
     const ok = await dialog(canvasOnly ? 'Tamaño del lienzo' : 'Tamaño de la imagen', (b) => {
       wI = h('input', { type: 'number', value: d.w, min: 1, max: 8192 }); hI = h('input', { type: 'number', value: d.h, min: 1, max: 8192 }); keep = h('input', { type: 'checkbox', checked: !canvasOnly });
       const ratio = d.w / d.h; wI.oninput = () => { if (keep.checked) hI.value = Math.max(1, Math.round(wI.value / ratio)); }; hI.oninput = () => { if (keep.checked) wI.value = Math.max(1, Math.round(hI.value * ratio)); };
       b.appendChild(h('div.field', h('label', 'Ancho'), wI)); b.appendChild(h('div.field', h('label', 'Alto'), hI)); b.appendChild(h('label.chk', keep, ' Mantener proporción'));
+      if (!canvasOnly) {
+        // Scale2x/3x/4x: pixel art ampliado sin mezclar colores (las diagonales quedan suaves, sin escalones)
+        algo = h('select', { on: { change: () => { const m = /^scale(\d)x$/.exec(algo.value), f = m ? +m[1] : 0; wI.disabled = hI.disabled = keep.disabled = !!f; if (f) { wI.value = d.w * f; hI.value = d.h * f; } } } },
+          [['auto', this.pixel ? 'Automático (píxeles nítidos)' : 'Automático (suave)'], ['nearest', 'Vecino más cercano (píxeles nítidos)'], ['smooth', 'Suave (alta calidad)'], ['scale2x', 'Scale2x · pixel art ×2 (suaviza diagonales)'], ['scale3x', 'Scale3x · pixel art ×3'], ['scale4x', 'Scale4x · pixel art ×4']]
+            .map(([v, t]) => h('option', { value: v, disabled: /^scale/.test(v) && (d.w * +v[5] > 8192 || d.h * +v[5] > 8192) }, t)));
+        b.appendChild(h('div.field', h('label', 'Método'), algo));
+      }
       if (canvasOnly) { anchor = h('select', [['0.5,0.5', 'Centro'], ['0,0', 'Arriba izquierda'], ['0.5,0', 'Arriba'], ['1,0', 'Arriba derecha'], ['0,0.5', 'Izquierda'], ['1,0.5', 'Derecha'], ['0,1', 'Abajo izquierda'], ['0.5,1', 'Abajo'], ['1,1', 'Abajo derecha']].map(([v, t]) => h('option', { value: v }, t))); b.appendChild(h('div.field', h('label', 'Anclaje'), anchor)); }
     }, [{ label: 'Cancelar', value: null }, { label: 'Aplicar', kind: 'primary', value: true }]);
     if (!ok) return;
     const w = wI.value | 0, hh = hI.value | 0; if (w < 1 || hh < 1) return;
     d.pushDoc(canvasOnly ? 'Tamaño del lienzo' : 'Tamaño de la imagen');
-    if (canvasOnly) { const [ax, ay] = anchor.value.split(',').map(Number); d.resizeCanvas(w, hh, ax, ay); } else d.resizeImage(w, hh, !this.pixel);
+    const sm = algo && /^scale(\d)x$/.exec(algo.value);
+    if (canvasOnly) { const [ax, ay] = anchor.value.split(',').map(Number); d.resizeCanvas(w, hh, ax, ay); }
+    else if (sm) { try { d.scalePixelArt(+sm[1]); } catch (e) { toast(e.message, 'warn'); } }
+    else d.resizeImage(w, hh, algo && algo.value !== 'auto' ? algo.value === 'smooth' : !this.pixel);
     this.edges = null; this.changed(true); this.fit();
   }
   transform(kind) {
@@ -934,7 +955,11 @@ export class PaintPanel {
     if (['bucket', 'wand', 'replace'].includes(t)) { el.appendChild(num('tol', 'Tolerancia', 0, 255)); if (t !== 'replace') { el.appendChild(chk('contiguous', 'Contiguo')); el.appendChild(chk('sampleAll', 'Todas las capas', 'Mira la imagen compuesta, no solo la capa actual')); } }
     if (['marquee', 'ellipseSel', 'lasso', 'wand'].includes(t)) el.appendChild(h('div.seg', [['new', 'Nueva'], ['add', '＋ Añadir'], ['sub', '－ Restar'], ['inter', '∩ Intersecar']].map(([v, lbl]) => h('button', { type: 'button', class: o.selMode === v ? 'on' : null, on: { click: () => { o.selMode = v; this.renderOpts(); } } }, lbl))), h('span.help', 'Mayús: añadir · Alt: restar'));
     if (t === 'pencil' && this.pixel) el.appendChild(chk('pixelPerfect', 'Píxel perfecto', 'Quita las esquinas dobles al dibujar líneas a mano'));
-    if (this.pixel && ['pencil', 'eraser', 'dither', 'shade'].includes(t)) { el.appendChild(chk('symX', 'Simetría ↔')); el.appendChild(chk('symY', 'Simetría ↕')); }
+    if (this.pixel && ['pencil', 'eraser', 'dither', 'shade'].includes(t)) {
+      el.appendChild(chk('symX', 'Simetría ↔')); el.appendChild(chk('symY', 'Simetría ↕'));
+      // al activarlo se ve la imagen repetida 3×3 para dibujar sobre la costura
+      el.appendChild(h('label.chk', { title: 'El trazo sigue por el borde opuesto: texturas y fondos que se repiten sin costuras' }, h('input', { type: 'checkbox', checked: !!o.wrap, on: { change: (e) => { o.wrap = e.target.checked; if (o.wrap && !this.show.tile) this.show.tile = true; this.savePrefs(); this.dirtyView = true; } } }), ' Mosaico continuo'));
+    }
     if (t === 'dither') { el.appendChild(num('ditherLevel', 'Densidad', 1, 15, 1, (v) => v + '/16')); el.appendChild(chk('ditherTransparent', 'Secundario transparente')); }
     if (t === 'shade') { el.appendChild(num('shadeAmt', 'Cantidad', 1, 40, 1, (v) => v + '%')); el.appendChild(h('span.help', 'Clic: iluminar · clic derecho: oscurecer (usa la paleta si el color está en ella)')); }
     if (['rect', 'ellipse'].includes(t)) { el.appendChild(chk('shapeFill', 'Relleno (color secundario)')); if (!this.pixel) el.appendChild(num('strokeW', 'Borde', 0, 60)); }
@@ -975,14 +1000,62 @@ export class PaintPanel {
   }
   renderPalette() {
     const el = this.paletteEl; if (!el) return; clear(el);
-    const sel = h('select', { 'aria-label': 'Paleta', on: { change: (e) => { const k = e.target.value; if (k === '__doc') this.palette = this.docColors(); else if (PALETTES[k]) this.palette = PALETTES[k].list.slice(); this.paletteKey = k; this.renderPalette(); } } },
+    const sel = h('select', { 'aria-label': 'Paleta', on: { change: (e) => { const k = e.target.value; if (k === '__doc') this.setPalette(this.docColors(), k); else if (PALETTES[k]) this.setPalette(PALETTES[k].list, k); else { this.paletteKey = k; this.savePrefs(); this.renderPalette(); } } } },
       Object.keys(PALETTES).map((k) => h('option', { value: k, selected: k === this.paletteKey }, PALETTES[k].label + ' (' + PALETTES[k].list.length + ')')), h('option', { value: '__doc', selected: this.paletteKey === '__doc' }, 'Colores de la imagen'), h('option', { value: '__custom', selected: this.paletteKey === '__custom' }, 'Personalizada'));
     el.appendChild(h('div.card-head', h('b.grow', 'Paleta'), sel));
     el.appendChild(h('div.swatches.pal', this.palette.map((c, i) => h('button.sw', { type: 'button', title: c + ' · clic: principal · clic derecho: secundario · Mayús+clic: quitar', class: c === this.primary ? 'on' : null, style: { background: c },
-      on: { click: (e) => { if (e.shiftKey) { this.palette.splice(i, 1); this.paletteKey = '__custom'; this.renderPalette(); return; } this.primary = c; this.alpha = 1; this.renderColors(); this.renderPalette(); }, contextmenu: (e) => { e.preventDefault(); this.secondary = c; this.renderColors(); } } }))));
-    el.appendChild(h('div.row-actions', h('button.btn.small', { type: 'button', title: 'Añadir el color principal', on: { click: () => { if (!this.palette.includes(this.primary) && this.palette.length < 256) { this.palette.push(this.primary); this.paletteKey = '__custom'; this.renderPalette(); } } } }, '＋ Color'),
+      on: { click: (e) => { if (e.shiftKey) { const l = this.palette.slice(); l.splice(i, 1); this.setPalette(l, '__custom'); return; } this.primary = c; this.alpha = 1; this.renderColors(); this.renderPalette(); }, contextmenu: (e) => { e.preventDefault(); this.secondary = c; this.renderColors(); } } }))));
+    el.appendChild(h('div.row-actions', h('button.btn.small', { type: 'button', title: 'Añadir el color principal', on: { click: () => { if (!this.palette.includes(this.primary) && this.palette.length < 256) this.setPalette(this.palette.concat([this.primary]), '__custom'); } } }, '＋ Color'),
       h('button.btn.small', { type: 'button', title: 'Reducir la capa a esta paleta', disabled: !this.doc, on: { click: () => this.filterDialog('palette') } }, 'Aplicar a la capa'),
-      h('button.btn.small', { type: 'button', title: 'Descargar como .hex (Lospec/Aseprite)', on: { click: () => downloadBlob(new Blob([this.palette.map((c) => c.slice(1)).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.hex') } }, '⬇ .hex')));
+      h('button.btn.small', { type: 'button', title: 'Rampa de color: sombras y luces del principal, o del principal al secundario', on: { click: () => this.rampDialog() } }, '🌈 Rampa'),
+      h('button.btn.small', { type: 'button', title: 'Importar una paleta: .hex (Lospec), .gpl (GIMP, Aseprite), .pal (JASC), .txt (Paint.NET) o los colores de una imagen', on: { click: () => this.importPalette() } }, '⬆ Importar'),
+      h('button.btn.small', { type: 'button', title: 'Descargar la paleta', on: { click: (e) => showMenu([
+        { label: '.hex (Lospec, Aseprite)', icon: '⬇', action: () => downloadBlob(new Blob([this.palette.map((c) => c.slice(1)).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.hex') },
+        { label: '.gpl (GIMP, Aseprite, Inkscape)', icon: '⬇', action: () => downloadBlob(new Blob(['GIMP Palette\nName: UltraGame\nColumns: 8\n#\n' + this.palette.map((c) => { const [r, g, b] = hexToRgb(c); return String(r).padStart(3) + ' ' + String(g).padStart(3) + ' ' + String(b).padStart(3) + '\t' + c; }).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.gpl') },
+        { label: 'PNG (una fila, 1 px por color)', icon: '⬇', action: () => { const c = makeCanvas(Math.max(1, this.palette.length), 1), g = ctx2d(c); this.palette.forEach((col, i) => { g.fillStyle = col; g.fillRect(i, 0, 1, 1); }); c.toBlob((b) => { if (b) downloadBlob(b, 'paleta.png'); }, 'image/png'); } }
+      ], e.currentTarget) } }, '⬇ ▾')));
+  }
+  /** Importa una paleta desde un archivo de texto o una imagen */
+  importPalette() {
+    const inp = h('input', { type: 'file', accept: '.hex,.gpl,.pal,.txt,.ase,image/png,image/gif,image/webp,image/jpeg,image/bmp' });
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      if (f.size > 16 * 1048576) { toast('Archivo demasiado grande para una paleta', 'warn'); return; }
+      let list = [];
+      try {
+        if (/^image\//.test(f.type)) {
+          const bmp = await createImageBitmap(f), c = makeCanvas(Math.min(bmp.width, 2048), Math.min(bmp.height, 2048)), g = ctx2d(c);
+          g.drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+          list = imageColors(g.getImageData(0, 0, c.width, c.height), 256);
+        } else if (/\.ase$/i.test(f.name)) { toast('Los .ase de Adobe no están soportados: exporta la paleta como .gpl o .hex', 'warn', 6000); return; }
+        else list = parsePalette(await f.text());
+      } catch (e) { toast('No se pudo leer la paleta: ' + e.message, 'error'); return; }
+      if (!list.length) { toast('No se encontraron colores en «' + f.name + '»', 'warn'); return; }
+      this.setPalette(list, '__custom');
+      toast('Paleta importada: ' + list.length + ' colores' + (list.length >= 256 ? ' (máximo 256)' : ''), 'ok');
+    };
+    inp.click();
+  }
+  /** Generador de rampas: sombras→luces del color principal (con giro de tono) o degradado principal→secundario */
+  async rampDialog() {
+    let mode = 'shades', n = 6, shift = 20, add = 'append', prev;
+    const draw = () => { clear(prev); colorRamp(this.primary, this.secondary, n, mode, shift).forEach((c) => prev.appendChild(h('span.sw', { style: { background: c }, title: c }))); };
+    const ok = await dialog('Rampa de color', (b) => {
+      const modeSel = h('select', { on: { change: (e) => { mode = e.target.value; shiftRow.hidden = mode !== 'shades'; draw(); } } }, h('option', { value: 'shades' }, 'Sombras y luces del color principal'), h('option', { value: 'hsl' }, 'Del principal al secundario (tono)'), h('option', { value: 'rgb' }, 'Del principal al secundario (mezcla RGB)'));
+      const nIn = h('input', { type: 'range', min: 2, max: 16, value: n, on: { input: (e) => { n = +e.target.value; nVal.textContent = n; draw(); } } }), nVal = h('span.val', String(n));
+      const sIn = h('input', { type: 'range', min: 0, max: 90, value: shift, on: { input: (e) => { shift = +e.target.value; sVal.textContent = shift + '°'; draw(); } } }), sVal = h('span.val', shift + '°');
+      const shiftRow = h('div.field', h('label', 'Giro del tono (sombras frías, luces cálidas)'), sIn, sVal);
+      const addSel = h('select', { on: { change: (e) => { add = e.target.value; } } }, h('option', { value: 'append' }, 'Añadir a la paleta actual'), h('option', { value: 'replace' }, 'Sustituir la paleta'));
+      prev = h('div.swatches.ramp-preview');
+      b.appendChild(h('div.field', h('label', 'Tipo'), modeSel)); b.appendChild(h('div.field', h('label', 'Colores'), nIn, nVal)); b.appendChild(shiftRow);
+      b.appendChild(prev); b.appendChild(h('div.field', h('label', 'Resultado'), addSel));
+      draw();
+    }, [{ label: 'Cancelar', value: null }, { label: 'Crear rampa', kind: 'primary', value: true }]);
+    if (!ok) return;
+    const ramp = colorRamp(this.primary, this.secondary, n, mode, shift);
+    const list = add === 'replace' ? ramp : this.palette.concat(ramp.filter((c) => !this.palette.includes(c)));
+    this.setPalette(Array.from(new Set(list)).slice(0, 256), '__custom');
+    toast('Rampa de ' + ramp.length + ' colores ' + (add === 'replace' ? 'como paleta' : 'añadida a la paleta'), 'ok');
   }
   docColors() {
     const d = this.doc; if (!d) return [];

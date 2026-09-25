@@ -105,6 +105,50 @@ module.exports = async function (UG, h) {
     }
   });
 
+  section('Studio: editor de imágenes (paletas)');
+  await testAsync('parsePalette lee .hex, .gpl, JASC .pal, Paint.NET .txt y texto libre; sin repetidos y con tope', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    A.eq(P.parsePalette('ff0000\n00FF00\n\n0000ff\nff0000\n').join(','), '#ff0000,#00ff00,#0000ff');
+    A.eq(P.parsePalette('GIMP Palette\nName: x\nColumns: 4\n#\n255   0   0\tRojo\n  0 128 255 Azul\n').join(','), '#ff0000,#0080ff');
+    A.eq(P.parsePalette('JASC-PAL\r\n0100\r\n2\r\n1 2 3\r\n250 251 252\r\n').join(','), '#010203,#fafbfc');
+    A.eq(P.parsePalette(';paint.net Palette File\n;Colores: 2\nFF112233\n80445566\n').join(','), '#112233,#445566');
+    A.eq(P.parsePalette(':root { --a: #abc; --b: #102030; }').join(','), '#aabbcc,#102030');
+    A.eq(P.parsePalette(Array.from({ length: 400 }, (_, i) => (i * 40503).toString(16).padStart(6, '0').slice(-6)).join('\n')).length, 256);
+    A.eq(P.parsePalette('nada que ver\n12345\n').length, 0);
+  });
+  await testAsync('colorRamp: extremos exactos en rgb/hsl y sombras→luces ordenadas por luminosidad', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    const rgb = P.colorRamp('#000000', '#ffffff', 5, 'rgb'); A.eq(rgb[0], '#000000'); A.eq(rgb[4], '#ffffff'); A.eq(rgb[2], '#808080');
+    const hsl = P.colorRamp('#ff0000', '#0000ff', 3, 'hsl'); A.eq(hsl[0], '#ff0000'); A.eq(hsl[2], '#0000ff'); A.eq(hsl[1], '#ff00ff', 'por el camino corto del círculo (magenta)');
+    const sh = P.colorRamp('#3a7d44', null, 7, 'shades', 25), lum = sh.map((c) => { const [r, g, b] = P.hexToRgb(c); return r * 0.299 + g * 0.587 + b * 0.114; });
+    A.eq(sh.length, 7); A.ok(lum.every((v, i) => i === 0 || v > lum[i - 1]), 'de oscuro a claro');
+    A.eq(P.colorRamp('#123456', '#654321', 99, 'rgb').length, 32);
+  });
+
+  await testAsync('scalePixels: Scale2x/Scale3x suavizan una diagonal sin inventar colores', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    const hadID = 'ImageData' in globalThis;
+    if (!hadID) globalThis.ImageData = class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); } };
+    try {
+      // diagonal de 3 píxeles negros sobre blanco
+      const src = new ImageData(3, 3); src.data.fill(255);
+      [[0, 0], [1, 1], [2, 2]].forEach(([x, y]) => { const i = (y * 3 + x) * 4; src.data[i] = src.data[i + 1] = src.data[i + 2] = 0; });
+      const px = (img, x, y) => img.data[(y * img.width + x) * 4]; // canal rojo: 0 negro, 255 blanco
+      const x2 = P.scalePixels(src, 2); A.eq(x2.width, 6); A.eq(x2.height, 6);
+      const row = (img, y) => Array.from({ length: img.width }, (_, x) => (px(img, x, y) ? '.' : '#')).join('');
+      // la escalera de bloques 2×2 se convierte en una diagonal continua (las filas interiores no tienen huecos ni
+      // escalones); en las puntas, pegadas al borde de la imagen, Scale2x recorta la esquina (reglas EPX estándar)
+      A.eq([0, 1, 2, 3, 4, 5].map((y) => row(x2, y)).join('|'), '##....|#.#...|.###..|..###.|...#.#|....##');
+      const colors = new Set(); for (let i = 0; i < x2.data.length; i += 4) colors.add(x2.data[i] + ',' + x2.data[i + 1] + ',' + x2.data[i + 2] + ',' + x2.data[i + 3]);
+      A.eq(colors.size, 2, 'solo los colores originales');
+      const x3 = P.scalePixels(src, 3); A.eq(x3.width, 9);
+      const x4 = P.scalePixels(src, 4); A.eq(x4.width, 12); A.eq(x4.height, 12);
+      // un píxel suelto (sin vecinos iguales) solo crece: bloque n×n
+      const dot = new ImageData(3, 3); dot.data.fill(255); dot.data[16] = dot.data[17] = dot.data[18] = 0;
+      A.eq([0, 1, 2, 3, 4, 5].map((y) => row(P.scalePixels(dot, 2), y)).join('|'), '......|......|..##..|..##..|......|......');
+    } finally { if (!hadID) delete globalThis.ImageData; }
+  });
+
   section('Studio: web3, eventos y backend generado');
   test('cleanWeb3: la red principal siempre es una de las permitidas y sin redes repetidas', () => {
     const w = S.cleanWeb3({ enabled: true, mode: 'wallet', chains: [84532, 84532, 'x', 11155111], defaultChain: 1, maxValue: '0.1', contracts: [] });

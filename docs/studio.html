@@ -67,6 +67,7 @@
     <li><a href="#scripts">Scripts (código)</a></li>
     <li><a href="#efectos">Efectos</a></li>
     <li><a href="#recursos">Recursos y Blender</a></li>
+    <li><a href="#arte">Editor de imágenes (Arte)</a></li>
     <li class="grp">Probar y publicar</li>
     <li><a href="#jugar">Jugar y depurar</a></li>
     <li><a href="#exportar">Exportar y publicar</a></li>
@@ -304,6 +305,22 @@ function guardarRecord() {                      // llamada desde un evento
     <li>Para un coche con «Vehículo», nombra las ruedas <code>wheel_FL</code>, <code>wheel_FR</code>, <code>wheel_RL</code> y <code>wheel_RR</code> (giran y se inclinan solas).</li>
   </ol>
   <div class="note warn">Un modelo que no se pudo cargar aparece como un cubo rosa y la consola explica el motivo (por ejemplo, compresión Draco no soportada).</div>
+</section>
+
+<section id="arte">
+  <h2>Editor de imágenes (Arte)</h2>
+  <p>La pestaña <b>🎨 Arte</b> dibuja y retoca las imágenes del proyecto sin salir del Studio. Tiene dos modos: <b>Foto</b> (pinceles suaves, degradados, clonar, desenfocar…) y <b>Pixel art</b> (lápiz exacto, tramas, animación). <b>Guardar</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) actualiza el recurso y todo lo que lo usa.</p>
+  <ul>
+    <li><b>Herramientas:</b> mover, selecciones (rectángulo, elipse, lazo, varita), recortar, pincel, lápiz, borrador, bote, degradado, tramado y sombreado (pixel art), reemplazar color, clonar, dedo, desenfocar, sobreexponer, línea, rectángulo, elipse, texto, cuentagotas, mano y zoom.</li>
+    <li><b>Lápiz de pixel art:</b> tamaño 1–64 (<kbd>[</kbd> y <kbd>]</kbd>), punta cuadrada o redonda, <b>píxel perfecto</b> (sin esquinas dobles en las líneas a mano), simetría horizontal y vertical, y <b>mosaico continuo</b>: el trazo que sale por un borde entra por el opuesto (texturas y fondos que se repiten sin costuras; se activa también la vista repetida 3×3).</li>
+    <li><b>Capas</b> con opacidad, modos de fusión, bloqueo de transparencia y ocultar; <b>fotogramas</b> con papel cebolla y reproducción (<kbd>,</kbd> y <kbd>.</kbd> para cambiar de fotograma).</li>
+    <li><b>Imagen:</b> tamaño de la imagen (vecino más cercano, suave, o <b>Scale2x / Scale3x / Scale4x</b>: amplía pixel art suavizando las diagonales sin mezclar colores), tamaño del lienzo con anclaje, recortar a la selección o al contenido, voltear y girar.</li>
+    <li><b>Filtros:</b> brillo y contraste, tono y saturación, niveles, equilibrio de color, desenfoques, enfocar, ruido, pixelar, relieve, bordes, viñeta, contorno para sprites, sombra, resplandor, quitar fondo (croma), reducir a la paleta (con trama) y más; solo afectan a la selección si la hay.</li>
+    <li><b>Paletas:</b> PICO-8, DawnBringer, Sweetie 16, Endesga 32, Game Boy, CGA…, los colores de la imagen o una personalizada, que se recuerda entre sesiones. <b>⬆ Importar</b> lee <code>.hex</code> (Lospec), <code>.gpl</code> (GIMP, Aseprite), <code>.pal</code> (JASC), <code>.txt</code> (Paint.NET) o los colores de una imagen; <b>⬇</b> la guarda en <code>.hex</code>, <code>.gpl</code> o PNG.</li>
+    <li><b>🌈 Rampa:</b> genera de 2 a 16 tonos a partir del color principal (sombras hacia el frío y luces hacia el cálido, con el giro de tono que elijas) o del principal al secundario, y los añade a la paleta.</li>
+    <li><b>Exportar:</b> PNG (también ampliado ×2, ×4…), JPG, WebP, GIF animado, hoja de sprites o cada fotograma por separado.</li>
+    <li>Atajos: <kbd>X</kbd> intercambia colores, <kbd>D</kbd> negro y blanco, <kbd>Espacio</kbd> desplaza la vista, <kbd>0</kbd> ajusta a la ventana, <kbd>1</kbd> tamaño real, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> deshacer y rehacer, y la letra de cada herramienta (V, M, L, W, C, B, N, E, G, S, U, T, I, H, Z).</li>
+  </ul>
 </section>
 
 <section id="jugar">
