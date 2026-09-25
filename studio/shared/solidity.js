@@ -209,9 +209,17 @@
     var src = strip(String(source || '')), file = { byName: {}, structs: {}, enums: {}, udvt: {}, order: [] }, errors = [];
     if (src.length > 1000000) return { contracts: [], errors: ['El archivo es demasiado grande (máx. 1 MB)'] };
     // declaraciones de primer nivel
-    var re = /\b(abstract\s+contract|contract|interface|library)\s+([A-Za-z_]\w*)([^{;]*)\{/g, m, spans = [];
+    // la cabecera va hasta la primera { o ; (tabla precalculada: con una expresión «[^{;]*\{» un texto con muchos
+    // «contract x» sin llaves costaba O(n²) y congelaba el editor varios segundos)
+    var nextStop = new Int32Array(src.length + 1); nextStop[src.length] = -1;
+    for (var si = src.length - 1; si >= 0; si--) { var sc = src.charCodeAt(si); nextStop[si] = sc === 123 || sc === 59 ? si : nextStop[si + 1]; }
+    var re = /\b(abstract\s+contract|contract|interface|library)\s+([A-Za-z_]\w*)/g, m, spans = [];
     while ((m = re.exec(src))) {
-      var open = m.index + m[0].length - 1, close = matchClose(src, open);
+      var stop = nextStop[m.index + m[0].length];
+      if (stop < 0) break;
+      if (src.charCodeAt(stop) !== 123) { re.lastIndex = stop + 1; continue; } // declaración sin cuerpo
+      m[3] = src.slice(m.index + m[0].length, stop);
+      var open = stop, close = matchClose(src, open);
       if (close < 0) { errors.push('Falta una llave de cierre en «' + m[2] + '»'); break; }
       var bases = [], bm = /\bis\b([\s\S]*)$/.exec(m[3]);
       if (bm) bases = splitTop(bm[1], ',').map(function (b) { return b.replace(/\(.*$/, '').trim(); }).filter(Boolean);

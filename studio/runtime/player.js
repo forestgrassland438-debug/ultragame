@@ -114,7 +114,16 @@
       if (msg.error) pd.reject(Object.assign(new Error(String(msg.error.message || 'Error de la cartera').slice(0, 300)), { code: msg.error.code | 0 })); else pd.resolve(msg.result);
     }
     else if (msg.type === 'web3-event' && w3listeners[msg.event]) w3listeners[msg.event].slice().forEach(function (fn) { try { fn(msg.data); } catch (x) { /* ignorar */ } });
-    else if (msg.type === 'vars' && game && game.ugs) { var out = {}; Object.keys(game.ugs.vars).slice(0, 200).forEach(function (k) { out[k] = game.ugs.vars[k]; }); post({ type: 'vars', vars: out }); }
+    else if (msg.type === 'vars' && game && game.ugs) {
+      // solo valores clonables: una función o un objeto del motor en una variable no debe vaciar todo el panel
+      var out = {}; Object.keys(game.ugs.vars).slice(0, 200).forEach(function (k) {
+        var v = game.ugs.vars[k];
+        if (v === null || typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') out[k] = v;
+        else if (typeof v === 'undefined') out[k] = null;
+        else { try { var j = JSON.stringify(v); out[k] = j === undefined ? String(v) : j.length > 2000 ? j.slice(0, 2000) + '…' : JSON.parse(j); } catch (x) { out[k] = '[' + (typeof v) + ']'; } }
+      });
+      post({ type: 'vars', vars: out });
+    }
   });
   window.addEventListener('pointerdown', function () { window.focus(); });
   post({ type: 'ready' });

@@ -17,11 +17,27 @@ export const PRESETS = {
   review: { label: 'Probar el juego', left: 220, right: 280, bottom: 240, hidden: ['left', 'right'] }
 };
 
+/** Estado guardado -> estado válido (un localStorage dañado o de otra versión no puede impedir que arranque el Studio) */
+function sanitizeState(v, def) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return def;
+  const num = (x, lo, hi, d) => (typeof x === 'number' && isFinite(x) ? Math.round(Math.max(lo, Math.min(hi, x))) : d);
+  const s = { sizes: {}, hidden: [], floating: {}, focus: v.focus === true, theme: v.theme === 'light' ? 'light' : 'dark', blocks: {} };
+  Object.keys(PANELS).forEach((k) => {
+    const P = PANELS[k], sz = v.sizes && typeof v.sizes === 'object' ? v.sizes[k] : undefined;
+    s.sizes[k] = num(sz, P.min, P.max, def.sizes[k]);
+    if (Array.isArray(v.hidden) && v.hidden.includes(k)) s.hidden.push(k);
+    const f = v.floating && typeof v.floating === 'object' ? v.floating[k] : null;
+    if (f && typeof f === 'object') s.floating[k] = { x: num(f.x, -4000, 8000, 40), y: num(f.y, 0, 8000, 60), w: num(f.w, 160, 8000, 320), h: num(f.h, 90, 8000, 300) };
+  });
+  if (v.blocks && typeof v.blocks === 'object') Object.keys(v.blocks).slice(0, 50).forEach((id) => { if (/^[\w-]{1,60}$/.test(id) && v.blocks[id] === true) s.blocks[id] = true; });
+  return s;
+}
+
 export class Layout {
   constructor(app) {
     this.app = app; this.root = document.getElementById('app');
     this.s = { sizes: { left: 250, right: 320, bottom: 210 }, hidden: [], floating: {}, focus: false, theme: 'dark', blocks: {} };
-    try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && typeof v === 'object') Object.assign(this.s, v); } catch (e) { /* modo privado */ }
+    try { this.s = sanitizeState(JSON.parse(localStorage.getItem(KEY) || 'null'), this.s); } catch (e) { /* modo privado o datos dañados: diseño por defecto */ }
     this.homes = {};
     Object.keys(PANELS).forEach((k) => { const el = document.getElementById(PANELS[k].id); this.homes[k] = { el, parent: el.parentNode, next: el.nextSibling }; this.addResizer(k, el); this.addHeadButtons(k, el); });
     this.edgeTabs = {};
@@ -107,7 +123,9 @@ export class Layout {
     const win = h('div.floatwin', { role: 'dialog', 'aria-label': P.label }, title, h('div.float-body'));
     win.lastChild.appendChild(el);
     document.body.appendChild(win);
-    Object.assign(win.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+    // una ventana guardada en una pantalla más grande se ajusta a la actual (siempre queda a la vista)
+    const fw = Math.min(r.w, Math.max(160, innerWidth - 20)), fh = Math.min(r.h, Math.max(90, innerHeight - 40));
+    Object.assign(win.style, { left: Math.max(0, Math.min(innerWidth - 80, r.x)) + 'px', top: Math.max(0, Math.min(innerHeight - 30, r.y)) + 'px', width: fw + 'px', height: fh + 'px' });
     (this.floats || (this.floats = {}))[k] = win;
     // mover por la cabecera; redimensionar con la esquina (CSS resize) y guardar al terminar
     title.addEventListener('pointerdown', (e) => {
@@ -115,8 +133,8 @@ export class Layout {
       e.preventDefault(); title.setPointerCapture(e.pointerId);
       const sx = e.clientX, sy = e.clientY, x0 = win.offsetLeft, y0 = win.offsetTop;
       const mv = (ev) => { win.style.left = Math.max(-win.offsetWidth + 80, Math.min(innerWidth - 80, x0 + ev.clientX - sx)) + 'px'; win.style.top = Math.max(0, Math.min(innerHeight - 30, y0 + ev.clientY - sy)) + 'px'; };
-      const up = () => { title.removeEventListener('pointermove', mv); title.removeEventListener('pointerup', up); this.rememberFloat(k); };
-      title.addEventListener('pointermove', mv); title.addEventListener('pointerup', up);
+      const up = () => { title.removeEventListener('pointermove', mv); title.removeEventListener('pointerup', up); title.removeEventListener('pointercancel', up); this.rememberFloat(k); };
+      title.addEventListener('pointermove', mv); title.addEventListener('pointerup', up); title.addEventListener('pointercancel', up);
     });
     win.addEventListener('pointerdown', () => this.raise(win));
     if (typeof ResizeObserver === 'function') { win._ro = new ResizeObserver(() => this.rememberFloat(k)); win._ro.observe(win); }

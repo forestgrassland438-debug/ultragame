@@ -105,6 +105,49 @@ module.exports = async function (UG, h) {
     }
   });
 
+  section('Studio: web3, eventos y backend generado');
+  test('cleanWeb3: la red principal siempre es una de las permitidas y sin redes repetidas', () => {
+    const w = S.cleanWeb3({ enabled: true, mode: 'wallet', chains: [84532, 84532, 'x', 11155111], defaultChain: 1, maxValue: '0.1', contracts: [] });
+    A.eq(w.chains.join(','), '84532,11155111'); A.eq(w.defaultChain, 84532);
+    A.eq(S.cleanWeb3({ chains: [], defaultChain: 999 }).defaultChain, 11155111);
+    A.eq(S.cleanWeb3({ chains: [10, 8453], defaultChain: 8453 }).defaultChain, 8453);
+  });
+  test('Eventos con id repetido en un proyecto importado reciben ids únicos', () => {
+    const p = S.createProject('P'), sc = S.createScene('2d'); p.scenes.push(sc); p.startScene = sc.id;
+    const ev = { id: 'e1', enabled: true, conditions: [{ type: 'start', params: {} }], actions: [] };
+    sc.events = [ev, Object.assign({}, ev), Object.assign({}, ev, { id: 'e2' })];
+    const ids = S.cleanProject(JSON.parse(JSON.stringify(p))).scenes[0].events.map((e) => e.id);
+    A.eq(ids.length, 3); A.eq(new Set(ids).size, 3); A.eq(ids[0], 'e1'); A.eq(ids[2], 'e2');
+  });
+  test('Solidity: muchas cabeceras «contract x» sin llaves no congelan el análisis (antes O(n²))', () => {
+    require(path.join(ROOT, 'studio/shared/solidity.js')); const SOL = globalThis.UGStudio.solidity;
+    const t0 = Date.now(); const r = SOL.parse('contract a '.repeat(27000)); const ms = Date.now() - t0;
+    A.eq(r.contracts.length, 0); A.ok(ms < 1500, 'tardó ' + ms + ' ms');
+    const abi = SOL.abiFor('contract Fwd; interface I { function f() external; } contract C is I { uint public x; }', 'C').abi;
+    A.eq(abi.map((f) => f.name).sort().join(','), 'f,x');
+  });
+  await testAsync('Backend generado: UG_TRUST_PROXY aplica el límite por la IP real (X-Forwarded-For)', async () => {
+    const Bk = require(path.join(ROOT, 'studio/shared/backend.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ugs-be-'));
+    const project = { name: 'P', backend: { routes: [{ id: 'r1', method: 'POST', path: '/api/p', rateLimit: 1, auth: false, code: 'return { ip: ctx.ip };' }], cors: [] } };
+    Bk.files(project).forEach((f) => { fs.mkdirSync(path.dirname(path.join(dir, f.path)), { recursive: true }); fs.writeFileSync(path.join(dir, f.path), f.text); });
+    const run = async (env) => {
+      const c = spawn(process.execPath, ['server.js'], { cwd: dir, env: Object.assign({}, process.env, { PORT: '0', HOST: '127.0.0.1' }, env), stdio: ['ignore', 'pipe', 'ignore'] });
+      const port = await new Promise((res, rej) => { let out = ''; const t = setTimeout(() => rej(new Error('el backend no arrancó')), 8000); c.stdout.on('data', (d) => { out += d; const m = /UG_BACKEND_READY (\{.*\})/.exec(out); if (m) { clearTimeout(t); res(JSON.parse(m[1]).port); } }); });
+      const post = (xff) => new Promise((res) => { const r = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/api/p', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff } }, (x) => { let t = ''; x.on('data', (d) => (t += d)); x.on('end', () => res({ status: x.statusCode, body: t })); }); r.end('{}'); });
+      const out = [await post('1.1.1.1'), await post('2.2.2.2'), await post('9.9.9.9, 3.3.3.3')];
+      c.kill(); return out;
+    };
+    try {
+      const direct = await run({});
+      A.eq(direct.map((r) => r.status).join(','), '200,429,429', 'sin proxy de confianza la cabecera se ignora');
+      A.eq(JSON.parse(direct[0].body).ip, '127.0.0.1');
+      const proxied = await run({ UG_TRUST_PROXY: '1' });
+      A.eq(proxied.map((r) => r.status).join(','), '200,200,200');
+      A.eq(proxied.map((r) => JSON.parse(r.body).ip).join(','), '1.1.1.1,2.2.2.2,3.3.3.3', 'la IP que añadió el proxy (la última)');
+    } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* temporal */ } }
+  });
+
   section('Studio: servidor local (seguridad)');
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'ugs-test-'));
   const child = spawn(process.execPath, [path.join(ROOT, 'tools/studio-server.js'), '--no-open', '--port', '0', '--workspace', ws], { stdio: ['ignore', 'pipe', 'pipe'] });

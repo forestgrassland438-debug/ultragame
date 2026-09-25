@@ -56,7 +56,16 @@ export class Player {
     this.token = 0; // cada Jugar/Detener lo incrementa: una carga asíncrona antigua no puede arrancar después
     this.host = document.getElementById('game-host');
     this.prefs = { device: 'fill', landscape: null, zoom: 'fit', bezel: true, safe: true, compare: false, compareIds: ['iphone-15', 'pixel-8', 'ipad-air', 'fhd'], customW: 400, customH: 800 };
-    try { Object.assign(this.prefs, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* modo privado */ }
+    try {
+      // preferencias guardadas: se valida cada campo (un valor dañado no debe romper Jugar)
+      const s = JSON.parse(localStorage.getItem(PREF_KEY) || '{}') || {}, P = this.prefs;
+      if (typeof s.device === 'string') P.device = s.device;
+      if (s.landscape === null || typeof s.landscape === 'boolean') P.landscape = s.landscape;
+      if (['fit', '0.5', '0.75', '1'].includes(String(s.zoom))) P.zoom = String(s.zoom);
+      ['bezel', 'safe', 'compare'].forEach((k) => { if (typeof s[k] === 'boolean') P[k] = s[k]; });
+      if (Array.isArray(s.compareIds)) { const ids = s.compareIds.filter((id) => typeof id === 'string' && DEV[id]).slice(0, 4); if (ids.length) P.compareIds = ids; }
+      ['customW', 'customH'].forEach((k) => { if (typeof s[k] === 'number' && isFinite(s[k])) P[k] = Math.max(200, Math.min(4000, Math.round(s[k]))); });
+    } catch (e) { /* modo privado o datos dañados */ }
     if (!DEV[this.prefs.device]) this.prefs.device = 'fill';
     this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.layout()) : null;
   }
@@ -72,13 +81,16 @@ export class Player {
   }
   /** Bytes de los recursos (caché por proyecto, archivo y versión: dos proyectos con el mismo nombre de archivo no se mezclan) */
   async files(project, projectId) {
-    const ed = this.app.editor, out = [], pid = projectId === undefined ? ed.projectId : projectId;
+    const ed = this.app.editor, out = [], pid = projectId === undefined ? ed.projectId : projectId, used = new Set();
     for (const a of project.assets) {
       const key = pid + '|' + a.file + '|' + (ed.assetVersion[a.id] || 0);
+      used.add(key);
       let data = this.cache.get(key);
       if (!data) { try { data = await ed.store.assetData(pid, a.file); this.cache.set(key, data); } catch (e) { this.app.console.log('warn', 'No se pudo leer ' + a.file + ': ' + e.message, 'Jugar'); continue; } }
       out.push({ id: a.id, file: a.file, data: data.slice(0) }); // copia: el original se queda en la caché
     }
+    // versiones antiguas o recursos borrados: fuera de la caché (si no, cada edición de una imagen dejaba otra copia en memoria)
+    for (const k of Array.from(this.cache.keys())) if (!used.has(k)) this.cache.delete(k);
     return out;
   }
   async play(currentScene, opts) {

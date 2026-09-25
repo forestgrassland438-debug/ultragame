@@ -60,6 +60,9 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT === undefined ? 8787 : process.env.PORT);
 const DEV_TOKEN = process.env.UG_DEV_TOKEN || '';       // lo pone el Studio al ejecutarlo en tu equipo
 const API_KEY = process.env.UG_API_KEY || '';           // para rutas marcadas «requiere clave»
+// detrás de un proxy (Caddy, nginx…) todas las peticiones llegan desde el proxy: UG_TRUST_PROXY=1 (o el número de proxies
+// encadenados) toma la IP real de X-Forwarded-For. Sin proxy déjalo vacío: si no, cualquiera podría falsear su IP.
+const TRUST_PROXY = Math.max(0, Math.min(10, parseInt(process.env.UG_TRUST_PROXY || '0', 10) || (/^(true|yes|si|sí)$/i.test(process.env.UG_TRUST_PROXY || '') ? 1 : 0)));
 const CORS = /*CORS*/.concat((process.env.UG_CORS || '').split(',').map((s) => s.trim()).filter(Boolean));
 const DATA = path.join(__dirname, 'data');
 const LIMIT = { body: 262144, value: 262144, db: 32 * 1048576, keys: 200000, time: 10000 };
@@ -121,8 +124,21 @@ const hits = new Map();
 setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (now - v.t > 60000) hits.delete(k); }, 30000).unref();
 function limited(ip, r) {
   const k = ip + '|' + r.id, now = Date.now(); let h = hits.get(k);
-  if (!h || now - h.t > 60000) { h = { t: now, n: 0 }; if (hits.size > 100000) hits.clear(); hits.set(k, h); }
+  if (!h || now - h.t > 60000) {
+    h = { t: now, n: 0 };
+    // tabla llena: se descartan las entradas más antiguas (vaciarla entera reiniciaría el límite de todos)
+    if (hits.size >= 100000) { let n = 0; for (const old of hits.keys()) { hits.delete(old); if (++n >= 10000) break; } }
+    hits.delete(k); hits.set(k, h);
+  }
   return ++h.n > r.rateLimit;
+}
+/** IP del cliente: la del socket o, con UG_TRUST_PROXY, la que añadió el último proxy de confianza */
+function clientIP(req) {
+  const direct = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  if (!TRUST_PROXY) return direct;
+  const list = String(req.headers['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const ip = list[list.length - TRUST_PROXY];
+  return ip && /^[0-9A-Fa-f:.]{2,45}$/.test(ip) ? ip.replace(/^::ffff:/, '') : direct;
 }
 
 /* ---------------------------------------------------------------- CORS */
@@ -153,7 +169,7 @@ function readBody(req) {
 
 /* ---------------------------------------------------------------- servidor */
 const server = http.createServer(async (req, res) => {
-  const origin = allowOrigin(req.headers.origin), ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  const origin = allowOrigin(req.headers.origin), ip = clientIP(req);
   let url; try { url = new URL(req.url, 'http://localhost'); } catch (e) { return reply(res, 400, { error: 'url no válida' }, origin); }
   if (req.method === 'OPTIONS') {
     if (!origin) return reply(res, 403, undefined, null);
@@ -168,6 +184,7 @@ const server = http.createServer(async (req, res) => {
   if (limited(ip, route)) return reply(res, 429, { error: 'demasiadas peticiones, espera un poco' }, origin, { 'Retry-After': '60' });
   if (route.auth && (!API_KEY || !eq(req.headers['x-api-key'] || '', API_KEY))) return reply(res, API_KEY ? 401 : 503, { error: API_KEY ? 'clave no válida' : 'define UG_API_KEY en el servidor' }, origin);
   const t0 = Date.now();
+  let timer = null;
   try {
     let body = null;
     if (req.method !== 'GET' && req.method !== 'DELETE') {
@@ -189,8 +206,7 @@ const server = http.createServer(async (req, res) => {
       bool(v) { return v === true || v === 'true' || v === 1 || v === '1'; },
       log: (level, ...a) => log(level, route.method + ' ' + route.path + ':', ...a)
     };
-    let timer; const out = await Promise.race([Promise.resolve().then(() => route.fn(ctx, db)), new Promise((_, rej) => { timer = setTimeout(() => rej(new HttpError(504, 'la ruta tardó demasiado')), LIMIT.time); })]);
-    clearTimeout(timer);
+    const out = await Promise.race([Promise.resolve().then(() => route.fn(ctx, db)), new Promise((_, rej) => { timer = setTimeout(() => rej(new HttpError(504, 'la ruta tardó demasiado')), LIMIT.time); })]);
     reply(res, out === undefined ? 204 : 200, out, origin);
     log('info', req.method + ' ' + url.pathname + ' ' + (out === undefined ? 204 : 200) + ' ' + (Date.now() - t0) + 'ms');
   } catch (e) {
@@ -199,7 +215,7 @@ const server = http.createServer(async (req, res) => {
     else log('warn', req.method + ' ' + url.pathname + ' ' + status + ': ' + e.message);
     if (status === 413) { res.setHeader('Connection', 'close'); res.on('finish', () => { req.resume(); const t = setTimeout(() => req.destroy(), 2000); req.once('end', () => { clearTimeout(t); req.destroy(); }); }); }
     if (!res.headersSent) reply(res, status, { error: status === 500 ? 'error interno del servidor' : e.message }, origin);
-  }
+  } finally { clearTimeout(timer); }
 });
 server.headersTimeout = 15000; server.requestTimeout = 30000; server.keepAliveTimeout = 5000;
 server.listen(PORT, HOST, () => { const a = server.address(); log('info', 'backend listo en http://' + HOST + ':' + a.port + ' (' + compiled.filter((r) => r.fn).length + '/' + compiled.length + ' rutas)'); console.log('UG_BACKEND_READY ' + JSON.stringify({ port: a.port })); });
@@ -214,10 +230,10 @@ if (DEV_TOKEN && process.stdin) { process.stdin.on('data', (d) => { if (String(d
 
   var README = '# Backend de «/*NAME*/»\n\nGenerado por UltraGame Studio. Solo necesita Node.js 18 o superior (sin dependencias).\n\n' +
     '## Ejecutar\n\n```\nnode server.js\n```\n\nEscucha en `http://127.0.0.1:8787`. Variables de entorno:\n\n' +
-    '- `HOST` / `PORT`: dirección y puerto (en un servidor: `HOST=0.0.0.0`).\n- `UG_CORS`: orígenes extra permitidos, separados por comas (ej. `https://mijuego.com`).\n- `UG_API_KEY`: clave para las rutas marcadas «requiere clave» (cabecera `X-API-Key`).\n\n' +
+    '- `HOST` / `PORT`: dirección y puerto (en un servidor: `HOST=0.0.0.0`).\n- `UG_CORS`: orígenes extra permitidos, separados por comas (ej. `https://mijuego.com`).\n- `UG_API_KEY`: clave para las rutas marcadas «requiere clave» (cabecera `X-API-Key`).\n- `UG_TRUST_PROXY`: ponlo a `1` si el servidor está detrás de un proxy (Caddy, nginx, un balanceador): así el límite de peticiones se aplica a la IP real de cada jugador y no a la del proxy. Sin proxy, déjalo vacío.\n\n' +
     'Modo reforzado (Node 22+): `npm run start:seguro` limita el acceso a disco a esta carpeta.\n\n' +
     '## Rutas\n\n/*ROUTES*/\n\n## Datos\n\n`data/db.json` (clave-valor, escritura atómica). Haz copias de seguridad de esa carpeta.\n\n' +
-    '## Publicar\n\nPonlo detrás de un proxy con HTTPS (Caddy, nginx) o en cualquier servicio que ejecute Node. Añade el dominio del juego en «Orígenes CORS» del Studio (o en `UG_CORS`) y la URL del backend en el Studio (pestaña Backend › URL de producción).\n';
+    '## Publicar\n\nPonlo detrás de un proxy con HTTPS (Caddy, nginx) con `UG_TRUST_PROXY=1`, o en cualquier servicio que ejecute Node. Añade el dominio del juego en «Orígenes CORS» del Studio (o en `UG_CORS`) y la URL del backend en el Studio (pestaña Backend › URL de producción).\n';
 
   root.UGStudio = root.UGStudio || {};
   root.UGStudio.backend = B;

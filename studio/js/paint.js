@@ -39,6 +39,11 @@ const TOOLS = {
 };
 const SIZES = [[16, 16], [32, 32], [48, 48], [64, 64], [128, 128], [256, 256], [320, 180], [512, 512], [1024, 1024], [1280, 720], [1920, 1080], [2048, 2048]];
 
+const PREF_RANGES = { size: [1, 500], pxSize: [1, 64], hardness: [0, 1], opacity: [0.02, 1], flow: [0.02, 1], spacing: [0.02, 1], tol: [0, 255], ditherLevel: [1, 15], shadeAmt: [1, 40], strokeW: [0, 60], fontSize: [4, 1000], strength: [0.05, 1] };
+const PREF_INT = ['size', 'pxSize', 'tol', 'ditherLevel', 'shadeAmt', 'strokeW', 'fontSize'];
+const FONTS = ['system-ui', 'Georgia', 'Impact', 'Courier New', 'Comic Sans MS', 'Trebuchet MS', 'Verdana', 'Arial Black'];
+const PREF_CHOICES = { gradType: ['linear', 'radial'], selMode: ['new', 'add', 'sub', 'inter'], font: FONTS };
+
 export class PaintPanel {
   constructor(app, host) {
     this.app = app; this.host = host; this.doc = null; this.tool = 'brush'; this.visible = false;
@@ -47,7 +52,21 @@ export class PaintPanel {
       ditherLevel: 8, ditherTransparent: false, shadeAmt: 8, shapeFill: false, strokeW: 2, gradType: 'linear', font: 'system-ui', fontSize: 32, bold: false, textAA: true, selMode: 'new', strength: 0.5 };
     this.view = { z: 1, x: 0, y: 0 }; this.show = { grid: false, pixelGrid: true, tile: false, onion: false, gridSize: 16 }; this.palette = PALETTES.pico8.list.slice(); this.paletteKey = 'pico8';
     this.dirtyView = true; this.playing = false; this.edges = null; this.ant = 0;
-    try { const s = JSON.parse(localStorage.getItem('ugs-paint') || '{}'); Object.assign(this.o, s.o || {}); if (s.primary) this.primary = s.primary; if (s.secondary) this.secondary = s.secondary; if (Array.isArray(s.recent)) this.recent = s.recent.slice(0, 16); } catch (e) { /* modo privado */ }
+    try {
+      // preferencias guardadas: solo claves conocidas, del mismo tipo y dentro del rango de la interfaz (un valor
+      // dañado, p. ej. pxSize = 1e9, colgaría la pestaña al calcular la punta)
+      const s = JSON.parse(localStorage.getItem('ugs-paint') || '{}') || {}, so = s.o && typeof s.o === 'object' ? s.o : {};
+      Object.keys(this.o).concat(['gradTransparent']).forEach((k) => {
+        const v = so[k], d = this.o[k];
+        if (d === undefined ? typeof v !== 'boolean' : typeof v !== typeof d) return;
+        if (typeof v === 'number') { const R = PREF_RANGES[k]; if (!isFinite(v) || !R) return; const c = Math.max(R[0], Math.min(R[1], v)); this.o[k] = PREF_INT.includes(k) ? Math.round(c) : c; }
+        else if (typeof v === 'string') { const A = PREF_CHOICES[k]; if (A ? A.includes(v) : v.length <= 80) this.o[k] = v; }
+        else this.o[k] = v;
+      });
+      const col = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+      if (col(s.primary)) this.primary = s.primary; if (col(s.secondary)) this.secondary = s.secondary;
+      if (Array.isArray(s.recent)) this.recent = s.recent.filter(col).slice(0, 16);
+    } catch (e) { /* modo privado o datos dañados */ }
     app.editor.on('project', () => { this.doc = null; if (this.visible) this.render(); });
     document.addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('keyup', (e) => { if (e.key === ' ') this.space = false; });
@@ -628,13 +647,13 @@ export class PaintPanel {
     const ok = await dialog('Texto', (b) => {
       ta = h('textarea', { rows: 3, placeholder: 'Escribe el texto', on: { keydown: (e) => e.stopPropagation() } });
       sz = h('input', { type: 'number', value: this.o.fontSize, min: 4, max: 1000 });
-      fnt = h('select', ['system-ui', 'Georgia', 'Impact', 'Courier New', 'Comic Sans MS', 'Trebuchet MS', 'Verdana', 'Arial Black'].map((f) => h('option', { value: f, selected: f === this.o.font }, f)));
+      fnt = h('select', FONTS.map((f) => h('option', { value: f, selected: f === this.o.font }, f)));
       bold = h('input', { type: 'checkbox', checked: this.o.bold }); aa = h('input', { type: 'checkbox', checked: this.pixel ? false : this.o.textAA });
       b.appendChild(ta); b.appendChild(h('div.field', h('label', 'Tamaño'), sz)); b.appendChild(h('div.field', h('label', 'Fuente'), fnt));
       b.appendChild(h('label.chk', bold, ' Negrita')); b.appendChild(h('label.chk', aa, ' Suavizado (desactívalo para pixel art)'));
     }, [{ label: 'Cancelar', value: null }, { label: 'Añadir', kind: 'primary', value: true }]);
     if (!ok || !ta.value.trim()) return;
-    Object.assign(this.o, { fontSize: sz.value | 0 || 32, font: fnt.value, bold: bold.checked, textAA: aa.checked }); this.savePrefs();
+    Object.assign(this.o, { fontSize: Math.max(4, Math.min(1000, sz.value | 0 || 32)), font: fnt.value, bold: bold.checked, textAA: aa.checked }); this.savePrefs();
     const d = this.doc; d.pushCel('Texto');
     const tmp = makeCanvas(d.w, d.h), g = ctx2d(tmp);
     g.font = (this.o.bold ? 'bold ' : '') + this.o.fontSize + 'px "' + this.o.font + '", sans-serif'; g.fillStyle = this.colorWithAlpha(color); g.textBaseline = 'top';

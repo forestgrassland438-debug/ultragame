@@ -446,9 +446,11 @@
   S.cleanWeb3 = function (w) {
     w = w && typeof w === 'object' ? w : {};
     var d = S.defaultWeb3(), ids = {};
-    var chains = cleanList(w.chains, 20, function (c) { c = Number(c); return Number.isInteger(c) && c > 0 && c < 9007199254740991 ? c : null; });
-    return { enabled: S.bool(w.enabled, false), mode: w.mode === 'wallet' ? 'wallet' : 'mock', chains: chains.length ? chains : d.chains,
-      defaultChain: Number.isInteger(Number(w.defaultChain)) && Number(w.defaultChain) > 0 ? Number(w.defaultChain) : (chains[0] || d.defaultChain),
+    var seen = {}, chains = cleanList(w.chains, 20, function (c) { c = Number(c); if (!(Number.isInteger(c) && c > 0 && c < 9007199254740991) || seen[c]) return null; seen[c] = 1; return c; });
+    if (!chains.length) chains = d.chains;
+    // la red principal siempre es una de las permitidas
+    return { enabled: S.bool(w.enabled, false), mode: w.mode === 'wallet' ? 'wallet' : 'mock', chains: chains,
+      defaultChain: chains.indexOf(Number(w.defaultChain)) >= 0 ? Number(w.defaultChain) : chains[0],
       maxValue: typeof w.maxValue === 'string' && /^\d{1,12}(\.\d{1,18})?$/.test(w.maxValue) ? w.maxValue : d.maxValue,
       contracts: cleanList(w.contracts, 50, function (c) {
         if (!c || typeof c !== 'object') return null; var id = S.id(c.id); if (!id || ids[id]) return null; ids[id] = 1;
@@ -538,9 +540,11 @@
     o.nodes.forEach(function (n) { if (n.parent && !ids[n.parent]) n.parent = null; });
     var byId = {}; o.nodes.forEach(function (n) { byId[n.id] = n; });
     o.nodes.forEach(function (n) { var seen = {}, p = n.parent; while (p) { if (seen[p] || p === n.id) { n.parent = null; break; } seen[p] = 1; p = byId[p] ? byId[p].parent : null; } });
+    var evIds = {};
     o.events = cleanList(sc.events, 500, function (ev) {
       if (!ev || typeof ev !== 'object') return null;
-      return { id: S.id(ev.id) || S.uid('e'), enabled: S.bool(ev.enabled, true), once: S.bool(ev.once, false), comment: S.str(ev.comment, '', 200),
+      var eid = S.id(ev.id); if (!eid || evIds[eid]) eid = S.uid('e'); evIds[eid] = 1; // ids únicos: el editor localiza cada evento por su id
+      return { id: eid, enabled: S.bool(ev.enabled, true), once: S.bool(ev.once, false), comment: S.str(ev.comment, '', 200),
         conditions: cleanList(ev.conditions, 8, function (c) { var r = cleanBlock(c, S.CONDITIONS); if (r) r.not = S.bool(c.not, false); return r; }),
         actions: cleanList(ev.actions, 24, function (a) { return cleanBlock(a, S.ACTIONS); }) };
     });

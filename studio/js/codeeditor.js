@@ -42,6 +42,16 @@ export function highlight(code, lang) {
   return frag;
 }
 
+/** Sustituye [s, e) por text como si se tecleara: queda en el historial del navegador (Ctrl+Z / Ctrl+Y).
+ * setRangeText no entra en ese historial: con él, cada Intro (sangría automática) rompía el deshacer. */
+function replaceRange(ta, text, s, e, mode) {
+  ta.focus(); ta.setSelectionRange(s, e);
+  let ok = false;
+  try { ok = typeof document.execCommand === 'function' && document.execCommand('insertText', false, text); } catch (x) { ok = false; }
+  if (!ok) { ta.setRangeText(text, s, e, 'end'); ta.dispatchEvent(new Event('input')); } // navegador sin insertText
+  if (mode === 'select') ta.setSelectionRange(s, s + text.length);
+}
+
 /**
  * new CodeEditor({ value, lang: 'js'|'sol'|'json', readOnly, onChange(texto) (con retardo), onSave(), label })
  * .el (elemento), .value, .setValue(t), .setErrors([líneas]), .gotoLine(n), .insert(t), .flush(), .focus()
@@ -93,7 +103,7 @@ export class CodeEditor {
   insert(text) {
     if (this.readOnly) return;
     const ta = this.ta, s = ta.selectionStart, e = ta.selectionEnd;
-    ta.setRangeText(text, s, e, 'end'); ta.focus(); this.sync(); this.changed();
+    replaceRange(ta, text, s, e, 'end');
   }
   findNext(q, back) {
     if (!q) return false;
@@ -115,34 +125,34 @@ export class CodeEditor {
     if (e.key === 'Tab') {
       e.preventDefault();
       const s = ta.selectionStart, en = ta.selectionEnd, v = ta.value;
-      if (s === en && !e.shiftKey) ta.setRangeText('  ', s, en, 'end');
+      if (s === en && !e.shiftKey) replaceRange(ta, '  ', s, en, 'end');
       else {
-        const ls = v.lastIndexOf('\n', s - 1) + 1, lines = v.slice(ls, en).split('\n');
-        ta.setRangeText(lines.map((l) => (e.shiftKey ? l.replace(/^ {1,2}/, '') : '  ' + l)).join('\n'), ls, en, 'select');
+        const ls = v.lastIndexOf('\n', s - 1) + 1, lines = v.slice(ls, en).split('\n'), out = lines.map((l) => (e.shiftKey ? l.replace(/^ {1,2}/, '') : '  ' + l)).join('\n');
+        if (out !== v.slice(ls, en)) replaceRange(ta, out, ls, en, 'select');
       }
-      this.sync(); this.changed(); return;
+      return;
     }
     if (e.key === 'Enter' && !ctrl) {
       e.preventDefault();
       const s = ta.selectionStart, v = ta.value, ls = v.lastIndexOf('\n', s - 1) + 1, indent = /^[ \t]*/.exec(v.slice(ls, s))[0], more = /[{([]\s*$/.test(v.slice(ls, s)) ? '  ' : '';
-      ta.setRangeText('\n' + indent + more, s, ta.selectionEnd, 'end'); this.sync(); this.changed(); return;
+      replaceRange(ta, '\n' + indent + more, s, ta.selectionEnd, 'end'); return;
     }
     if (e.key === '}' && !ctrl) {
       // cerrar un bloque: quita un nivel de sangría si la línea está vacía
       const s = ta.selectionStart, v = ta.value, ls = v.lastIndexOf('\n', s - 1) + 1, before = v.slice(ls, s);
-      if (/^ {2,}$/.test(before) && s === ta.selectionEnd) { e.preventDefault(); ta.setRangeText(before.slice(2) + '}', ls, s, 'end'); this.sync(); this.changed(); return; }
+      if (/^ {2,}$/.test(before) && s === ta.selectionEnd) { e.preventDefault(); replaceRange(ta, before.slice(2) + '}', ls, s, 'end'); return; }
     }
     if (ctrl && e.key === '/' && L.comment) {
       e.preventDefault();
       const v = ta.value, s = ta.selectionStart, en = ta.selectionEnd, ls = v.lastIndexOf('\n', s - 1) + 1, le = v.indexOf('\n', en), end = le < 0 ? v.length : le;
       const lines = v.slice(ls, end).split('\n'), all = lines.every((l) => /^\s*\/\//.test(l) || !l.trim());
-      ta.setRangeText(lines.map((l) => (all ? l.replace(/^(\s*)\/\/ ?/, '$1') : (l.trim() ? l.replace(/^(\s*)/, '$1// ') : l))).join('\n'), ls, end, 'select');
-      this.sync(); this.changed(); return;
+      replaceRange(ta, lines.map((l) => (all ? l.replace(/^(\s*)\/\/ ?/, '$1') : (l.trim() ? l.replace(/^(\s*)/, '$1// ') : l))).join('\n'), ls, end, 'select');
+      return;
     }
     if (ctrl && e.key === 'd') { // duplicar línea
       e.preventDefault();
       const v = ta.value, s = ta.selectionStart, ls = v.lastIndexOf('\n', s - 1) + 1, le = v.indexOf('\n', s), end = le < 0 ? v.length : le;
-      ta.setRangeText('\n' + v.slice(ls, end), end, end, 'end'); this.sync(); this.changed(); return;
+      replaceRange(ta, '\n' + v.slice(ls, end), end, end, 'end'); return;
     }
     e.stopPropagation(); // el resto de teclas son para el texto (no atajos del editor)
   }
