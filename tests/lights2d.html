@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UltraGame · Luces 2D, nubes y clima</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}#out{position:absolute;left:8px;top:8px;white-space:pre;font:12px ui-monospace,Consolas,monospace;background:rgba(0,0,0,.55);padding:6px 8px;border-radius:6px;max-width:50%}</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">Mueve el ratón: la luz te sigue · check() o ?auto=1</pre>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+var oe = UG.Log.error; UG.Log.error = function () { window.errors.push(Array.prototype.join.call(arguments, ' ')); return oe.apply(UG.Log, arguments); };
+class Night extends UG.Scene {
+  constructor() { super('Night'); }
+  create() {
+    var W = this.game.width, H = this.game.height, s = this;
+    this.add.skyGradient(0x1b2a55, 0x5a4a78);
+    this.add.clouds({ y: 70, layers: 3, speed: 20, color: 0xc8cde8, alpha: 0.8, coverage: 0.55 });
+    this.add.rectangle(W / 2, H - 20, W, 40, 0x3a3f55);
+    // paredes (oclusores rectangulares) y cajas físicas que también dan sombra
+    this.walls = [[300, 260, 30, 200], [620, 200, 200, 26], [760, 380, 26, 160]].map(function (w) { var r = s.add.rectangle(w[0] + w[2] / 2, w[1] + w[3] / 2, w[2], w[3], 0x8a8fa8); s.lights2d.addOccluder({ x: w[0], y: w[1], width: w[2], height: w[3] }); return r; });
+    this.rigid.add.static(W / 2, H - 20, W, 40);
+    for (var i = 0; i < 6; i++) this.rigid.add.rectangle(480 + (i % 3) * 36, 200 + Math.floor(i / 3) * 40, 32, 32, 0xb07a3c);
+    this.lights2d.enable({ ambient: 0x1a1e30 });
+    this.lights2d.occludeRigid(this.rigid.world, { dynamic: true });
+    this.lamp = this.lights2d.addLight(200, 360, 320, 0xffd28a, 1, { flicker: 0.08 });
+    this.blue = this.lights2d.addLight(820, 120, 260, 0x7ab8ff, 0.9);
+    this.mouse = this.lights2d.addLight(W / 2, H / 2, 220, 0xff8fb3, 0.8);
+    this.input.on('pointermove', function (p) { s.mouse.setPosition(p.x, p.y); });
+    this.weather2d(params.get('w') || 'rain');
+  }
+}
+var game = new UG.Game({ width: 960, height: 540, parent: 'game', renderer: params.get('r') || 'auto', backgroundColor: 0x000000, scenes: [Night], banner: false, audio: { noAudio: true }, physics: { rigid: { gravity: { x: 0, y: 900 } } } });
+window.game = game;
+async function steps(n) { for (var i = 0; i < n; i++) { game.loop.step(16); if ((i & 15) === 15) await null; } }
+window.check = async function () {
+  await game.ready; game.loop.stop(); await steps(30);
+  var sc = game.scene.getScene('Night'), out = { renderer: game.renderer.type }, L = sc.lights2d;
+  // muestras de la capa de luz: junto a la lámpara (iluminado) y detrás de la pared (sombra)
+  sc.mouse.enabled = false; sc.blue.enabled = false; sc.lamp.flicker = 0; await steps(2);
+  var px = await game.renderer.extract.pixels(L.rt), res = L.rt.source.resolution;
+  var at = function (x, y) { var o = (Math.round(y * res) * px.width + Math.round(x * res)) * 4; return px.data[o] + px.data[o + 1] + px.data[o + 2]; };
+  out.lit = at(240, 360); out.shadow = at(400, 360); out.ambient = at(900, 500);
+  out.shadowWorks = out.lit > out.shadow + 60 && out.shadow <= out.ambient + 40;
+  var t0 = performance.now(); sc.mouse.enabled = true; sc.blue.enabled = true; await steps(120); out.msPerFrame = +((performance.now() - t0) / 120).toFixed(2);
+  out.rain = sc.sys._weather2d && sc.sys._weather2d.emitter ? sc.sys._weather2d.emitter.alive || sc.sys._weather2d.emitter.count || 'ok' : null;
+  sc.weather2d('storm'); await steps(30); sc.weather2d('snow'); await steps(30);
+  sc.scene.restart(); await steps(10);
+  var snap = UG.Debug.snapshot();
+  for (var c = 0; c < 3; c++) { game.scene.getScene('Night').scene.restart(); await steps(15); }
+  out.leak = UG.Debug.diff(snap, UG.Debug.snapshot());
+  out.errors = window.errors.slice(0, 5);
+  document.getElementById('out').textContent = JSON.stringify(out, null, 1); window.__res = out; game.loop.start();
+  return out;
+};
+if (params.get('auto') === '1') setTimeout(function () { check(); }, 300);
+</script>
+</body>
+</html>

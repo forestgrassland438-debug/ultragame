@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UltraGame · Suite de pruebas</title>
+<style>
+  :root { --bg:#0b0e1a; --panel:#131a30; --panel2:#182142; --text:#dfe6ff; --muted:#8e9bc7; --ok:#40c057; --fail:#ff6b6b; --warn:#fcc419; --accent:#7c8cff; --line:rgba(124,140,255,.18); }
+  * { box-sizing: border-box; }
+  body { margin:0; background: radial-gradient(1200px 600px at 10% -10%, #1d2656 0%, transparent 60%), var(--bg); color:var(--text); font:14px/1.5 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:14px 20px; background:rgba(11,14,26,.85); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  h1 { margin:0; font-size:18px; letter-spacing:.3px; }
+  h1 b { background:linear-gradient(90deg,#8ea2ff,#63e6be); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  button { background:linear-gradient(180deg,#4c6ef5,#364fc7); color:#fff; border:0; border-radius:10px; padding:8px 14px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+  #summary { display:flex; gap:10px; flex-wrap:wrap; padding:16px 20px 0; }
+  .pill { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; min-width:120px; }
+  .pill .n { font-size:22px; font-weight:700; }
+  .pill.ok .n { color:var(--ok); } .pill.fail .n { color:var(--fail); }
+  main { padding:16px 20px 60px; display:grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap:14px; }
+  .suite { background:linear-gradient(180deg,var(--panel2),var(--panel)); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .suite h2 { margin:0; font-size:14px; padding:10px 14px; display:flex; justify-content:space-between; border-bottom:1px solid var(--line); }
+  .suite h2 span { color:var(--muted); font-weight:500; }
+  .t { display:flex; gap:8px; padding:5px 14px; border-bottom:1px solid rgba(255,255,255,.03); font-size:13px; }
+  .t .s { width:18px; flex:none; font-weight:700; }
+  .t.ok .s { color:var(--ok); } .t.fail .s { color:var(--fail); } .t.skip .s { color:var(--warn); } .t.run .s { color:var(--accent); }
+  .t .msg { color:var(--fail); font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-word; }
+  .t .info { color:var(--muted); font-family:ui-monospace,Consolas,monospace; font-size:12px; margin-left:auto; text-align:right; }
+  #stage { position:fixed; right:0; bottom:0; width:128px; height:128px; opacity:.02; pointer-events:none; overflow:hidden; }
+  #stage canvas { position:absolute; left:0; top:0; }
+  table.bench { width:100%; border-collapse:collapse; font-size:13px; }
+  table.bench td, table.bench th { padding:5px 10px; border-bottom:1px solid var(--line); text-align:right; }
+  table.bench th:first-child, table.bench td:first-child { text-align:left; }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>UltraGame</b> · Suite de pruebas</h1>
+  <button id="run">Ejecutar todo</button>
+  <label title="Se ejecutan al final, tras cientos de pruebas (el JIT ya está 'contaminado'): para cifras limpias usa bench.html"><input type="checkbox" id="bench" checked> Benchmarks (<a href="bench.html" style="color:inherit">cifras limpias</a>)</label>
+  <label><input type="checkbox" id="leaks" checked> Fugas de memoria</label>
+  <span id="status" style="color:var(--muted)"></span>
+  <span style="color:var(--muted);margin-left:auto">Más pruebas: <a href="3d-basic.html" style="color:inherit">3D (píxeles)</a> · <a href="3d-models.html" style="color:inherit">modelos GLB</a> · <a href="capture-thumbs3d.html?smoke=1" style="color:inherit">humo juegos 3D</a> · <a href="studio-runtime.html?auto=1" style="color:inherit">runtime del Studio</a> · <code>node tests/node-tests.js</code></span>
+</header>
+<div id="summary"></div>
+<main id="suites"></main>
+<div id="stage"></div>
+<script src="../dist/ultragame.js"></script>
+<script src="tests.js"></script>
+</body>
+</html>

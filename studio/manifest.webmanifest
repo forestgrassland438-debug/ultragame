@@ -1,0 +1,12 @@
+{
+  "name": "UltraGame Studio",
+  "short_name": "UG Studio",
+  "description": "Editor de juegos 2D y 3D para UltraGame: escenas, comportamientos sin código, eventos, scripts, efectos y exportación HTML5.",
+  "start_url": "/studio/",
+  "scope": "/studio/",
+  "display": "standalone",
+  "background_color": "#0f121b",
+  "theme_color": "#11141f",
+  "lang": "es",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

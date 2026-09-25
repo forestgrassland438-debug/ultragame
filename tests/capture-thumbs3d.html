@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Humo y capturas 3D · UltraGame</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 14px system-ui, sans-serif; }
+  header { padding: 14px 18px; border-bottom: 1px solid #243056; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  #log { padding: 12px 18px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  #frames { position: fixed; left: -3000px; top: 0; }
+  button { background: #4c6ef5; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+<header>
+  <b>Juegos 3D: prueba de humo y miniaturas</b>
+  <button id="smoke">Humo (8 juegos × 3 backends)</button>
+  <button id="thumbs">Guardar miniaturas</button>
+  <span>· cada juego se abre en un iframe con <code>?auto=1</code> (el bot juega solo) y se avanza con pasos manuales.
+  Las miniaturas se guardan en <code>games3d/thumbs/</code> (requiere <code>node tools/server.js --allow-save</code>).</span>
+</header>
+<div id="log"></div>
+<div id="frames"></div>
+<script>
+'use strict';
+var logEl = document.getElementById('log');
+function log(s) { logEl.textContent += s + '\n'; }
+var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+/* frames: pasos de 16 ms antes de medir/capturar (un momento con acción en pantalla); pose(P): ajuste solo para la miniatura */
+var GAMES = [
+  { id: 'shooter', frames: 700, pose: function (P) { if (P.player && P.player.mode === 'fps') P.player.toggleView(); } }, { id: 'racing', frames: 700 }, { id: 'platformer', frames: 500 }, { id: 'city', frames: 600 },
+  { id: 'marble', frames: 400 }, { id: 'space', frames: 900 }, { id: 'voxel', frames: 400 }, { id: 'dungeon', frames: 700 }
+];
+async function steps(g, n) { for (var i = 0; i < n; i++) { g.loop.step(16); if ((i & 15) === 15) await null; } }
+async function open(id, renderer) {
+  var f = document.createElement('iframe'); f.width = 960; f.height = 540; f.style.border = '0';
+  f.src = '../games3d/' + id + '/index.html?auto=1&r=' + renderer;
+  document.getElementById('frames').appendChild(f);
+  await new Promise(function (r) { f.onload = r; });
+  var w = f.contentWindow, errs = [], warns = [];
+  // errores del juego, del motor (Log) y excepciones sin capturar
+  var ce = w.console.error, cw = w.console.warn;
+  w.console.error = function () { errs.push([].map.call(arguments, function (a) { return a && a.stack ? a.stack.split('\n')[0] : String(a); }).join(' ').slice(0, 300)); return ce.apply(w.console, arguments); };
+  w.console.warn = function () { warns.push([].join.call(arguments, ' ').slice(0, 200)); return cw.apply(w.console, arguments); };
+  w.addEventListener('error', function (e) { errs.push('uncaught: ' + e.message); });
+  w.addEventListener('unhandledrejection', function (e) { errs.push('promesa: ' + (e.reason && e.reason.message || e.reason)); });
+  for (var t = 0; t < 200 && !(w.game && w.game.renderer); t++) await sleep(25);
+  var g = w.game; if (!g) throw new Error('el juego no arrancó');
+  g.loop.stop();
+  // esperar a que Boot cargue los modelos y arranque Play
+  for (var k = 0; k < 400; k++) { await steps(g, 2); var P = g.scene.getScene('Play'); if (P && P.sys.status === 'running') break; await sleep(15); }
+  if (!(g.scene.getScene('Play') && g.scene.getScene('Play').sys.status === 'running')) throw new Error('Play no arrancó');
+  return { f: f, w: w, g: g, errs: errs, warns: warns };
+}
+function toGameOver(g) { var P = g.scene.getScene('Play'); if (P && P.sys.status === 'running') P.scene.start('GameOver', { score: 0 }); }
+async function smoke(id, frames, renderer) {
+  var o = await open(id, renderer), g = o.g, UGw = o.w.UG, t0 = performance.now();
+  await steps(g, frames);
+  var ms = (performance.now() - t0) / frames;
+  // fugas: GameOver -> Play -> GameOver debe dejar los contadores igual
+  toGameOver(g); await steps(g, 20); var A = UGw.Debug.snapshot();
+  g.scene.getScene('GameOver').scene.start('Play'); await steps(g, 300);
+  toGameOver(g); await steps(g, 20); var B = UGw.Debug.snapshot(), leak = UGw.Debug.diff(A, B);
+  var used = g.rendererType; g.destroy(true); o.f.remove();
+  var bad = o.errs.length + Object.keys(leak).length;
+  log(id + ' · ' + renderer + (used !== renderer ? ' (→ ' + used + ')' : '') + ': ' + (bad ? 'FALLO' : 'ok') + ' · ' + ms.toFixed(2) + ' ms/frame' +
+    (o.errs.length ? '\n    errores: ' + o.errs.slice(0, 3).join(' | ') : '') + (Object.keys(leak).length ? '\n    fuga: ' + JSON.stringify(leak) : '') +
+    (o.warns.length ? '\n    avisos: ' + o.warns.slice(0, 3).join(' | ') : ''));
+  return { errors: o.errs.length, leaks: Object.keys(leak).length, warns: o.warns.length, ms: ms };
+}
+async function thumb(id, frames) {
+  var o = await open(id, 'webgl2'), g = o.g, cfg = GAMES.find(function (x) { return x.id === id; });
+  await steps(g, frames);
+  if (cfg && cfg.pose) { var P = g.scene.getScene('Play'); if (P && P.sys.status === 'running') { cfg.pose(P); await steps(g, 40); } }
+  g.renderer.resize(g.width, g.height, 640 / Math.max(g.width, g.height)); await steps(g, 2);
+  var url = await g.snapshot('image/png'), blob = await (await fetch(url)).blob();
+  var resp = await fetch('/__save?dir=thumbs3d&name=' + id + '.png', { method: 'POST', body: blob });
+  log(id + ': ' + (resp.ok ? 'guardado' : 'ERROR ' + resp.status) + ' (' + (blob.size / 1024).toFixed(0) + ' KB)' + (o.errs.length ? ' errores: ' + o.errs.join(' | ') : ''));
+  g.destroy(true); o.f.remove();
+  return o.errs.length;
+}
+window.__smoke3d = { done: false };
+async function runSmoke(backends) {
+  var tot = { errors: 0, leaks: 0, fails: 0, runs: 0 }, R = backends || ['webgpu', 'webgl2', 'webgl'];
+  // ?only=shooter,city limita los juegos; ?r=webgl2 limita los backends
+  var qs = new URLSearchParams(location.search), only = qs.get('only'), list = GAMES.filter(function (x) { return !only || only.split(',').indexOf(x.id) >= 0; });
+  if (qs.get('r')) R = qs.get('r').split(',');
+  for (var i = 0; i < list.length; i++) for (var j = 0; j < R.length; j++) {
+    try { var r = await smoke(list[i].id, list[i].frames * 2, R[j]); tot.errors += r.errors; tot.leaks += r.leaks; }
+    catch (e) { tot.fails++; log(list[i].id + ' · ' + R[j] + ': FALLO ' + e.message); }
+    tot.runs++;
+  }
+  tot.done = true; window.__smoke3d = tot;
+  log('humo terminado · ' + JSON.stringify(tot));
+}
+document.getElementById('smoke').onclick = function () { this.disabled = true; runSmoke(); };
+document.getElementById('thumbs').onclick = async function () {
+  this.disabled = true; var e = 0;
+  var only = new URLSearchParams(location.search).get('only'), list = GAMES.filter(function (x) { return !only || only.split(',').indexOf(x.id) >= 0; });
+  for (var i = 0; i < list.length; i++) { try { e += await thumb(list[i].id, list[i].frames); } catch (err) { e++; log(list[i].id + ': FALLO ' + err.message); } }
+  window.__thumbs3d = { done: true, errors: e }; log('miniaturas listas · errores: ' + e);
+};
+var qs = new URLSearchParams(location.search);
+if (qs.get('smoke') === '1') runSmoke(qs.get('r') ? qs.get('r').split(',').filter(function (x) { return /^(webgpu|webgl2|webgl)$/.test(x); }) : null);
+else if (qs.get('thumbs') === '1') document.getElementById('thumbs').click();
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Capturas de minijuegos · UltraGame</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 14px system-ui, sans-serif; }
+  header { padding: 14px 18px; border-bottom: 1px solid #243056; }
+  #log { padding: 12px 18px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  #frames { position: fixed; left: -3000px; top: 0; }
+  button { background: #4c6ef5; color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <b>Capturas automáticas de los minijuegos</b> · abre cada juego en un iframe, juega un guion corto y guarda la miniatura en
+  <code>minigames/thumbs/</code> (requiere <code>node tools/server.js --allow-save</code>).
+  <button id="go">Capturar</button>
+</header>
+<div id="log"></div>
+<div id="frames"></div>
+<script>
+'use strict';
+var logEl = document.getElementById('log');
+function log(s) { logEl.textContent += s + '\n'; }
+var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+/* Guiones: reciben (win, game) y dejan el juego en un momento vistoso. Todo en pasos manuales. */
+var SCENES = {
+  'star-blaster': { w: 540, h: 900, run: async function (w, g) { var P = await play(w, g); for (var i = 0; i < 420; i++) { if (P.player) { P.player.x = 270 + Math.sin(i / 30) * 160; } g.loop.step(16); } } },
+  'pixel-knight': { w: 960, h: 540, run: async function (w, g) { var P = await play(w, g); P.joy = { right: true, left: false, up: false }; for (var i = 0; i < 150; i++) { if (i % 50 === 20) P.btnA = { isDown: true }; if (i % 50 === 35) P.btnA = { isDown: false }; g.loop.step(16); } } },
+  'brick-breaker': { w: 960, h: 640, run: async function (w, g) { var P = await play(w, g); P.launch(); for (var i = 0; i < 700; i++) { var b = P.balls.getChildren()[0]; if (b) P.paddle.targetX = b.x; g.loop.step(16); } } },
+  'neon-asteroids': { w: 960, h: 600, run: async function (w, g) { var P = await play(w, g); P.lives = 9; for (var i = 0; i < 380; i++) { var best = null, bd = 1e9; P.rocks.getChildren().forEach(function (r) { if (r.active) { var d = Math.hypot(r.x - P.ship.x, r.y - P.ship.y); if (d < bd) { bd = d; best = r; } } }); if (best && P.ship.visible) { P.ship.rotation = Math.atan2(best.y - P.ship.y, best.x - P.ship.x); P.fire(); } g.loop.step(16); } } },
+  'gem-match': { w: 720, h: 1000, run: async function (w, g) { var P = await play(w, g); for (var k = 0; k < 4; k++) { var t = 0; while (P.busy && t++ < 300) { g.loop.step(16); await null; } var mv = P.findMove(); if (mv) P.trySwap(mv[0], mv[1]); for (var i = 0; i < 12; i++) { g.loop.step(16); await null; } } for (var j = 0; j < 8; j++) { g.loop.step(16); await null; } } },
+  'sky-hopper': { w: 540, h: 960, run: async function (w, g) { var P = await play(w, g); P.flap(); for (var i = 0; i < 520 && P.state !== 'dead'; i++) { var nx = P.pairs.find(function (p) { return p.bot.x + 50 > P.bird.x; }), tg = nx ? nx.gy + 30 : 500; if (P.bird.y > tg && P.bird.body.velocity.y > -50) P.flap(); g.loop.step(16); } } },
+  'iso-defense': { w: 960, h: 640, run: async function (w, g) { var P = await play(w, g); P.gold = 2000; [[4, 2, 0], [4, 4, 1], [3, 6, 2], [8, 8, 1], [10, 4, 2], [6, 2, 0], [1, 4, 1], [6, 9, 2], [3, 8, 0]].forEach(function (q) { P.build(q[2], q[0], q[1]); }); Object.keys(P.towers).slice(0, 4).forEach(function (k) { P.upgrade(P.towers[k]); }); P.closePanel(); P.wave = 3; P.nextWave(); for (var i = 0; i < 520; i++) g.loop.step(16); P.closePanel(); } },
+  'dungeon-lights': { w: 960, h: 600, run: async function (w, g) { var P = await play(w, g); w.MGTest.dungeonBot(P, 420); for (var i = 0; i < 4; i++) g.loop.step(16); } }
+};
+async function play(w, g) {
+  for (var i = 0; i < 30; i++) g.loop.step(16);
+  g.scene.getScene('Menu').scene.start('Play');
+  for (var t = 0; t < 200; t++) { g.loop.step(16); var P = g.scene.getScene('Play'); if (P && P.sys.status === 'running' && (P.player || P.ship || P.paddle || P.grid || P.bird || P.layer || P.hero)) break; await sleep(10); }
+  for (var k = 0; k < 20; k++) g.loop.step(16);
+  return g.scene.getScene('Play');
+}
+async function capture(id, renderer, smoke) {
+  var cfg = SCENES[id], box = document.getElementById('frames');
+  var f = document.createElement('iframe'); f.width = cfg.w; f.height = cfg.h; f.style.border = '0';
+  f.src = '../minigames/' + id + '/index.html?r=' + (renderer || 'webgl2') + '&seed=thumb';
+  box.appendChild(f);
+  await new Promise(function (r) { f.onload = r; });
+  var w = f.contentWindow;
+  for (var t = 0; t < 100 && !(w.game && w.game.renderer); t++) await sleep(50);
+  var g = w.game; if (!g) throw new Error('sin juego');
+  await new Promise(function (res, rej) { var s = w.document.createElement('script'); s.src = '../../tests/mg-helpers.js'; s.onload = res; s.onerror = rej; w.document.head.appendChild(s); });
+  g.loop.stop(); g.sound.mute = true;
+  var errs = []; g.on('error', function (e) { errs.push(String(e && e.message || e)); });
+  var t0 = performance.now();
+  await cfg.run(w, g);
+  if (smoke) {
+    var used = g.rendererType, ms = performance.now() - t0;
+    g.destroy(true); f.remove();
+    log(id + ' · ' + renderer + (used !== renderer ? ' (→ ' + used + ')' : '') + ': ' + (errs.length ? 'ERRORES ' + errs.slice(0, 2).join(' | ') : 'ok') + ' · ' + (ms / 1000).toFixed(1) + ' s');
+    return errs.length;
+  }
+  // miniatura: ~640 px en el lado mayor
+  var r = g.renderer, res = 640 / Math.max(g.width, g.height);
+  r.resize(g.width, g.height, res); g.loop.step(16); g.loop.step(16);
+  var url = await g.snapshot('image/png');
+  var blob = await (await fetch(url)).blob();
+  var resp = await fetch('/__save?dir=thumbs&name=' + id + '.png', { method: 'POST', body: blob });
+  log(id + ': ' + (resp.ok ? 'guardado' : 'ERROR ' + resp.status) + ' (' + (blob.size / 1024).toFixed(0) + ' KB)' + (errs.length ? ' errores: ' + errs.join(' | ') : ''));
+  g.destroy(true); f.remove();
+  return errs.length;
+}
+window.__thumbs = { done: false, errors: 0 };
+document.getElementById('go').onclick = async function () {
+  this.disabled = true; var e = 0;
+  for (var id in SCENES) { try { e += await capture(id); } catch (err) { e++; log(id + ': FALLO ' + err); } }
+  window.__thumbs = { done: true, errors: e }; log('listo · errores: ' + e);
+};
+// ?smoke=1: juega cada minijuego en los 4 backends y solo informa de errores (no guarda nada)
+if (/smoke=1/.test(location.search)) (async function () {
+  var e = 0, R = ['webgpu', 'webgl2', 'webgl', 'canvas'];
+  for (var id in SCENES) for (var i = 0; i < R.length; i++) { try { e += await capture(id, R[i], true); } catch (err) { e++; log(id + ' · ' + R[i] + ': FALLO ' + err); } }
+  window.__thumbs = { done: true, errors: e }; log('humo terminado · errores: ' + e);
+})();
+else if (/auto=1/.test(location.search)) document.getElementById('go').click();
+</script>
+</body>
+</html>

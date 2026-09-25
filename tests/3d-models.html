@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>UltraGame 3D · Modelos</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}</style>
+</head>
+<body>
+<div id="game"></div>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var R = params.get('r') || 'auto';
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+var origErr = UG.Log.error; UG.Log.error = function () { window.errors.push(Array.prototype.join.call(arguments, ' ')); return origErr.apply(UG.Log, arguments); };
+var origWarn = UG.Log.warn; UG.Log.warn = function () { window.errors.push('WARN ' + Array.prototype.join.call(arguments, ' ')); return origWarn.apply(UG.Log, arguments); };
+var NAMES = ['humanoid', 'robot', 'hero', 'car', 'police', 'taxi', 'kart', 'house', 'shop', 'tree', 'pine', 'bush', 'rock', 'crate', 'rifle', 'pistol', 'smg', 'shotgun', 'sniper', 'coin', 'fruit', 'apple', 'bread', 'water', 'soda', 'medkit', 'ammo', 'grenade', 'barrel', 'lamp', 'fence', 'flag'];
+var SMALL = { rifle: 2, pistol: 2, smg: 2, shotgun: 2, sniper: 2, coin: 2, fruit: 2, apple: 5, bread: 5, water: 5, soda: 6, medkit: 4, ammo: 4, grenade: 6 };
+class Main extends UG.Scene {
+  constructor() { super('Main'); }
+  preload() { var self = this; this.load.setPath('../assets3d/'); NAMES.forEach(function (n) { self.load.gltf(n, n + '.glb'); }); }
+  create() {
+    var v = this.view = this.add.view3d();
+    v.scene3d.setSky({}); v.scene3d.setFog('linear', 0xbfdcf5, 30, 90);
+    v.add.sunlight({ shadowSize: 50 });
+    v.add.plane(120, 120, { color: 0x6f8f5a, roughness: 1 });
+    var self = this, cols = 6;
+    this.inst = {};
+    NAMES.forEach(function (n, i) {
+      var m = v.add.model(n), x = (i % cols - (cols - 1) / 2) * 6, z = Math.floor(i / cols) * 7 - 8;
+      var big = { house: 1, shop: 1 }[n]; if (big) z -= 14;
+      m.position.set(x, 0, z);
+      if (SMALL[n]) { m.position.y = 1; m.scale.set(SMALL[n], SMALL[n], SMALL[n]); }
+      self.inst[n] = m;
+      if (m.animations && m.animations.length) m.play(n === 'humanoid' ? 'Walk' : n === 'robot' ? 'Run' : n === 'hero' ? 'Dance' : m.animations[0].name);
+    });
+    this.fire = v.addParticles('fire'); this.fire.position.set(0, 0.1, 6);
+    this.smoke = v.addParticles('smoke'); this.smoke.position.set(0, 0.8, 6);
+    this.orbit = v.orbitControls({ target: new UG.Vec3(0, 1, 0), distance: 26, pitch: 0.45 });
+    this.label = this.add.text(12, 12, '3D · modelos glTF · ' + this.game.rendererType, { fontSize: 18, fill: 0xffffff, stroke: 0x000000, strokeThickness: 4 });
+  }
+}
+var game = new UG.Game({ width: 1000, height: 640, parent: 'game', renderer: R, backgroundColor: 0x000000, scenes: [Main], banner: false, audio: { noAudio: true } });
+window.game = game;
+window.info = function () {
+  var sc = game.scene.getScene('Main'), c = game.cache.models, out = {};
+  c.forEach(function (m, k) { out[k] = { nodes: m.nodes.length, clips: m.clipNames, tex: m.textures.length, mats: m.materials.length }; });
+  return { models: out, stats: game.renderer._r3d ? JSON.parse(JSON.stringify(game.renderer._r3d.stats)) : null, errors: window.errors.slice(), live: UG.Debug.snapshot() };
+};
+</script>
+</body>
+</html>

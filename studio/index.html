@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#11141f">
+<title>UltraGame Studio</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="studio.css">
+<link rel="stylesheet" href="studio-pro.css">
+</head>
+<body>
+<noscript>UltraGame Studio necesita JavaScript.</noscript>
+<div id="app" class="app">
+  <!-- barra superior -->
+  <header class="topbar">
+    <div class="brand" title="UltraGame Studio">
+      <img src="icon.svg" alt="" width="22" height="22">
+      <b>UltraGame</b><span>Studio</span>
+    </div>
+    <button class="icon hamburger" id="btn-hamburger" type="button" title="Menú" aria-label="Menú">☰</button>
+    <nav class="menubar" id="menubar" aria-label="Menú principal"></nav>
+    <div class="toolbar-center">
+      <button class="btn play" id="btn-play" title="Jugar desde la escena inicial (F5)">▶ Jugar</button>
+      <button class="btn" id="btn-play-scene" title="Jugar la escena actual (Mayús+F5)">▶ Esta escena</button>
+      <button class="btn stop" id="btn-stop" title="Detener (Esc)" disabled>■ Detener</button>
+      <select id="sel-renderer" title="Renderizador para probar" aria-label="Renderizador">
+        <option value="auto">Auto</option><option value="webgpu">WebGPU</option><option value="webgl2">WebGL2</option><option value="webgl">WebGL</option><option value="canvas">Canvas (solo 2D)</option>
+      </select>
+    </div>
+    <div class="status">
+      <span id="project-name" class="project-name">Sin proyecto</span>
+      <span id="save-state" class="save-state"></span>
+      <span id="storage-mode" class="storage-mode"></span>
+    </div>
+  </header>
+
+  <!-- zona principal -->
+  <div class="main">
+    <aside class="panel left" id="panel-left">
+      <section class="block" id="block-scenes">
+        <div class="block-head"><span>Escenas</span>
+          <div class="head-actions"><button class="icon" id="btn-add-scene2d" title="Nueva escena 2D">＋2D</button><button class="icon" id="btn-add-scene3d" title="Nueva escena 3D">＋3D</button></div>
+        </div>
+        <ul class="list" id="scene-list" role="listbox" aria-label="Escenas"></ul>
+      </section>
+      <section class="block grow" id="block-tree">
+        <div class="block-head"><span>Jerarquía</span>
+          <div class="head-actions"><button class="icon" id="btn-add-node" title="Añadir objeto (A)">＋ Añadir</button></div>
+        </div>
+        <input class="search" id="tree-filter" type="search" placeholder="Buscar objeto…" aria-label="Buscar objeto">
+        <ul class="tree" id="tree" role="tree" aria-label="Objetos de la escena"></ul>
+      </section>
+    </aside>
+
+    <section class="center" id="center">
+      <div class="tabs" id="center-tabs" role="tablist">
+        <button role="tab" data-tab="scene" class="on">🎬 Escena</button>
+        <button role="tab" data-tab="events">⚡ Eventos</button>
+        <button role="tab" data-tab="code">{ } Código</button>
+        <button role="tab" data-tab="art">🎨 Arte</button>
+        <button role="tab" data-tab="web3">⛓ Web3</button>
+        <button role="tab" data-tab="backend">🌐 Backend</button>
+        <button role="tab" data-tab="game" id="tab-game" hidden>🎮 Juego</button>
+        <span class="tabs-spacer"></span>
+        <button class="icon" id="btn-focus-mode" type="button" title="Modo enfoque: ocultar paneles (Ctrl+Mayús+F)">⛶</button>
+      </div>
+      <div class="tab-pages">
+        <div class="page on" data-page="scene">
+          <div class="vp-toolbar" id="vp-toolbar">
+            <div class="seg" id="tool-seg" role="group" aria-label="Herramienta">
+              <button data-tool="select" class="on" title="Seleccionar y mover (Q / W)">✥ Mover</button>
+              <button data-tool="rotate" title="Rotar (E)">⟳ Rotar</button>
+              <button data-tool="scale" title="Escalar (R)">⤢ Escalar</button>
+            </div>
+            <label class="chk" title="Ajustar a la rejilla (G)"><input type="checkbox" id="chk-snap" checked> Rejilla</label>
+            <label class="inline">Paso <input type="number" id="inp-snap" value="16" min="0.01" step="1"></label>
+            <button class="btn small" id="btn-focus" title="Centrar en la selección (F)">⌖ Centrar</button>
+            <button class="btn small" id="btn-home" title="Ver toda la escena (H)">⌂ Vista</button>
+            <span class="vp-info" id="vp-info"></span>
+          </div>
+          <div class="viewport" id="viewport" tabindex="0" aria-label="Vista de la escena"></div>
+          <div class="vp-hint" id="vp-hint"></div>
+        </div>
+        <div class="page" data-page="events"><div class="events" id="events"></div></div>
+        <div class="page" data-page="code"><div class="code-page" id="code-page"></div></div>
+        <div class="page" data-page="art"><div class="art-page" id="art-page"></div></div>
+        <div class="page" data-page="web3"><div class="pane-page" id="web3-page"></div></div>
+        <div class="page" data-page="backend"><div class="pane-page" id="backend-page"></div></div>
+        <div class="page" data-page="game"><div class="game-host" id="game-host"></div></div>
+      </div>
+    </section>
+
+    <aside class="panel right" id="panel-right">
+      <div class="block-head"><span id="inspector-title">Inspector</span></div>
+      <div class="inspector" id="inspector"></div>
+    </aside>
+  </div>
+
+  <!-- zona inferior -->
+  <footer class="bottom" id="bottom">
+    <div class="tabs small" id="bottom-tabs" role="tablist">
+      <button role="tab" data-btab="assets" class="on">📦 Recursos</button>
+      <button role="tab" data-btab="library">📚 Biblioteca</button>
+      <button role="tab" data-btab="console">🖥 Consola <span class="badge" id="console-badge" hidden>0</span></button>
+      <div class="spacer"></div>
+      <button class="btn small" id="btn-import" title="Importar imágenes, sonidos, modelos (GLB/glTF/OBJ), mapas de Tiled…">⬆ Importar archivos</button>
+      <input type="file" id="file-input" multiple hidden accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.mp3,.ogg,.wav,.m4a,.glb,.gltf,.obj,.mtl,.bin,.json,.tmj,.tsj,.ttf,.otf,.woff,.woff2,.txt">
+    </div>
+    <div class="bpage on" data-bpage="assets"><div class="assets" id="assets"></div></div>
+    <div class="bpage" data-bpage="library"><div class="assets" id="library"></div></div>
+    <div class="bpage" data-bpage="console"><div class="console" id="console" role="log" aria-live="polite"></div></div>
+  </footer>
+</div>
+
+<div id="overlay" class="overlay" hidden></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="../dist/ultragame.js"></script>
+<script src="shared/schema.js"></script>
+<script src="shared/solidity.js"></script>
+<script src="shared/backend.js"></script>
+<script src="runtime/runtime.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

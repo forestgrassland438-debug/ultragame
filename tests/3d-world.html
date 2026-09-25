@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UltraGame 3D · Mundo (cielo, clima, decals, hierba, agua)</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}#out{position:absolute;left:8px;bottom:8px;white-space:pre;font:12px ui-monospace,Consolas,monospace;background:rgba(0,0,0,.55);padding:6px 8px;border-radius:6px;max-width:60%;max-height:40%;overflow:auto}</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">check() en la consola o ?auto=1</pre>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var R = params.get('r') || 'auto';
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+var origErr = UG.Log.error; UG.Log.error = function () { window.errors.push(Array.prototype.join.call(arguments, ' ')); return origErr.apply(UG.Log, arguments); };
+var origWarn = UG.Log.warn; window.warns = []; UG.Log.warn = function () { window.warns.push(Array.prototype.join.call(arguments, ' ')); return origWarn.apply(UG.Log, arguments); };
+class World extends UG.Scene {
+  constructor() { super('World'); }
+  create() {
+    var v = this.view = this.add.view3d({ far: 400 });
+    v.scene3d.setSky({ clouds: { coverage: 0.5 } }); v.scene3d.setFog('linear', 0xbfdcf5, 40, 220);
+    this.sun = v.add.sunlight({ shadowSize: 50 });
+    v.add.plane(200, 200, { color: 0x5b8c3e, roughness: 1 });
+    this.grass = v.add.grass({ area: [-30, -30, 30, 30], density: 2.5, where: function (x, z) { return Math.hypot(x - 12, z + 8) > 9; } });
+    this.water = v.add.water(18, 18, { waveHeight: 0.15 }); this.water.position.set(12, 0.05, -8);
+    var rock = UG.Geometry3D.sphere(0.5, 8, 6);
+    this.rocks = v.add.scatter({ geometry: rock, material: { color: 0x8a8a86, flatShading: true } }, { area: [-40, -40, 40, 40], count: 60, scale: [0.4, 1.4], seed: 3 });
+    this.wall = v.add.box(6, 3, 0.4, 0xb9b0a3); this.wall.position.set(0, 1.5, -4);
+    this.dn = v.dayNight({ time: 10, sun: this.sun });
+    v.camera.position.set(0, 3, 9); v.camera.lookAt(0, 1.5, -4);
+  }
+}
+var game = new UG.Game({ width: 960, height: 540, parent: 'game', renderer: R, backgroundColor: 0x000000, scenes: [World], banner: false, audio: { noAudio: true } });
+window.game = game;
+async function steps(n) { for (var i = 0; i < n; i++) { game.loop.step(16); if ((i & 7) === 7) await null; } }
+window.check = async function () {
+  var out = { renderer: game.renderer.type };
+  await game.ready; game.loop.stop(); await steps(5);
+  var sc = game.scene.getScene('World'), v = sc.view;
+  out.grassInstances = sc.grass.instances; out.grassChunks = sc.grass.chunks.length; out.scatter = sc.rocks.transforms.length;
+  // decals: más que la capacidad para probar el anillo
+  var before = UG.Debug.snapshot();
+  for (var i = 0; i < 400; i++) v.addDecal('bullet', new UG.Vec3(-2.5 + (i % 20) * 0.25, 0.3 + Math.floor(i / 20) * 0.12, -3.79), new UG.Vec3(0, 0, 1));
+  for (var j = 0; j < 150; j++) v.addDecal(j % 2 ? 'blood' : 'pool', new UG.Vec3((j % 10) - 5, 0.01, (j / 10 | 0) - 5), new UG.Vec3(0, 1, 0), { life: j % 3 ? 0 : 1.5 });
+  v.addDecal('scorch', new UG.Vec3(3, 0.01, 2), new UG.Vec3(0, 1, 0));
+  await steps(10);
+  out.decals = v.decals.count; out.decalLeak = UG.Debug.diff(before, UG.Debug.snapshot());
+  // día/noche y clima
+  var hours = [0, 6, 9, 12, 18.5, 21], skies = [];
+  for (var h of hours) { sc.dn.setTime(h); await steps(2); skies.push(h + 'h:' + v.scene3d.sky.top.toString(16) + '/' + sc.sun.sun.intensity.toFixed(2) + '/estrellas ' + (+v.scene3d.sky.stars).toFixed(2)); }
+  out.dayNight = skies;
+  sc.dn.speed = 2; sc.dn.setTime(10);
+  var kinds = ['rain', 'storm', 'snow', 'cloudy', 'fog', 'clear'], wx = [];
+  for (var k of kinds) { v.weather(k); await steps(20); wx.push(k + ':' + v.scene3d.sky.clouds.coverage.toFixed(2) + (v._weather._fx ? ' part ' + v._weather._fx.alive : '')); }
+  out.weather = wx;
+  await steps(120); // decals con vida se desvanecen, agua y hierba animadas
+  var st = v.stats; out.draws = st ? st.draws : null; out.tris = st ? st.triangles : null;
+  // ciclo completo: reiniciar la escena 3 veces no debe dejar nada vivo
+  sc.scene.restart(); await steps(6); sc = game.scene.getScene('World'); sc.view.addDecal('bullet', new UG.Vec3(0, 1, -3.79), new UG.Vec3(0, 0, 1)); sc.view.weather('rain'); await steps(6);
+  sc.scene.restart(); await steps(6); sc = game.scene.getScene('World');
+  var snap = UG.Debug.snapshot();
+  for (var c = 0; c < 3; c++) { sc.scene.restart(); await steps(6); sc = game.scene.getScene('World'); sc.view.addDecal('bullet', new UG.Vec3(0, 1, -3.79), new UG.Vec3(0, 0, 1)); sc.view.weather('rain'); await steps(6); }
+  sc.scene.restart(); await steps(6);
+  out.cycleLeak = UG.Debug.diff(snap, UG.Debug.snapshot());
+  out.errors = window.errors.slice(0, 5); out.warns = window.warns.slice(0, 5);
+  document.getElementById('out').textContent = JSON.stringify(out, null, 1);
+  window.__res = out;
+  game.loop.start();
+  return out;
+};
+if (params.get('auto') === '1') setTimeout(function () { check(); }, 300);
+</script>
+</body>
+</html>

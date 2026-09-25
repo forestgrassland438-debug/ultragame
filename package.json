@@ -1,0 +1,19 @@
+{
+  "name": "ultragame",
+  "version": "1.0.0",
+  "description": "UltraGame: motor 2D y 3D de alto rendimiento para la web (WebGPU, WebGL2, WebGL, Canvas) con escenas, física 2D/3D, glTF/Blender, Tiled, audio, partículas, efectos y el editor UltraGame Studio.",
+  "main": "dist/ultragame.js",
+  "module": "dist/ultragame.esm.js",
+  "types": "dist/ultragame.d.ts",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.js",
+    "watch": "node tools/build.js --watch",
+    "serve": "node tools/server.js --port 8080",
+    "test:node": "node tests/node-tests.js",
+    "studio": "node tools/studio-server.js",
+    "models": "node tools/make-models.js"
+  },
+  "files": ["dist", "docs", "README.md"],
+  "keywords": ["game", "engine", "2d", "3d", "webgl", "webgl2", "webgpu", "canvas", "gltf", "blender", "tiled", "physics", "particles", "editor", "web3"]
+}

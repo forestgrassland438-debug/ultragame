@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pruebas del runtime del Studio · UltraGame</title>
+<style>body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px ui-monospace, Consolas, monospace; } #game { width: 640px; height: 360px; } pre { padding: 10px 14px; white-space: pre-wrap; }</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">Ejecuta check() en la consola, o abre con ?auto=1</pre>
+<script src="../dist/ultragame.js"></script>
+<script src="../studio/shared/schema.js"></script>
+<script src="../studio/runtime/runtime.js"></script>
+<script>
+'use strict';
+var S = UGStudio.schema, RT = UGStudio.runtime;
+function N(type, kind, o) { var n = S.createNode(type, kind); Object.keys(o || {}).forEach(function (k) { if (k === 'props') Object.assign(n.props, o.props); else if (k === 'physics') Object.assign(n.physics, o.physics); else n[k] = o[k]; }); return n; }
+function B(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.BEHAVIORS[type].params), params || {}) }; }
+function C(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.CONDITIONS[type].params), params || {}) }; }
+function Ac(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.ACTIONS[type].params), params || {}) }; }
+/* ---------------- proyecto 2D: plataformas con monedas, enemigo, eventos y script */
+function project2D() {
+  var p = S.createProject('Prueba 2D'), sc = S.createScene('2d', 'Nivel'), win = S.createScene('2d', 'Victoria');
+  p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc, win); p.startScene = sc.id;
+  var ground = N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40, fill: '#2f9e44' }, physics: { type: 'static' } });
+  var player = N('sprite', '2d', { name: 'Jugador', x: 80, y: 250, tags: ['jugador'], props: { width: 32, height: 48, tint: '#4dabf7' }, physics: { type: 'dynamic' }, behaviors: [B('platformer')] });
+  sc.nodes.push(ground, player);
+  for (var i = 0; i < 3; i++) sc.nodes.push(N('shape', '2d', { name: 'Moneda', x: 220 + i * 120, y: 300, tags: ['moneda'], props: { shape: 'circle', width: 20, height: 20, fill: '#ffd43b' }, behaviors: [B('collectible', { by: 'jugador', variable: 'puntos', amount: 10 }), B('sine', { amplitude: 6 })] }));
+  sc.nodes.push(N('text', '2d', { name: 'Marcador', x: 320, y: 30, props: { text: 'Puntos: {puntos}', size: 24 } }));
+  var tpl = N('shape', '2d', { name: 'Bala', x: 0, y: 0, prefab: true, props: { width: 12, height: 4, fill: '#ff6b6b' }, behaviors: [B('bullet', { speed: 300, life: 1 })] });
+  sc.nodes.push(tpl);
+  p.scripts.push({ id: 'sc1', name: 'contador', code: 'var n = 0;\nfunction onStart() { api.set("arrancado", 1); }\nfunction onUpdate(dt) { n++; api.set("frames", n); if (n === 5) api.log("cinco frames"); }\nfunction onCollide(other) { api.add("choques", 1); }' });
+  p.scripts.push({ id: 'sc2', name: 'roto', code: 'function onUpdate(dt) { noExiste.algo(); }' });
+  p.scripts.push({ id: 'sc3', name: 'sintaxis', code: 'function onUpdate( { ' });
+  player.script = 'sc1';
+  var extra = N('container', '2d', { name: 'Roto', x: 10, y: 10 }); extra.script = 'sc2'; sc.nodes.push(extra);
+  var extra2 = N('container', '2d', { name: 'Sintaxis', x: 10, y: 10 }); extra2.script = 'sc3'; sc.nodes.push(extra2);
+  sc.events.push({ id: 'e1', enabled: true, once: false, conditions: [C('every', { seconds: 0.5 })], actions: [Ac('addVar', { variable: 'ticks', value: 1 }), Ac('spawn', { template: 'Bala', at: 'name:Jugador' })] });
+  sc.events.push({ id: 'e2', enabled: true, once: false, conditions: [C('noneLeft', { target: 'tag:moneda' })], actions: [Ac('floatText', { text: '¡Todas!' }), Ac('gotoScene', { scene: win.id })] });
+  sc.events.push({ id: 'e3', enabled: true, once: false, conditions: [C('compare', { variable: 'puntos', op: '>=', value: '20' })], actions: [Ac('setVar', { variable: 'mitad', value: 'sí' })] });
+  win.nodes.push(N('text', '2d', { name: 'Fin', x: 320, y: 180, props: { text: '¡Ganaste con {puntos}!' } }));
+  return p;
+}
+/* ---------------- proyecto 3D: suelo, personaje, monedas, nivel por rejilla, terreno, luces, partículas */
+function project3D() {
+  var p = S.createProject('Prueba 3D'), sc = S.createScene('3d', 'Mundo');
+  p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc); p.startScene = sc.id;
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Suelo', position: [0, -0.5, 0], props: { sizeX: 40, sizeY: 1, sizeZ: 40, color: '#6a8a5a' }, physics: { type: 'static' } }));
+  var pl = N('mesh3d', '3d', { name: 'Jugador', position: [0, 0.2, 0], tags: ['jugador'], props: { shape: 'capsule', sizeX: 0.8, sizeY: 1.8, color: '#4dabf7' }, physics: { type: 'character' }, behaviors: [B('tpsPlayer')] });
+  sc.nodes.push(pl);
+  for (var i = 0; i < 4; i++) sc.nodes.push(N('mesh3d', '3d', { name: 'Moneda', position: [3 + i * 2, 1, 0], tags: ['moneda'], props: { shape: 'torus', sizeX: 0.8, sizeY: 0.8, color: '#ffd43b', metalness: 0.8 }, behaviors: [B('rotate'), B('collectible', { by: 'jugador', amount: 5 })] }));
+  sc.nodes.push(N('gridlevel', '3d', { name: 'Laberinto', position: [0, 0, -14] }));
+  sc.nodes.push(N('terrain', '3d', { name: 'Colinas', position: [0, -0.6, 40], props: { width: 40, depth: 30, segments: 32 }, physics: { type: 'mesh' } }));
+  sc.nodes.push(N('light', '3d', { name: 'Farol', position: [2, 3, 2], props: { light: 'point', intensity: 3 } }));
+  sc.nodes.push(N('particles3d', '3d', { name: 'Fuego', position: [-3, 0, 0], props: { preset: 'fire' } }));
+  sc.nodes.push(N('text', '3d', { name: 'HUD', x: 320, y: 24, props: { text: 'Puntos {puntos}', size: 20 } }));
+  sc.events.push({ id: 'e1', enabled: true, once: false, conditions: [C('every', { seconds: 1 })], actions: [Ac('addVar', { variable: 'seg', value: 1 })] });
+  return p;
+}
+function loadScripts(p) {
+  // igual que el reproductor: cada script como archivo blob (sin eval)
+  var urls = [];
+  return Promise.all(p.scripts.map(function (s) {
+    return new Promise(function (res) { var u = URL.createObjectURL(new Blob([RT.wrapScript(s.id, s.code)], { type: 'text/javascript' })); urls.push(u); var el = document.createElement('script'); el.src = u; el.onload = res; el.onerror = res; document.body.appendChild(el); });
+  })).then(function () { return urls; });
+}
+async function steps(g, n) { for (var i = 0; i < n; i++) { g.loop.step(16); if ((i & 15) === 15) await null; } }
+async function runProject(p, renderer, fn) {
+  RT.resetScripts();
+  var errors = [], logs = [], winErr = [];
+  var onErr = function (e) { winErr.push(e.message); }; window.addEventListener('error', onErr);
+  var urls = await loadScripts(p);
+  var g = RT.start(p, { parent: 'game', renderer: renderer, onLog: function (l, t, s) { logs.push(l + ':' + s + ':' + t); if (l === 'error') errors.push(s + ': ' + t); } });
+  await g.ready; g.loop.stop();
+  for (var k = 0; k < 200; k++) { await steps(g, 1); var sc = g.scene.getScenes(true).find(function (s) { return s.ugs; }); if (sc) break; await new Promise(function (r) { setTimeout(r, 10); }); }
+  var res = {};
+  try { res = await fn(g, errors, logs); } catch (e) { res.fail = e.message; }
+  var before = UG.Debug.snapshot();
+  g.destroy(true); urls.forEach(URL.revokeObjectURL); window.removeEventListener('error', onErr);
+  res.winErrors = winErr; res.logs = logs.slice(0, 12);
+  return res;
+}
+function rt(g) { var s = g.scene.getScenes(true).find(function (x) { return x.ugs; }); return s ? s.ugs : null; }
+async function check2D(renderer) {
+  return runProject(project2D(), renderer, async function (g, errors) {
+    var r = rt(g), out = { renderer: g.rendererType };
+    await steps(g, 30);
+    var pl = r.resolve('name:Jugador')[0]; out.hasPlayer = !!pl; out.onGround = pl && pl.obj.body && pl.obj.body.blocked.down;
+    out.frames = g.ugs.vars.frames; out.arrancado = g.ugs.vars.arrancado;
+    out.bullets = r.resolve('name:Bala').length;
+    // recoger monedas moviendo al jugador
+    var coins = r.resolve('tag:moneda'); out.coins0 = coins.length;
+    coins.slice(0, 2).forEach(function (c) { pl.obj.body.reset(c.obj.x, c.obj.y); }); // se recoge solo la última posición: dos pasos
+    pl.obj.body.reset(coins[0].obj.x, coins[0].obj.y); await steps(g, 2);
+    pl.obj.body.reset(coins[1].obj.x, coins[1].obj.y); await steps(g, 2);
+    out.puntos2 = g.ugs.vars.puntos; out.mitad = g.ugs.vars.mitad; out.text = r.resolve('name:Marcador')[0].obj.text;
+    pl.obj.body.reset(coins[2].obj.x, coins[2].obj.y); await steps(g, 4);
+    var r2 = rt(g); out.scene = r2 ? r2.def.name : null; out.winText = r2 && r2.resolve('name:Fin')[0] ? r2.resolve('name:Fin')[0].obj.text : null;
+    out.ticks = g.ugs.vars.ticks; out.errors = errors.slice(0, 5); out.choques = g.ugs.vars.choques;
+    return out;
+  });
+}
+async function check3D(renderer) {
+  return runProject(project3D(), renderer, async function (g, errors) {
+    var r = rt(g), out = { renderer: g.rendererType };
+    await steps(g, 60);
+    var pl = r.resolve('name:Jugador')[0]; out.player = !!pl && !!pl.ch; out.grounded = pl && pl.ch.onGround; out.y = pl && +pl.ch.position.y.toFixed(3);
+    out.coins0 = r.resolve('tag:moneda').length;
+    var c = r.resolve('tag:moneda')[0], cp = r.posOf(c); pl.ch.teleport(cp.x, 0.1, cp.z); await steps(g, 3);
+    out.puntos = g.ugs.vars.puntos; out.coins1 = r.resolve('tag:moneda').length;
+    out.level = !!r.resolve('name:Laberinto')[0].level; out.colliders = r.world3.statics.length;
+    out.seg = g.ugs.vars.seg; out.hud = r.resolve('name:HUD')[0].obj.text; out.errors = errors.slice(0, 5);
+    out.draws = g.renderer.stats ? g.renderer.stats.drawCalls : null;
+    return out;
+  });
+}
+async function check() {
+  var before = UG.Debug.snapshot(), res = {};
+  res.d2 = await check2D('webgl2');
+  res.d3 = await check3D('webgl2');
+  res.d3gpu = await check3D('webgpu');
+  res.d2canvas = await check2D('canvas');
+  await new Promise(function (r) { setTimeout(r, 50); });
+  res.leak = UG.Debug.diff(before, UG.Debug.snapshot());
+  document.getElementById('out').textContent = JSON.stringify(res, null, 1);
+  window.__res = res;
+  return res;
+}
+if (/auto=1/.test(location.search)) check();
+</script>
+</body>
+</html>

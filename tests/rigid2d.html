@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UltraGame · Física rígida 2D</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}#out{position:absolute;left:8px;top:8px;white-space:pre;font:12px ui-monospace,Consolas,monospace;background:rgba(0,0,0,.55);padding:6px 8px;border-radius:6px;max-width:50%}</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">Arrastra los cuerpos con el ratón o el dedo · check() o ?auto=1</pre>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+var oe = UG.Log.error; UG.Log.error = function () { window.errors.push(Array.prototype.join.call(arguments, ' ')); return oe.apply(UG.Log, arguments); };
+class Demo extends UG.Scene {
+  constructor() { super('Demo'); }
+  create() {
+    var R = this.rigid, W = this.game.width, H = this.game.height, s = this;
+    this.textures.generate('crate2d', 40, 40, function (c) { c.fillStyle = '#b07a3c'; c.fillRect(0, 0, 40, 40); c.strokeStyle = '#6b4526'; c.lineWidth = 4; c.strokeRect(2, 2, 36, 36); c.beginPath(); c.moveTo(2, 2); c.lineTo(38, 38); c.moveTo(38, 2); c.lineTo(2, 38); c.stroke(); });
+    // suelo y paredes
+    R.add.static(W / 2, H - 10, W, 20); R.add.static(10, H / 2, 20, H); R.add.static(W - 10, H / 2, 20, H);
+    this.add.rectangle(W / 2, H - 10, W, 20, 0x495057);
+    // pila de cajas con textura
+    this.crates = []; for (var i = 0; i < 7; i++) this.crates.push(R.add.sprite(160, H - 40 - i * 40, 'crate2d', { friction: 0.6 }));
+    // pelotas y figuras
+    this.balls = []; for (var b = 0; b < 8; b++) this.balls.push(R.add.circle(420 + (b % 4) * 44, 80 + Math.floor(b / 4) * 44, 18, [0x74c0fc, 0xffd43b, 0xff8787, 0x63e6be][b % 4], { restitution: 0.5 }));
+    this.L = R.add.polygon(640, 120, [0, 0, 70, 0, 70, 25, 25, 25, 25, 70, 0, 70], 0xcc5de8);
+    this.tri = R.add.polygon(760, 60, [0, 0, 60, 0, 30, -50], 0xff922b);
+    // puente de tablones unidos con bisagras
+    var x0 = 300, y0 = 300, n = 10, pw = 36, prev = R.add.static(x0 - 20, y0, 12, 12), anchor0 = prev;
+    this.planks = [];
+    for (var k = 0; k < n; k++) {
+      var pl = R.add.rectangle(x0 + k * pw + pw / 2, y0, pw - 2, 10, 0x8d6e4c, { friction: 0.8 }); this.planks.push(pl);
+      R.add.joint({ type: 'revolute', a: prev.rbody || prev, b: pl.rbody, anchorA: prev.rbody ? { x: pw / 2, y: 0 } : { x: 20, y: 0 }, anchorB: { x: -pw / 2, y: 0 } });
+      prev = pl;
+    }
+    var end = R.add.static(x0 + n * pw + 20, y0, 12, 12);
+    R.add.joint({ type: 'revolute', a: prev.rbody, b: end, anchorA: { x: pw / 2, y: 0 }, anchorB: { x: -20, y: 0 } });
+    void anchor0;
+    // péndulo con muelle
+    var hook = R.add.static(W - 120, 60, 10, 10), bob = R.add.circle(W - 60, 160, 16, 0xf06595);
+    R.add.joint({ type: 'spring', a: hook, b: bob.rbody, stiffness: 2, damping: 0.1, length: 100 });
+    this.contacts = 0; R.world.on('collisionstart', function () { s.contacts++; });
+    R.drag(true);
+    if (params.get('debug') === '1') R.debug(true);
+  }
+}
+var game = new UG.Game({ width: 960, height: 540, parent: 'game', renderer: params.get('r') || 'auto', backgroundColor: 0x151926, scenes: [Demo], banner: false, audio: { noAudio: true }, physics: { rigid: { gravity: { x: 0, y: 980 } } } });
+window.game = game;
+async function steps(n) { for (var i = 0; i < n; i++) { game.loop.step(16); if ((i & 15) === 15) await null; } }
+window.check = async function () {
+  await game.ready; game.loop.stop(); await steps(5);
+  var sc = game.scene.getScene('Demo'), out = { renderer: game.renderer.type };
+  var t0 = performance.now(); await steps(360); out.msPerFrame = +((performance.now() - t0) / 360).toFixed(2);
+  var top = sc.crates[6];
+  out.stackTop = [+top.x.toFixed(1), +top.y.toFixed(1), +top.rotation.toFixed(3)];
+  out.spriteMatchesBody = Math.abs(top.x - top.rbody.originX) < 0.01 && Math.abs(top.y - top.rbody.originY) < 0.01;
+  out.bridgeSag = +(sc.planks[5].y - 300).toFixed(1);
+  out.ballsOnGround = sc.balls.filter(function (b) { return b.y > 380; }).length;
+  out.contacts = sc.contacts; out.bodies = sc.rigid.world.bodies.length; out.sleeping = sc.rigid.world.bodies.filter(function (b) { return b.sleeping; }).length;
+  out.finite = sc.rigid.world.bodies.every(function (b) { return isFinite(b.position.x) && isFinite(b.angle); });
+  // arrastrar una pelota con la unión de ratón (simulada)
+  var ball = sc.balls[0].rbody, R = sc.rigid, cx = ball.position.x, cy = ball.position.y;
+  R._pd({ x: cx, y: cy, id: 99 }); R._pm({ x: cx, y: cy - 120, id: 99 }); await steps(40); out.dragLift = +(cy - ball.position.y).toFixed(1); R._pu({ id: 99 });
+  // fugas: reiniciar la escena varias veces
+  sc.scene.restart(); await steps(10);
+  var snap = UG.Debug.snapshot();
+  for (var c = 0; c < 3; c++) { game.scene.getScene('Demo').scene.restart(); await steps(20); }
+  out.leak = UG.Debug.diff(snap, UG.Debug.snapshot());
+  out.errors = window.errors.slice(0, 5);
+  document.getElementById('out').textContent = JSON.stringify(out, null, 1); window.__res = out; game.loop.start();
+  return out;
+};
+if (params.get('auto') === '1') setTimeout(function () { check(); }, 300);
+</script>
+</body>
+</html>

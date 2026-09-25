@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Benchmarks · UltraGame</title>
+<style>
+  :root { --bg: #070914; --panel: #0e1224; --line: #252e52; --text: #e7ebff; --muted: #9aa3c7; --accent: #7c8cff; --good: #63e6be; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 18px 40px; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p { color: var(--muted); margin: 0 0 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+  label { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+  button { background: linear-gradient(135deg, #3b4bd8, #7c3aed); color: #fff; border: 0; border-radius: 9px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  td.n { text-align: right; }
+  .fps { color: var(--good); font-weight: 600; }
+  #env { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; }
+  #stage { position: fixed; left: -3000px; top: 0; width: 800px; height: 600px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Benchmarks de UltraGame</h1>
+  <p>Cada escenario se ejecuta en un juego nuevo de 800×600 a resolución 1. «CPU render» es el tiempo de preparar y enviar el frame; «frame + GPU» espera a que la GPU termine (lectura de 1 píxel en WebGL, <code>onSubmittedWorkDone</code> en WebGPU), así que incluye el trabajo real de la tarjeta.</p>
+  <div class="bar">
+    <label><input type="checkbox" class="bk" value="webgpu" checked> WebGPU</label>
+    <label><input type="checkbox" class="bk" value="webgl2" checked> WebGL2</label>
+    <label><input type="checkbox" class="bk" value="webgl"> WebGL</label>
+    <label><input type="checkbox" class="bk" value="canvas"> Canvas 2D</label>
+    <button id="run">Ejecutar</button>
+    <span id="state"></span>
+  </div>
+  <table><thead><tr><th>Escenario</th><th>Backend</th><th>Cantidad</th><th class="n">CPU render (ms)</th><th class="n">Frame + GPU (ms)</th><th class="n">FPS equivalentes</th><th class="n">Draw calls</th></tr></thead><tbody id="rows"></tbody></table>
+  <h3>Entorno</h3>
+  <div id="env"></div>
+</div>
+<div id="stage"></div>
+<script src="../dist/ultragame.js"></script>
+<script>
+(function () {
+  'use strict';
+  var stage = document.getElementById('stage'), rows = document.getElementById('rows'), state = document.getElementById('state');
+  var results = window.__bench = { done: false, rows: [] };
+  var circleTex = function (T, key, col) { T.generate(key, 16, 16, function (c) { c.fillStyle = col; c.beginPath(); c.arc(8, 8, 7, 0, 6.3); c.fill(); }); };
+  var COLS = ['#ff6b6b', '#4dabf7', '#69db7c', '#ffd43b'];
+  var SCEN = [
+    { name: 'Sprites en movimiento (rotación)', sizes: [5000, 20000, 60000, 100000], canvasMax: 5000, create: function (N) { return function () { for (var c = 0; c < 4; c++) circleTex(this.textures, 'b' + c, COLS[c]); var l = this.list = []; for (var i = 0; i < N; i++) { var s = this.add.sprite(Math.random() * 800, Math.random() * 600, 'b' + (i & 3)); s.vx = Math.random() * 4 - 2; s.vy = Math.random() * 4 - 2; l.push(s); } this.update = function () { for (var i = 0; i < l.length; i++) { var s = l[i]; s.x += s.vx; s.y += s.vy; if (s.x < 0 || s.x > 800) s.vx = -s.vx; if (s.y < 0 || s.y > 600) s.vy = -s.vy; s.rotation += 0.01; } }; }; } },
+    { name: 'ParticleContainer (sprites ligeros)', sizes: [60000, 200000], gpuOnly: true, create: function (N) { return function () { var texs = []; for (var c = 0; c < 4; c++) { circleTex(this.textures, 'p' + c, COLS[c]); texs.push(this.textures.get('p' + c)); } var pc = this.add.particleContainer(); for (var i = 0; i < N; i++) { var p = new UG.Particle(texs[i & 3], Math.random() * 800, Math.random() * 600); p.vx = Math.random() * 4 - 2; p.vy = Math.random() * 4 - 2; pc.addParticle(p); } var l = pc.particles; this.update = function () { for (var i = 0; i < l.length; i++) { var p = l[i]; p.x += p.vx; p.y += p.vy; if (p.x < 0 || p.x > 800) p.vx = -p.vx; if (p.y < 0 || p.y > 600) p.vy = -p.vy; } }; }; } },
+    { name: 'Emisor de partículas (WASM SIMD si hay)', sizes: [50000], create: function (N) { return function () { circleTex(this.textures, 'sp', '#ffffff'); var e = this.add.particles('sp', { x: 400, y: 300, speed: { min: 40, max: 220 }, lifespan: 4000, scale: { start: 1, end: 0 }, alpha: { start: 1, end: 0 }, blendMode: 'add', frequency: -1, maxParticles: N }); e.useWasm && e.useWasm(true); e.explode(N, 400, 300); this.update = function () { if (e.getAliveParticleCount() < N * 0.9) e.explode(N - e.getAliveParticleCount(), 400, 300); }; }; } },
+    { name: 'Graphics redibujado cada frame', sizes: [1000], create: function (N) { return function () { var g = this.add.graphics(), t = 0; this.update = function () { t += 0.016; g.clear(); for (var i = 0; i < N; i++) { var x = (i * 37) % 800, y = ((i * 91) % 600) + Math.sin(t + i) * 10; g.fillStyle((i * 2654435761) & 0xffffff, 0.8).fillCircle(x, y, 6); if (i % 4 === 0) g.lineStyle(2, 0xffffff, 0.6).strokeRect(x - 8, y - 8, 16, 16); } }; }; } },
+    { name: 'Textos que cambian cada frame', sizes: [200], create: function (N) { return function () { var ts = []; for (var i = 0; i < N; i++) ts.push(this.add.text((i % 20) * 40, Math.floor(i / 20) * 50, '0', { fontSize: 16, fill: 0xffffff })); var k = 0; this.update = function () { k++; for (var i = 0; i < ts.length; i++) ts[i].text = String((k + i) % 1000); }; }; } }
+  ];
+  function envInfo() {
+    var gpu = 'n/d';
+    try { var gl = document.createElement('canvas').getContext('webgl'), e = gl && gl.getExtension('WEBGL_debug_renderer_info'); if (e) gpu = gl.getParameter(e.UNMASKED_RENDERER_WEBGL); } catch (err) { /* */ }
+    return 'UltraGame ' + UG.VERSION + '\nNavegador: ' + navigator.userAgent + '\nGPU: ' + gpu + '\nNúcleos lógicos: ' + (navigator.hardwareConcurrency || '?') + '\nPantalla: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio;
+  }
+  document.getElementById('env').textContent = envInfo();
+  function addRow(r) {
+    var tr = document.createElement('tr');
+    [r.name, r.backend, r.count.toLocaleString('es'), r.cpu.toFixed(2), r.full.toFixed(2), String(Math.round(1000 / r.full)), String(r.draws)].forEach(function (v, i) { var td = document.createElement('td'); td.textContent = v; if (i >= 3) td.className = 'n'; if (i === 5) td.className = 'n fps'; tr.appendChild(td); });
+    rows.appendChild(tr);
+  }
+  async function one(scn, N, kind) {
+    var g = new UG.Game({ width: 800, height: 600, parent: stage, renderer: [kind], scale: { mode: 'none' }, resolution: 1, banner: false, autoStart: false, antialias: false, audio: { noAudio: true }, scenes: [{ key: 'B', create: scn.create(N) }] });
+    await g.ready;
+    if (g.rendererType !== kind) { g.destroy(true); return null; }
+    await UG.Wasm.init();
+    var r = g.renderer, px = new Uint8Array(4);
+    var sync = r.gl ? function () { r.gl.readPixels(0, 0, 1, 1, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px); return null; } : (r.device ? function () { return r.device.queue.onSubmittedWorkDone(); } : function () { return null; });
+    for (var w = 0; w < 20; w++) { g.loop.step(16); await sync(); }
+    var frames = N >= 100000 ? 15 : 30, t0 = performance.now(), cpu = 0;
+    for (var f = 0; f < frames; f++) { var a = performance.now(); g.loop.step(16); cpu += performance.now() - a; await sync(); }
+    var full = (performance.now() - t0) / frames, row = { name: scn.name, backend: kind, count: N, cpu: cpu / frames, full: full, draws: r.stats.drawCalls };
+    g.destroy(true);
+    await new Promise(function (res) { setTimeout(res, 50); });
+    return row;
+  }
+  document.getElementById('run').onclick = async function () {
+    this.disabled = true; rows.textContent = ''; results.rows = []; results.done = false;
+    var kinds = Array.prototype.filter.call(document.querySelectorAll('.bk'), function (c) { return c.checked; }).map(function (c) { return c.value; });
+    for (var s = 0; s < SCEN.length; s++) for (var k = 0; k < kinds.length; k++) {
+      var scn = SCEN[s], kind = kinds[k];
+      if (scn.gpuOnly && kind === 'canvas') continue;
+      for (var i = 0; i < scn.sizes.length; i++) {
+        var N = scn.sizes[i]; if (kind === 'canvas' && scn.canvasMax && N > scn.canvasMax) continue;
+        state.textContent = scn.name + ' · ' + kind + ' · ' + N;
+        try { var row = await one(scn, N, kind); if (row) { results.rows.push(row); addRow(row); } } catch (e) { state.textContent = 'Error: ' + e.message; }
+      }
+    }
+    state.textContent = 'Terminado'; results.done = true; results.env = envInfo(); this.disabled = false;
+  };
+  if (/auto=1/.test(location.search)) document.getElementById('run').click();
+})();
+</script>
+</body>
+</html>

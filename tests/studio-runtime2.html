@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pruebas del runtime del Studio (fase 4) · UltraGame</title>
+<style>body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px ui-monospace, Consolas, monospace; } #game { width: 640px; height: 360px; } pre { padding: 10px 14px; white-space: pre-wrap; }</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">check() en la consola · ?auto=1 · &backend=http://127.0.0.1:PUERTO&token=... para probar también el backend local</pre>
+<script src="../dist/ultragame.js"></script>
+<script src="../studio/shared/schema.js"></script>
+<script src="../studio/shared/solidity.js"></script>
+<script src="../studio/runtime/runtime.js"></script>
+<script>
+'use strict';
+var S = UGStudio.schema, RT = UGStudio.runtime, SOL = UGStudio.solidity, Q = new URLSearchParams(location.search);
+function N(type, kind, o) { var n = S.createNode(type, kind); Object.keys(o || {}).forEach(function (k) { if (k === 'props') Object.assign(n.props, o.props); else if (k === 'physics') Object.assign(n.physics, o.physics); else n[k] = o[k]; }); return n; }
+function B(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.BEHAVIORS[type].params), params || {}) }; }
+function C(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.CONDITIONS[type].params), params || {}) }; }
+function Ac(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.ACTIONS[type].params), params || {}) }; }
+function ev(conds, acts) { return { id: S.uid('e'), enabled: true, once: false, conditions: conds, actions: acts }; }
+var PLUGIN = 'var n = 0;\nfunction onGameStart(game) { api.set("plugin", 1); api.bridge.on("ping", function (d) { api.set("ping", d); }); }\nfunction onSceneStart(scene) { api.add("escenas", 1); }\nfunction onUpdate(dt, scene) { n++; api.set("pframes", n); }\nfunction onBridge(name, data) { api.set("ultimoPuente", name); }';
+function web3Part(p) {
+  var T = SOL.TEMPLATES.erc20, src = T.source('Oro'), abi = SOL.abiFor(src, 'Oro').abi;
+  p.web3 = { enabled: true, mode: 'mock', chains: [11155111], defaultChain: 11155111, maxValue: '0.05', contracts: [{ id: 'koro', name: 'Oro', source: src, abi: JSON.stringify(abi), addresses: {}, mock: JSON.stringify({ balanceOf: '2500000000000000000', name: 'Oro' }), bytecode: '', args: [] }] };
+}
+function project2D() {
+  var p = S.createProject('Fase4 2D'), sc = S.createScene('2d', 'Rigida');
+  p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc); p.startScene = sc.id;
+  sc.env2d = { engine: 'rigid', lights: true, ambient: '#20243a', weather: 'rain' }; sc.gravity = 900;
+  sc.nodes.push(N('sky2d', '2d', { name: 'Cielo' }), N('clouds2d', '2d', { name: 'Nubes', y: 40 }));
+  sc.nodes.push(N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40, fill: '#2f9e44' }, physics: { type: 'static', shadow: true } }));
+  for (var i = 0; i < 4; i++) sc.nodes.push(N('shape', '2d', { name: 'Caja', x: 400, y: 300 - i * 34, tags: ['caja'], props: { width: 32, height: 32, fill: '#b07a3c' }, physics: { type: 'dynamic', density: 1, friction: 0.5, shadow: true } }));
+  sc.nodes.push(N('shape', '2d', { name: 'Pelota', x: 200, y: 100, tags: ['pelota'], props: { shape: 'circle', width: 30, height: 30, fill: '#ff6b6b' }, physics: { type: 'dynamic', circle: true, bounce: 0.3 } }));
+  sc.nodes.push(N('shape', '2d', { name: 'Jugador', x: 80, y: 280, tags: ['jugador'], props: { width: 28, height: 44, fill: '#4dabf7' }, physics: { type: 'dynamic' }, behaviors: [B('platformer')] }));
+  sc.nodes.push(N('light2d', '2d', { name: 'Farol', x: 300, y: 120, props: { radius: 260, color: '#ffe0a8' } }));
+  sc.nodes.push(N('text', '2d', { name: 'Info', x: 320, y: 20, props: { text: 'saldo {saldo} · http {respuesta_estado} · {respuesta.posicion}', size: 14 } }));
+  sc.events.push(ev([C('start')], [Ac('web3Connect'), Ac('bridgeSend', { name: 'listo', data: '{"escena": "rigida"}' })]));
+  sc.events.push(ev([C('web3Event', { event: 'connect' })], [Ac('setVar', { variable: 'conectado', value: '1' }), Ac('web3Read', { contract: 'Oro', fn: 'balanceOf', args: '{cuenta}', variable: 'saldo', decimals: 18 })]));
+  sc.events.push(ev([C('web3Event', { event: 'read' })], [Ac('addVar', { variable: 'lecturas', value: 1 })]));
+  sc.events.push(ev([C('web3Connected')], [Ac('setVar', { variable: 'web3ok', value: '1' })]));
+  sc.events.push(ev([C('bridgeMessage', { name: 'ping', variable: 'datosPing' })], [Ac('bridgeSend', { name: 'pong', data: '{datosPing}' })]));
+  if (Q.get('backend')) {
+    sc.events.push(ev([C('start')], [Ac('httpRequest', { method: 'POST', path: '/api/puntuaciones', body: '{"nombre": "{nombre}", "puntos": 42}', variable: 'respuesta' })]));
+    sc.events.push(ev([C('httpDone', { variable: 'respuesta' })], [Ac('addVar', { variable: 'httpHechas', value: 1 })]));
+    p.backend = { enabled: true, url: '', routes: [], cors: [] };
+  }
+  sc.events.push(ev([C('after', { seconds: 0.3 })], [Ac('impulse', { target: 'tag:pelota', x: 300, y: -200 }), Ac('setWeather', { weather: 'snow' })]));
+  p.vars.nombre = 'ana "comillas"';
+  p.scripts.push({ id: 'plug1', name: 'plugin', code: PLUGIN, plugin: true });
+  web3Part(p);
+  return p;
+}
+function project3D() {
+  var p = S.createProject('Fase4 3D'), sc = S.createScene('3d', 'Mundo');
+  p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc); p.startScene = sc.id;
+  Object.assign(sc.env, { clouds: true, cloudCoverage: 0.6, stars: true, dayNight: true, timeOfDay: 22, daySpeed: 0, weather: 'rain' });
+  sc.nodes.push(N('terrain', '3d', { name: 'Colinas', position: [0, 0, 0], props: { width: 60, depth: 60, segments: 32, height: 4 } }));
+  sc.nodes.push(N('grass', '3d', { name: 'Hierba', position: [0, 0, 0], props: { width: 20, depth: 20, density: 3 } }));
+  sc.nodes.push(N('water', '3d', { name: 'Lago', position: [15, 0.2, 15], props: { width: 10, depth: 10 } }));
+  sc.nodes.push(N('scatter', '3d', { name: 'Bosque', position: [-15, 0, -15], props: { asset: 'atree', count: 12, width: 20, depth: 20 } }));
+  var pl = N('mesh3d', '3d', { name: 'Jugador', position: [0, 3, 0], tags: ['jugador'], props: { shape: 'capsule', sizeX: 0.8, sizeY: 1.8 }, physics: { type: 'character' } });
+  sc.nodes.push(pl);
+  sc.events.push(ev([C('isNight')], [Ac('setVar', { variable: 'noche', value: '1' })]));
+  sc.events.push(ev([C('after', { seconds: 0.2 })], [Ac('addDecal', { kind: 'scorch', at: 'name:Jugador', size: 2 }), Ac('setTimeOfDay', { hour: 12 }), Ac('setWeather', { weather: 'clear' })]));
+  p.assets.push({ id: 'atree', name: 'Árbol', file: 'assets/tree.glb', type: 'model', frameWidth: 0, frameHeight: 0 });
+  return p;
+}
+function loadScripts(p) {
+  var urls = [];
+  // plugins primero, como el reproductor
+  var list = p.scripts.filter(function (s) { return s.plugin; }).concat(p.scripts.filter(function (s) { return !s.plugin; }));
+  return Promise.all(list.map(function (s) {
+    return new Promise(function (res) { var u = URL.createObjectURL(new Blob([RT.wrapScript(s.id, s.code)], { type: 'text/javascript' })); urls.push(u); var el = document.createElement('script'); el.src = u; el.onload = res; el.onerror = res; document.body.appendChild(el); });
+  })).then(function () { return urls; });
+}
+async function steps(g, n) { for (var i = 0; i < n; i++) { g.loop.step(16); if ((i & 7) === 7) await new Promise(function (r) { setTimeout(r, 0); }); } }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function rt(g) { var s = g.scene.getScenes(true).find(function (x) { return x.ugs; }); return s ? s.ugs : null; }
+async function runProject(p, renderer, fn) {
+  RT.resetScripts();
+  var errors = [], logs = [], bridgeOut = [], winErr = [];
+  var onErr = function (e) { winErr.push(e.message); }; window.addEventListener('error', onErr);
+  var urls = await loadScripts(p);
+  var g = RT.start(p, { parent: 'game', renderer: renderer, onLog: function (l, t, s) { logs.push(l + ':' + s + ':' + t); if (l === 'error') errors.push(s + ': ' + t); },
+    assetURL: function (a) { return a.id === 'atree' ? '../assets3d/tree.glb' : null; },
+    onBridge: function (name, data) { bridgeOut.push([name, data]); },
+    backendURL: Q.get('backend') || '', backendToken: Q.get('token') || '' });
+  await g.ready; g.loop.stop();
+  for (var k = 0; k < 300; k++) { await steps(g, 1); if (rt(g)) break; await wait(10); }
+  var res = {};
+  try { res = await fn(g, errors, bridgeOut); } catch (e) { res.fail = e.message + ' ' + (e.stack || '').split('\n')[1]; }
+  g.destroy(true); urls.forEach(URL.revokeObjectURL); window.removeEventListener('error', onErr);
+  res.winErrors = winErr; res.warns = logs.filter(function (l) { return /^warn/.test(l); }).slice(0, 6);
+  return res;
+}
+async function check2D(renderer) {
+  return runProject(project2D(), renderer, async function (g, errors, bridgeOut) {
+    var r = rt(g), out = { renderer: g.rendererType };
+    var cajas = r.resolve('tag:caja'), y0 = cajas.map(function (c) { return c.obj.y; });
+    out.rigid = cajas.every(function (c) { return !!c.obj.rbody; }); out.walls = !!(r.rigidWalls && r.rigidWalls.length === 4);
+    for (var i = 0; i < 12; i++) { await steps(g, 10); await wait(30); }
+    out.stackMoved = +Math.max.apply(null, cajas.map(function (c, i) { return Math.abs(c.obj.y - y0[i]); })).toFixed(1);
+    var ball = r.resolve('tag:pelota')[0]; out.ballVx = +ball.obj.rbody.velocity.x.toFixed(1); out.ballX = Math.round(ball.obj.x);
+    out.lights = !!(g.scene.getScenes(true)[0].sys._lights2d && g.scene.getScenes(true)[0].sys._lights2d.enabled); out.lightCount = r.lights2.length;
+    out.occluders = r.entities.filter(function (e) { return e.occluder; }).length;
+    out.weather = g.scene.getScenes(true).find(function (s) { return s.ugs; }).sys._weather2d.kind;
+    var V = g.ugs.vars;
+    for (var j = 0; j < 30 && (V.lecturas === undefined || (Q.get('backend') && !V.httpHechas)); j++) { await wait(60); await steps(g, 2); }
+    out.web3 = { conectado: V.conectado, web3ok: V.web3ok, cuenta: V.cuenta, saldo: V.saldo, lecturas: V.lecturas };
+    out.plugin = { plugin: V.plugin, escenas: V.escenas, pframes: V.pframes > 0 };
+    g.bridge.receive('ping', { n: 7 }); await steps(g, 3);
+    out.bridge = { out: bridgeOut.map(function (b) { return b[0] + '=' + JSON.stringify(b[1]); }), ping: V.ping, ultimo: V.ultimoPuente, datosPing: V.datosPing };
+    if (Q.get('backend')) out.http = { estado: V.respuesta_estado, posicion: V.respuesta && V.respuesta.posicion, hechas: V.httpHechas, texto: r.resolve('name:Info')[0].obj.text };
+    // seguridad: rutas no permitidas
+    out.blocked = await g.ugs.http('GET', 'https://evil.example/x').then(function () { return 'NO'; }, function (e) { return e.message.slice(0, 50); });
+    out.blocked2 = await g.ugs.http('GET', '/../../etc').then(function () { return 'NO'; }, function (e) { return e.message.slice(0, 40); });
+    try { g.bridge.send('grande', 'x'.repeat(70000)); out.bigBridge = bridgeOut.some(function (b) { return b[0] === 'grande'; }) ? 'NO' : 'rechazado'; } catch (e) { out.bigBridge = 'excepción ' + e.message; }
+    out.errors = errors.slice(0, 5);
+    return out;
+  });
+}
+async function check3D(renderer) {
+  return runProject(project3D(), renderer, async function (g, errors) {
+    var r = rt(g), out = { renderer: g.rendererType }, v = r.view;
+    await steps(g, 5);
+    out.sky = !!v.scene3d.sky; out.clouds = !!(v.scene3d.sky && v.scene3d.sky.clouds); out.dayNight = !!(v._dayNight && !v._dayNight.destroyed); out.startHour = v._dayNight && v._dayNight.time;
+    out.nightVar = g.ugs.vars.noche;
+    out.weather0 = v._weather && v._weather.kind;
+    var grass = r.resolve('name:Hierba')[0]; out.grassInstances = grass.obj.instances;
+    var water = r.resolve('name:Lago')[0]; out.water = !!(water.obj.material && water.obj.material.water);
+    for (var i = 0; i < 20; i++) { await steps(g, 1); await wait(20); }
+    var forest = r.resolve('name:Bosque')[0]; out.forestTransforms = forest.obj.transforms ? forest.obj.transforms.length : 0;
+    out.hourAfter = v._dayNight && v._dayNight.time; out.weather1 = v._weather && v._weather.kind; out.decals = v.decals ? v.decals.count || v.decals._live || 'ok' : 0;
+    // la hierba sigue al terreno (y de las matas ≠ 0)
+    var tf = R_heightSample(r); out.groundFollow = tf;
+    out.errors = errors.slice(0, 5);
+    return out;
+  });
+}
+function R_heightSample(r) { var def = r.def.nodes.find(function (n) { return n.type === 'grass'; }), f = r.groundAt(def); return f ? [+f(5, 5).toFixed(3), +f(25, 22).toFixed(3)] : null; }
+async function check() {
+  var before = UG.Debug.snapshot(), res = {};
+  res.d2 = await check2D(Q.get('r') || 'webgl2');
+  res.d3 = await check3D(Q.get('r3') || 'webgl2');
+  await wait(60);
+  res.leak = UG.Debug.diff(before, UG.Debug.snapshot());
+  document.getElementById('out').textContent = JSON.stringify(res, null, 1);
+  window.__res = res;
+  return res;
+}
+if (Q.get('auto') === '1') check();
+</script>
+</body>
+</html>

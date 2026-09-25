@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>UltraGame 3D · Básico</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}</style>
+</head>
+<body>
+<div id="game"></div>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var R = params.get('r') || 'auto';
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+var origErr = UG.Log.error; UG.Log.error = function () { window.errors.push(Array.prototype.join.call(arguments, ' ')); return origErr.apply(UG.Log, arguments); };
+class Main extends UG.Scene {
+  constructor() { super('Main'); }
+  create() {
+    var v = this.view = this.add.view3d();
+    v.scene3d.setSky({});
+    v.add.sunlight({ shadowSize: 20 });
+    v.add.plane(40, 40, 0x9a9a9a);
+    this.box = v.add.box(1, 1, 1, 0xff2020).setPosition(0, 0.5, 0);
+    this.ball = v.add.sphere(0.5, { color: 0x2040ff, roughness: 0.3 }).setPosition(2, 0.5, 0);
+    this.toon = v.add.torus(0.5, 0.18, { type: 'toon', color: 0x40ff60, outline: 0.03 }).setPosition(-2.2, 0.8, 0.5);
+    var trees = v.add.instanced(UG.Geometry3D.cone(0.5, 1.6), 0x2e7d32, 30);
+    for (var i = 0; i < 30; i++) trees.setTransformAt(i, new UG.Vec3(-12 + (i % 10) * 2.6, 0.8, -8 - Math.floor(i / 10) * 2.5), 0, 1);
+    this.glass = v.add.box(1, 1.4, 0.1, { color: 0x88ccff, opacity: 0.4 }).setPosition(1, 0.7, 2);
+    this.label = this.add.text(12, 12, '3D · ' + this.game.rendererType, { fontSize: 20, fill: 0xffffff, stroke: 0x000000, strokeThickness: 4 });
+    v.camera.position.set(0, 4, 8); v.camera.lookAt(0, 0.5, 0);
+  }
+  update(t, dt) { this.box.rotation.y += dt * 0.001; }
+}
+var game = new UG.Game({ width: 800, height: 600, parent: 'game', renderer: R, backgroundColor: 0x000000, scenes: [Main], banner: false, audio: { noAudio: true } });
+window.game = game;
+/** Lee píxeles de la RT de la vista y devuelve muestras para verificar orientación, sombras y colores */
+window.check = function () {
+  var sc = game.scene.getScene('Main'), v = sc.view, r = game.renderer;
+  return r.extract.pixels(v.rt).then(function (px) {
+    var W = px.width, H = px.height, d = px.data, res = v.rt.source.resolution;
+    var at = function (x, y) { x = Math.round(x * res); y = Math.round(y * res); var o = (y * W + x) * 4; return [d[o], d[o + 1], d[o + 2], d[o + 3]]; };
+    var sp = function (x, y, z) { var s = v.worldToScreen(new UG.Vec3(x, y, z)); return at(s.x - v.x, s.y - v.y); };
+    return {
+      size: [W, H], res: res, type: r.type,
+      top: at(v.viewWidth / 2, 8), bottom: at(v.viewWidth / 2, v.viewHeight - 8),
+      box: sp(0, 0.5, 0.5), ball: sp(2, 0.5, 0.5), toon: sp(-2.2, 0.8, 0.5),
+      shadow: sp(-0.75, 0.001, 0.0), lit: sp(-1.5, 0.001, 2.5),
+      stats: JSON.parse(JSON.stringify(r._r3d.stats)), errors: window.errors.slice()
+    };
+  });
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>UltraGame · Smoke</title>
+<style>html,body{margin:0;height:100%;background:#0b0e1a;color:#dfe6ff;font:14px system-ui}#game{position:absolute;inset:0}</style>
+</head>
+<body>
+<div id="game"></div>
+<script src="../dist/ultragame.js"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var R = params.get('r') || 'auto';
+window.errors = [];
+window.addEventListener('error', function (e) { window.errors.push(String(e.message)); });
+class Main extends UG.Scene {
+  constructor() { super('Main'); }
+  preload() {
+    this.textures.generate('ball', 64, 64, function (ctx) {
+      var g = ctx.createRadialGradient(24, 24, 4, 32, 32, 30);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.4, '#6cf'); g.addColorStop(1, 'rgba(0,80,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.fill();
+    });
+    this.textures.generate('spark', 16, 16, function (ctx) {
+      var g = ctx.createRadialGradient(8, 8, 0, 8, 8, 8); g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 16, 16);
+    });
+  }
+  create() {
+    var s = this;
+    this.cameras.main.setBackgroundColor(0x141a33);
+    var g = this.add.graphics();
+    g.fillStyle(0xff4d6d).fillRect(20, 20, 120, 80);
+    g.lineStyle(8, 0xffd43b, 0.6).setLineJoin('round').strokeRect(170, 20, 120, 80);
+    g.rect(320, 20, 120, 80).fill(0x51cf66).stroke({ width: 4, color: 0xffffff, join: 'miter' });
+    g.fillStyle(0x845ef7).fillCircle(520, 60, 40);
+    g.lineStyle(6, 0x22b8cf, 1).strokeCircle(620, 60, 36);
+    g.star(720, 60, 5, 40, 18).fill(0xfcc419);
+    g.lineStyle(10, 0xffffff, 0.5).setLineJoin('miter');
+    g.strokePoints([{x: 30, y: 200}, {x: 120, y: 130}, {x: 200, y: 210}, {x: 290, y: 140}], false);
+    g.setLineJoin('round').setLineCap('round').lineStyle(14, 0xff922b, 0.55);
+    g.strokePoints([{x: 330, y: 200}, {x: 420, y: 130}, {x: 500, y: 210}, {x: 590, y: 140}], false);
+    g.fillGradientStyle(0xff0080, 0x7928ca, 0x00dfd8, 0xffd000, 1).fillRoundedRect(620, 130, 150, 80, 20);
+    this.ball = this.add.sprite(400, 330, 'ball');
+    this.tweens.add({ targets: this.ball, x: 600, duration: 1200, ease: 'sineInOut', yoyo: true, repeat: -1 });
+    this.txt = this.add.text(20, 250, 'UltraGame ' + UG.VERSION + ' · ' + this.game.rendererType, { fontSize: 28, fontWeight: 'bold', fill: [0xffffff, 0x74c0fc], stroke: 0x000000, strokeThickness: 4, dropShadow: { blur: 4, distance: 3 } });
+    UG.BitmapFont.from('hud', { fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, fontWeight: 'bold' });
+    this.bt = this.add.bitmapText(20, 300, 'hud', 'BitmapText 0');
+    this.em = this.add.particles('spark', { x: 200, y: 420, speed: { min: 60, max: 220 }, angle: { min: 200, max: 340 }, lifespan: 1200, scale: { start: 1.2, end: 0 }, color: [0xffffff, 0xffd43b, 0xff6b6b, 0x5f3dc4], blendMode: 'add', frequency: 16, quantity: 3, gravityY: 120 });
+    var cont = this.add.container(620, 420);
+    for (var i = 0; i < 6; i++) { var sp = this.add.sprite(Math.cos(i) * 50, Math.sin(i) * 50, 'ball').setScale(0.5); cont.add(sp); }
+    cont.filters = [new UG.GlowFilter({ distance: 10, outerStrength: 2, color: 0x66ffff })];
+    this.cont = cont;
+    this.tiling = this.add.tileSprite(400, 540, 780, 60, 'ball').setTileScale(0.5);
+    this.frameN = 0;
+  }
+  update(t, dt) {
+    this.frameN++;
+    this.bt.text = 'BitmapText ' + this.frameN;
+    this.cont.rotation += dt * 0.001;
+    this.tiling.tilePositionX += dt * 0.05;
+  }
+}
+var game = new UG.Game({ width: 800, height: 600, parent: 'game', renderer: R, backgroundColor: 0x000000, scenes: [Main], stats: true });
+window.game = game;
+</script>
+</body>
+</html>
