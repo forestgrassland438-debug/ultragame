@@ -364,7 +364,8 @@ const MENUS = {
     { label: 'Acerca de UltraGame Studio', icon: 'ℹ', action: () => dialog('UltraGame Studio', (b) => { b.appendChild(h('p', 'Editor de juegos 2D y 3D para el motor UltraGame ' + (window.UG ? window.UG.VERSION : '') + '.')); b.appendChild(h('p.help', 'Almacenamiento: ' + store.label)); b.appendChild(h('p.help', 'Los juegos se prueban en un iframe aislado (sandbox) y se exportan como HTML5 con una política de seguridad de contenido estricta.')); }) }
   ]
 };
-async function run(fn) { try { await fn(); } catch (e) { toast(e.message, 'error'); console.error(e); } }
+// errores esperados (404/403 del servidor: algo que el usuario puede resolver) solo como aviso; los demás también en la consola
+async function run(fn) { try { await fn(); } catch (e) { const expected = e && (e.status === 404 || e.status === 403 || e.status === 409); toast(e.message, expected ? 'warn' : 'error', expected ? 6000 : undefined); if (!expected) console.error(e); } }
 const menubar = document.getElementById('menubar');
 // móvil: un solo botón ☰ con todos los menús agrupados
 document.getElementById('btn-hamburger').onclick = (e) => { const items = []; Object.keys(MENUS).forEach((name) => { items.push({ group: name }); MENUS[name]().forEach((it) => { if (it && !it.group) items.push(it); }); }); showMenu(items, e.currentTarget); };

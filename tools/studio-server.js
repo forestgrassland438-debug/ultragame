@@ -327,7 +327,7 @@ async function api(req, res, url) {
       const dir = projectDir(q.get('p')); if (!dir || !fs.existsSync(dir)) return fail(res, 404, 'no existe');
       const target = q.get('what') === 'export' ? path.join(dir, 'export') : dir;
       if (!isSafePath(WORKSPACE, target)) return fail(res, 403, 'ruta no permitida');
-      if (!fs.existsSync(target)) return fail(res, 404, 'todavía no existe');
+      if (!fs.existsSync(target)) return fail(res, 404, q.get('what') === 'export' ? 'Todavía no has exportado este proyecto: usa primero Archivo › Exportar a carpeta (disco)' : 'La carpeta del proyecto no existe');
       const cmd = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
       try { const ch = spawn(cmd, [target], { detached: true, stdio: 'ignore', shell: false }); ch.on('error', () => {}); ch.unref(); } catch (e) { return fail(res, 500, 'no se pudo abrir'); }
       return send(res, 200, { ok: true });
