@@ -41,7 +41,8 @@ function playerHarness(assets = [], assetData = async () => new ArrayBuffer(1)) 
   const app = { editor: { projectId: 'one', project: { name: 'One', scripts: [], scenes: [], assets, web3: { enabled: false }, backend: { enabled: false } }, assetVersion: {}, sceneId: 'first', scene: { name: 'First' }, store: { assetData } },
     code: { commit: { flush() {} }, errors: new Map() }, console: { clear() {}, log(...a) { logs.push(a); } }, setPlaying() {}, rendererChoice: () => 'canvas' };
   const context = { window, document, location: { origin: 'http://127.0.0.1:5210' }, toast() {}, h: dom.h, clear: dom.clear, dialog: async () => null, encodeURIComponent, JSON,
-    setTimeout(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); } };
+    setTimeout(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); },
+    setInterval(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearInterval(id) { timers.delete(id); }, prompt: async () => null };
   // play.js es un módulo ES: se quitan import/export para evaluarlo como script con sus dependencias simuladas
   const src = fs.readFileSync(path.join(ROOT, 'studio/js/play.js'), 'utf8').replace(/^import .*;\r?\n/mg, '').replace(/^export /mg, '');
   vm.runInNewContext(src + '\nglobalThis.Player = Player;', context);

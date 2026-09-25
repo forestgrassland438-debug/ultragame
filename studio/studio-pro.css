@@ -170,6 +170,16 @@ details.sub > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .game-bar .bridge-data { width: 170px; }
 .game-stage { flex: 1; position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; align-content: center; gap: 22px; padding: 12px; overflow: auto; background: radial-gradient(circle at 50% 40%, #1b2032, #07080c); }
 :root[data-theme="light"] .game-stage { background: radial-gradient(circle at 50% 40%, #e9edf7, #c9cfdf); }
+/* variables en vivo (Jugar › 🔎 Variables) */
+.vars-panel { position: absolute; top: 10px; right: 10px; z-index: 5; width: 260px; max-width: calc(100% - 20px); max-height: calc(100% - 20px); display: flex; flex-direction: column; background: color-mix(in srgb, var(--bg2) 94%, transparent); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.35); font-size: 12px; }
+.vars-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.vars-head .grow { flex: 1; }
+.vars-body { overflow: auto; padding: 6px 8px 8px; }
+.vars-meta { color: var(--muted, #9aa3b5); margin-bottom: 6px; }
+.vars-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; border-bottom: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.vars-key { flex: 0 0 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
+.vars-val { flex: 1; min-width: 0; text-align: left; background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 5px; color: var(--accent2, #7ee0c3); font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.vars-val:hover, .vars-val:focus-visible { border-color: var(--line); background: var(--bg); }
 .dev-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .dev-wrap.fill { position: absolute; inset: 0; }
 .dev-wrap.fill .dev-body, .dev-wrap.fill .dev-screen { position: absolute; inset: 0; }

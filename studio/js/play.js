@@ -3,7 +3,7 @@
  * Vista previa en dispositivos (móviles, tabletas, plegables, consolas, monitores) con orientación, marco, zona segura
  * y zoom; modo «comparar» con varios dispositivos a la vez. Puente con la página, cartera web3 (a través de Web3Host,
  * que valida cada petición) y backend local del juego. */
-import { h, clear, toast, dialog } from './dom.js';
+import { h, clear, toast, dialog, prompt } from './dom.js';
 
 const RT = window.UGStudio.runtime;
 
@@ -55,14 +55,14 @@ export class Player {
     this.app = app; this.frames = []; this.cache = new Map(); this.onMsg = null; this.playing = false; this.project = null;
     this.token = 0; // cada Jugar/Detener lo incrementa: una carga asíncrona antigua no puede arrancar después
     this.host = document.getElementById('game-host');
-    this.prefs = { device: 'fill', landscape: null, zoom: 'fit', bezel: true, safe: true, compare: false, compareIds: ['iphone-15', 'pixel-8', 'ipad-air', 'fhd'], customW: 400, customH: 800 };
+    this.prefs = { device: 'fill', landscape: null, zoom: 'fit', bezel: true, safe: true, colliders: false, compare: false, compareIds: ['iphone-15', 'pixel-8', 'ipad-air', 'fhd'], customW: 400, customH: 800 };
     try {
       // preferencias guardadas: se valida cada campo (un valor dañado no debe romper Jugar)
       const s = JSON.parse(localStorage.getItem(PREF_KEY) || '{}') || {}, P = this.prefs;
       if (typeof s.device === 'string') P.device = s.device;
       if (s.landscape === null || typeof s.landscape === 'boolean') P.landscape = s.landscape;
       if (['fit', '0.5', '0.75', '1'].includes(String(s.zoom))) P.zoom = String(s.zoom);
-      ['bezel', 'safe', 'compare'].forEach((k) => { if (typeof s[k] === 'boolean') P[k] = s[k]; });
+      ['bezel', 'safe', 'compare', 'colliders'].forEach((k) => { if (typeof s[k] === 'boolean') P[k] = s[k]; });
       if (Array.isArray(s.compareIds)) { const ids = s.compareIds.filter((id) => typeof id === 'string' && DEV[id]).slice(0, 4); if (ids.length) P.compareIds = ids; }
       ['customW', 'customH'].forEach((k) => { if (typeof s[k] === 'number' && isFinite(s[k])) P[k] = Math.max(200, Math.min(4000, Math.round(s[k]))); });
     } catch (e) { /* modo privado o datos dañados */ }
@@ -133,12 +133,13 @@ export class Player {
       const P = this.run.project, web3 = P.web3 || {}, backend = P.backend || {};
       // los ArrayBuffer se transfieren al iframe: cada dispositivo recibe su propia copia
       const files = this.run.files.map((f) => ({ id: f.id, file: f.file, data: f.data.slice(0) }));
-      fr.el.contentWindow.postMessage({ type: 'run', project: P, files, scripts: this.run.scripts, renderer: this.app.rendererChoice(), startScene: this.run.startScene,
+      fr.el.contentWindow.postMessage({ type: 'run', project: P, files, scripts: this.run.scripts, renderer: this.app.rendererChoice(), startScene: this.run.startScene, debugPhysics: !!this.prefs.colliders,
         web3: web3.enabled && web3.mode === 'wallet' && primary ? 'studio' : '', backend: backend.enabled ? (this.app.backend && this.app.backend.devInfo()) : null }, '*', files.map((f) => f.data));
       if (primary && this.app.web3) this.app.web3.hostProxy.attach(fr.el.contentWindow, P);
     }
     else if (m.type === 'log') { if (primary || m.level === 'error') this.onLog(String(m.level), (primary ? '' : '[' + fr.dev.name + '] ') + String(m.text), String(m.source || '')); }
     else if (m.type === 'started') { if (primary) this.app.console.log('ok', 'Renderizador: ' + String(m.renderer), 'Studio'); }
+    else if (m.type === 'vars') { if (primary) this.renderVars(m); }
     else if (m.type === 'failed') { if (primary) toast('El juego no pudo arrancar: mira la consola', 'error'); }
     else if (m.type === 'bridge-out') {
       let d = ''; try { d = JSON.stringify(m.data); } catch (x) { d = String(m.data); }
@@ -150,6 +151,8 @@ export class Player {
       this.app.web3.hostProxy.handle(String(m.method), m.params).then((result) => reply({ result: JSON.parse(JSON.stringify(result === undefined ? null : result)) }), (err) => reply({ error: { code: (err && err.code) | 0, message: String((err && err.message) || err).slice(0, 300) } }));
     }
   }
+  /** Mensaje de control a todos los dispositivos que ya están jugando */
+  post(msg) { this.frames.forEach((f) => { if (!f.ready) return; try { f.el.contentWindow.postMessage(msg, '*'); } catch (e) { /* juego cerrado */ } }); }
   /** Envía un mensaje del puente al juego (como si lo mandara la página que lo contiene) */
   sendBridge(name, data) {
     if (!this.frames.length) return;
@@ -166,6 +169,7 @@ export class Player {
     const ids = this.prefs.compare ? this.prefs.compareIds.filter((id) => DEV[id]).slice(0, 4) : [this.prefs.device];
     ids.forEach((id, i) => this.addFrame(DEV[id], i));
     this.layout();
+    if (this.varsOpen) this.openVars();
     clearTimeout(this.watch);
     this.watch = setTimeout(() => { if (this.frames[0] && !this.frames[0].ready) this.app.console.log('warn', 'El reproductor no responde. Si tu navegador o una extensión bloquea los iframes aislados (sandbox), abre el Studio en Edge o Chrome, o prueba con Archivo › Descargar HTML único.', 'Studio'); }, 8000);
     setTimeout(() => { if (this.frames[0]) this.frames[0].el.focus(); }, 300);
@@ -219,11 +223,14 @@ export class Player {
     const rot = h('button.btn.small', { type: 'button', title: 'Girar (vertical / horizontal)', on: { click: () => { const d = DEV[P.device]; if (P.device === 'custom') { const t = P.customW; P.customW = P.customH; P.customH = t; } else P.landscape = !(this.sizeOf(d).land); this.savePrefs(); this.layout(); } } }, '⟳ Girar');
     const zoom = h('select', { title: 'Zoom', 'aria-label': 'Zoom', on: { change: (e) => { P.zoom = e.target.value; this.savePrefs(); this.layout(); } } }, [['fit', 'Ajustar'], ['0.5', '50 %'], ['0.75', '75 %'], ['1', '100 %']].map(([v, t]) => h('option', { value: v, selected: String(P.zoom) === v }, t)));
     const chk = (key, label, title) => h('label.chk', { title }, h('input', { type: 'checkbox', checked: P[key], on: { change: (e) => { P[key] = e.target.checked; this.savePrefs(); this.layout(); } } }), ' ' + label);
+    // ver colisiones: se cambia en caliente en todos los dispositivos, sin reiniciar la partida
+    const dbg = h('label.chk', { title: 'Dibujar lo que choca mientras juegas (cajas, círculos, cápsulas)' }, h('input', { type: 'checkbox', checked: P.colliders, on: { change: (e) => { P.colliders = e.target.checked; this.savePrefs(); this.post({ type: 'debug', physics: P.colliders }); } } }), ' Colisiones');
+    const vars = h('button.btn.small', { type: 'button', class: this.varsOpen ? 'on' : null, title: 'Ver y cambiar las variables globales mientras juegas', on: { click: (e) => { this.toggleVars(); e.currentTarget.classList.toggle('on', !!this.varsOpen); } } }, '🔎 Variables');
     const cmp = h('button.btn.small', { type: 'button', class: P.compare ? 'on' : null, title: 'Jugar en varios dispositivos a la vez', on: { click: () => this.compareDialog() } }, '▦ Comparar');
     const bName = h('input.bridge-name', { type: 'text', placeholder: 'mensaje', value: 'comando', spellcheck: 'false', 'aria-label': 'Nombre del mensaje del puente', on: { keydown: (e) => e.stopPropagation() } });
     const bData = h('input.bridge-data', { type: 'text', placeholder: 'datos (JSON o texto)', spellcheck: 'false', 'aria-label': 'Datos del mensaje del puente', on: { keydown: (e) => { e.stopPropagation(); if (e.key === 'Enter') send(); } } });
     const send = () => { let d = bData.value.trim(); try { d = d === '' ? null : JSON.parse(d); } catch (e) { /* texto */ } this.sendBridge(bName.value.trim() || 'mensaje', d); };
-    return h('div.game-bar', sel, rot, zoom, chk('bezel', 'Marco', 'Dibujar el marco del dispositivo'), chk('safe', 'Zona segura', 'Mostrar muesca, isla y barras del sistema'), cmp,
+    return h('div.game-bar', sel, rot, zoom, chk('bezel', 'Marco', 'Dibujar el marco del dispositivo'), chk('safe', 'Zona segura', 'Mostrar muesca, isla y barras del sistema'), dbg, vars, cmp,
       h('span.grow'), h('span.help', '🔌'), bName, bData, h('button.btn.small', { type: 'button', title: 'Enviar el mensaje al juego (como la página que lo contiene)', on: { click: send } }, 'Enviar'),
       h('button.btn.small', { type: 'button', title: 'Reiniciar la partida', on: { click: () => this.restart() } }, '↻'));
   }
@@ -266,7 +273,7 @@ export class Player {
   }
   stop(silent) {
     this.token++; // cancela cualquier Jugar que aún esté leyendo recursos
-    clearTimeout(this.watch);
+    clearTimeout(this.watch); clearInterval(this.varsTimer); this.varsTimer = 0; this.varsBox = null;
     if (this.ro) this.ro.disconnect();
     if (this.onMsg) { window.removeEventListener('message', this.onMsg); this.onMsg = null; }
     this.frames.forEach((f) => { f.el.src = 'about:blank'; f.el.remove(); }); this.frames = [];
@@ -275,5 +282,42 @@ export class Player {
     if (this.playing) { this.playing = false; this.app.editor.playing = false; this.app.setPlaying(false); if (!silent) this.app.console.log('info', '■ Juego detenido', 'Studio'); }
   }
   get frame() { return this.frames[0] ? this.frames[0].el : null; }
+  /* ---------------------------------------------------------------- variables en vivo */
+  toggleVars() { this.varsOpen = !this.varsOpen; if (this.varsOpen) this.openVars(); else this.closeVars(); }
+  openVars() {
+    if (!this.stage) return;
+    if (!this.varsBox || !this.varsBox.isConnected) {
+      this.varsBox = h('div.vars-panel', { role: 'region', 'aria-label': 'Variables en vivo' }, h('div.vars-head', h('b', '🔎 Variables'), h('span.grow'), h('button.icon', { type: 'button', title: 'Cerrar', on: { click: () => { this.varsOpen = false; this.closeVars(); const b = this.bar && Array.from(this.bar.querySelectorAll('button')).find((x) => /Variables/.test(x.textContent)); if (b) b.classList.remove('on'); } } }, '✕')), h('div.vars-body', h('div.help', 'Esperando al juego…')));
+      this.stage.appendChild(this.varsBox);
+    }
+    clearInterval(this.varsTimer);
+    // el reproductor responde con { vars, fps, scene }: dos veces por segundo mientras el panel está abierto
+    const ask = () => { const f = this.frames[0]; if (f && f.ready) { try { f.el.contentWindow.postMessage({ type: 'vars' }, '*'); } catch (e) { /* juego cerrado */ } } };
+    ask(); this.varsTimer = setInterval(ask, 500);
+  }
+  closeVars() { clearInterval(this.varsTimer); this.varsTimer = 0; if (this.varsBox) this.varsBox.remove(); this.varsBox = null; }
+  renderVars(m) {
+    const box = this.varsBox; if (!box || this.editingVar) return;
+    const body = box.querySelector('.vars-body'); clear(body);
+    const vars = m.vars && typeof m.vars === 'object' ? m.vars : {}, keys = Object.keys(vars).sort((a, b) => a.localeCompare(b));
+    body.appendChild(h('div.vars-meta', (m.scene ? 'Escena: ' + String(m.scene).slice(0, 80) + ' · ' : '') + (Number(m.fps) | 0) + ' FPS' + (m.paused ? ' · en pausa' : '')));
+    if (!keys.length) { body.appendChild(h('div.help', 'El juego no tiene variables globales todavía.')); return; }
+    const show = (v) => (typeof v === 'string' ? '«' + v + '»' : v === null ? 'null' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+    keys.forEach((k) => {
+      const v = vars[k];
+      body.appendChild(h('div.vars-row', h('span.vars-key', { title: k }, k), h('button.vars-val', { type: 'button', title: 'Clic para cambiar el valor en la partida', on: { click: () => this.editVar(k, v) } }, show(v).slice(0, 120))));
+    });
+  }
+  async editVar(name, value) {
+    this.editingVar = true;
+    let v;
+    try { v = await prompt('Cambiar «' + name + '»', 'Nuevo valor (número, texto, true/false o JSON). Solo cambia esta partida, no el proyecto.', typeof value === 'string' ? value : JSON.stringify(value), { max: 2000, allowEmpty: true }); }
+    finally { this.editingVar = false; }
+    if (v === null || v === undefined) return;
+    let val = v; const t = String(v).trim();
+    if (t !== '' && /^(-?\d+(\.\d+)?(e[+-]?\d+)?|true|false|null|[\[{"].*)$/i.test(t)) { try { val = JSON.parse(t); } catch (e) { val = v; } }
+    const f = this.frames[0]; if (f && f.ready) { try { f.el.contentWindow.postMessage({ type: 'setVar', name, value: val }, '*'); } catch (e) { /* juego cerrado */ } }
+    this.app.console.log('info', '🔎 ' + name + ' = ' + JSON.stringify(val).slice(0, 200), 'Studio');
+  }
   clearCache() { this.cache.clear(); }
 }

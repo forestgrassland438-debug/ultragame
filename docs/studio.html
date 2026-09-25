@@ -191,11 +191,15 @@
     <li><b>Estática:</b> no se mueve; es el suelo o el muro.</li>
     <li><b>Cinemática:</b> se mueve por comportamientos o scripts sin gravedad y empuja a los dinámicos (plataformas móviles).</li>
     <li>Opciones: rebote, rozamiento del aire, cuerpo circular, choca con los bordes, se puede empujar y «sólido para otros dinámicos».</li>
+    <li><b>Caja de colisión:</b> «Ajustada al dibujo» (por defecto) ignora los bordes transparentes de la imagen; «Imagen completa» usa todo el rectángulo; «Personalizada» deja poner ancho, alto y desplazamiento.</li>
+    <li><b>Plataforma de un sentido</b> (estáticas y cinemáticas): se atraviesa desde abajo y se pisa desde arriba.</li>
+    <li>Con la casilla <b>Colisiones</b> de la vista ves lo que choca en el juego: naranja estático, azul cinemático, amarillo dinámico.</li>
   </ul>
   <h3>3D</h3>
   <ul>
     <li><b>Estática (caja):</b> caja envolvente (rápida). <b>Estática exacta (malla):</b> la forma real del modelo (casas en las que se entra, rampas, terrenos).</li>
     <li><b>Cuerpo dinámico:</b> esfera o caja con masa y rebote. <b>Personaje:</b> cápsula que sube escalones y rampas (la usan los jugadores 3D y la persecución). <b>Zona:</b> detecta contactos sin chocar (metas, puntos de control).</li>
+    <li>La casilla <b>Colisiones</b> de la vista 3D dibuja cada colisionador tal como lo creará el juego: cajas naranjas (estáticas), amarillas (dinámicas), la cápsula azul del personaje (empieza en la base del modelo) y zonas rosas. De las mallas exactas solo se marca su caja, tenue.</li>
   </ul>
   <div class="note">Los contactos para eventos, coleccionables y peligros se detectan por <b>etiquetas</b>, también entre objetos sin física.</div>
 </section>
@@ -206,7 +210,7 @@
   <ul>
     <li><b>self</b> es el objeto de la condición (el que se toca o se pulsa) y <b>other</b> el otro objeto del contacto. En los campos «Objeto» puedes escribir <code>self</code>, <code>other</code>, <code>tag:enemigo</code>, <code>name:Jugador</code> o <code>all</code>.</li>
     <li>Las condiciones de contacto se cumplen <b>al empezar a tocarse</b> (no mientras siguen tocándose).</li>
-    <li>«Comparar variable» y «Mientras una tecla…» se pueden negar (casilla <b>no</b>). «Solo una vez» ejecuta el evento la primera vez.</li>
+    <li>«Comparar variable», «Mientras una tecla…», «Probabilidad», «La cartera está conectada» y «Es de noche» se pueden negar (casilla <b>no</b>). «Solo una vez» ejecuta el evento la primera vez.</li>
     <li>En los textos, <code>{nombre}</code> se sustituye por el valor de la variable (del objeto si la tiene propia, si no global).</li>
   </ul>
   <h3>Ejemplos</h3>
@@ -228,7 +232,7 @@
   <h2>Scripts (código)</h2>
   <p>Un script es JavaScript normal. Asígnalo a uno o varios objetos (Inspector › Script) o escríbelo como <b>script de escena</b>. Cada objeto recibe su propia copia (sus variables no se mezclan). Dentro tienes:</p>
   <ul>
-    <li><code>self</code>: el objeto del motor (un sprite, texto, forma… en 2D; un <code>Node3D</code> en 3D). Todo el motor está disponible: <code>self.x</code>, <code>self.body.setVelocity()</code>, <code>self.position</code>, <code>self.play('Walk')</code>… (ver la <a href="index.html">documentación del motor</a>).</li>
+    <li><code>self</code>: el objeto del motor (un sprite, texto, forma… en 2D; un <code>Node3D</code> en 3D). Todo el motor está disponible: <code>self.x</code>, <code>self.body.setVelocity()</code> (física arcade; con cuerpos rígidos <code>self.rbody</code>, y con cualquiera <code>api.velocity()</code> / <code>api.setVelocity()</code> / <code>api.onGround()</code>), <code>self.position</code>, <code>self.play('Walk')</code>… (ver la <a href="index.html">documentación del motor</a>).</li>
     <li><code>api</code>: ayuda del Studio (tabla de abajo). <code>UG</code>: el motor completo.</li>
     <li>Funciones que el Studio llama si existen: <code>onStart()</code>, <code>onUpdate(dt)</code>, <code>onCollide(other)</code>, <code>onClick(pointer)</code>, <code>onDestroy()</code>, <code>onMessage(nombre, datos)</code>. Las funciones del script de escena se pueden llamar desde eventos («Llamar a una función»).</li>
   </ul>
@@ -262,6 +266,7 @@ function guardarRecord() {                      // llamada desde un evento
     <tr><td><code>api.pointer</code></td><td>Ratón o dedo: <code>x</code>, <code>y</code>, <code>worldX</code>, <code>worldY</code>, <code>isDown</code></td></tr>
     <tr><td><code>api.find(ref)</code> · <code>api.findAll(ref)</code> · <code>api.entityOf(obj)</code></td><td>Buscar objetos por <code>'name:X'</code>, <code>'tag:x'</code> o nombre; la entidad tiene <code>name</code>, <code>tags</code>, <code>vars</code>, <code>hp</code>, <code>ch</code> (personaje 3D), <code>body</code></td></tr>
     <tr><td><code>api.spawn(plantilla, x, y, z)</code> · <code>api.destroy(obj, efecto)</code> · <code>api.damage(obj, n)</code></td><td>Crear copias, destruir (sin argumentos: este objeto), quitar vida</td></tr>
+    <tr><td><code>api.velocity(obj)</code> · <code>api.setVelocity(x, y, z, obj)</code> · <code>api.onGround(obj)</code> · <code>api.impulse(obj, x, y, z)</code></td><td>Velocidad (<code>{ x, y, z }</code>), cambiarla (<code>null</code> = no tocar ese eje), si está apoyado y empuje. Funcionan igual con física arcade, cuerpos rígidos y 3D (sin <code>obj</code>: este objeto)</td></tr>
     <tr><td><code>api.get(n)</code> · <code>api.set(n, v)</code> · <code>api.add(n, cantidad)</code> · <code>api.my</code> · <code>api.vars</code></td><td>Variables (propias del objeto primero, luego globales)</td></tr>
     <tr><td><code>api.save(clave, valor)</code> · <code>api.load(clave, porDefecto)</code></td><td>Guardado entre partidas (JSON, máx. 256 KB por clave)</td></tr>
     <tr><td><code>api.sfx(efecto, vol)</code> · <code>api.sound(recurso, vol)</code> · <code>api.music(recurso, vol)</code> · <code>api.stopMusic()</code></td><td>Sonido: efectos sintetizados (<code>coin</code>, <code>laser</code>, <code>explosion</code>, <code>jump</code>, <code>hit</code>, <code>hurt</code>, <code>powerup</code>…) o tus audios</td></tr>
@@ -307,6 +312,8 @@ function guardarRecord() {                      // llamada desde un evento
     <li><b>▶ Jugar</b> (<kbd>F5</kbd>) arranca desde la escena inicial; <b>▶ Esta escena</b> (<kbd>Mayús</kbd>+<kbd>F5</kbd>) desde la actual. <b>■ Detener</b> o <kbd>Esc</kbd> vuelve al editor.</li>
     <li>El juego corre en la pestaña <b>🎮 Juego</b>; haz clic en él para darle el teclado. La <b>consola</b> muestra <code>api.log</code>, avisos y errores con enlace a la línea.</li>
     <li>El selector de renderizador permite probar el juego en WebGPU, WebGL2, WebGL o Canvas (solo 2D).</li>
+    <li>Casilla <b>Colisiones</b> de la barra del juego: dibuja lo que choca mientras juegas (2D y 3D) y se cambia sin reiniciar la partida.</li>
+    <li><b>🔎 Variables</b>: panel con las variables globales, la escena y los FPS en vivo. Haz clic en un valor para cambiarlo en esa partida (vida, puntos, nivel…) sin tocar el proyecto.</li>
   </ul>
 </section>
 

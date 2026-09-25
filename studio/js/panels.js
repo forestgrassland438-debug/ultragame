@@ -168,6 +168,7 @@ export class Inspector {
     const applies = (f) => f.key === 'type' || f.always || (pt !== 'none' && (!f.types || f.types.includes(pt)) && (!f.engine || f.engine === engine) && (!f.when || n.physics[f.when.key] === f.when.eq));
     const physFields = phys.filter(applies).map((f) => field(f, n.physics[f.key], set('physics.' + f.key, 'Física: ' + f.label), ctx));
     if (!is3d && pt !== 'none' && !n.hud) physFields.push(h('div.help', 'El recuadro naranja de la vista es el cuerpo que choca. «Ajustado al dibujo» ignora los bordes transparentes de la imagen.'));
+    else if (is3d && pt !== 'none') physFields.push(h('div.help', pt === 'mesh' ? 'Choca con los triángulos del modelo (se puede entrar en casas y subir rampas). En la vista solo se marca su caja, tenue.' : pt === 'character' ? 'La cápsula azul de la vista es lo que choca: empieza en la base del modelo; ajusta el radio y la altura.' : 'Las líneas de la vista (casilla «Colisiones») son lo que choca en el juego.'));
     if (!is3d && n.hud) physFields.push(h('div.help', 'Los objetos del HUD no tienen física.'));
     this.el.appendChild(section('phys', 'Física', physFields, { closed: n.physics.type === 'none' }));
     // efectos (2D)

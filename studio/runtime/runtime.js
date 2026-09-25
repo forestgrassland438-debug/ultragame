@@ -85,6 +85,89 @@
     return out;
   }
   R.worldAABB = worldAABB;
+  /** Colores de los colisionadores (como en 2D: naranja fijo, amarillo dinámico, azul personaje, rosa zona) */
+  R.COLLIDER_COLORS_3D = { static: 0xff9f43, mesh: 0xffa94d, body: 0xffd43b, character: 0x4dabf7, trigger: 0xff6bcb };
+  /**
+   * Proyector de segmentos 3D a la pantalla del juego (coordenadas del Graphics 2D) con recorte en coordenadas
+   * homogéneas (Liang-Barsky contra el plano cercano y los bordes de la vista): una arista que pasa por detrás de la
+   * cámara no se dibuja invertida ni con coordenadas enormes. Devuelve seg(g, a, b).
+   */
+  R.projector3D = function (view) {
+    var c = view.camera; c.updateWorldMatrix(); c.viewMatrix.invertFrom(c.matrixWorld); c.viewProjection.multiplyMatrices(c.projectionMatrix, c.viewMatrix);
+    var e = Array.prototype.slice.call(c.viewProjection.e), W = view.viewWidth, H = view.viewHeight, T = view.worldTransform, tmp = new UG.Vec2(), N = 1e-4, M = 1.02;
+    var clip = function (p) { return [e[0] * p.x + e[4] * p.y + e[8] * p.z + e[12], e[1] * p.x + e[5] * p.y + e[9] * p.z + e[13], 0, e[3] * p.x + e[7] * p.y + e[11] * p.z + e[15]]; };
+    var dist = function (i, q) { return i === 0 ? q[3] * M - q[0] : i === 1 ? q[3] * M + q[0] : i === 2 ? q[3] * M - q[1] : i === 3 ? q[3] * M + q[1] : q[3] - N; };
+    var scr = function (A, B, t) { var x = A[0] + (B[0] - A[0]) * t, y = A[1] + (B[1] - A[1]) * t, w = A[3] + (B[3] - A[3]) * t, s = T.apply((x / w * 0.5 + 0.5) * W, (0.5 - y / w * 0.5) * H, tmp); return [s.x, s.y]; };
+    return function (g, a, b) {
+      var A = clip(a), B = clip(b), t0 = 0, t1 = 1;
+      for (var i = 0; i < 5; i++) {
+        var dA = dist(i, A), dB = dist(i, B);
+        if (dA < 0 && dB < 0) return;
+        if (dA < 0) t0 = Math.max(t0, dA / (dA - dB)); else if (dB < 0) t1 = Math.min(t1, dA / (dA - dB));
+      }
+      if (t0 > t1) return;
+      var p = scr(A, B, t0), q = scr(A, B, t1); g.lineBetween(p[0], p[1], q[0], q[1]);
+    };
+  };
+  /** Dibuja con líneas una forma de colliderShape3D (caja, esfera o cápsula) usando un proyector de projector3D */
+  R.drawShape3D = function (g, seg, s) {
+    if (!s) return;
+    if (s.kind === 'box' || s.kind === 'obox') {
+      // obox: 8 esquinas ya calculadas (caja girada), en el mismo orden que las de min/max
+      var a = s.min, b = s.max, P = s.P || [];
+      if (!s.P) for (var i = 0; i < 8; i++) P.push({ x: i & 1 ? b.x : a.x, y: i & 2 ? b.y : a.y, z: i & 4 ? b.z : a.z });
+      [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(function (E) { seg(g, P[E[0]], P[E[1]]); });
+      return;
+    }
+    var ring = function (cx, cy, cz, r, plane, from, to, n) {
+      var prev = null;
+      for (var k = 0; k <= n; k++) {
+        var t = from + (to - from) * k / n, co = Math.cos(t) * r, si = Math.sin(t) * r;
+        var p = plane === 'xz' ? { x: cx + co, y: cy, z: cz + si } : plane === 'xy' ? { x: cx + co, y: cy + si, z: cz } : { x: cx, y: cy + si, z: cz + co };
+        if (prev) seg(g, prev, p); prev = p;
+      }
+    };
+    var TAU = Math.PI * 2;
+    if (s.kind === 'sphere') { var c = s.c; ring(c.x, c.y, c.z, s.r, 'xz', 0, TAU, 32); ring(c.x, c.y, c.z, s.r, 'xy', 0, TAU, 32); ring(c.x, c.y, c.z, s.r, 'zy', 0, TAU, 32); return; }
+    if (s.kind === 'capsule') {
+      var B = s.base, r = s.r, y0 = B.y + r, y1 = B.y + Math.max(r, s.h - r);
+      ring(B.x, y0, B.z, r, 'xz', 0, TAU, 28); ring(B.x, y1, B.z, r, 'xz', 0, TAU, 28);
+      [[r, 0], [-r, 0], [0, r], [0, -r]].forEach(function (d) { seg(g, { x: B.x + d[0], y: y0, z: B.z + d[1] }, { x: B.x + d[0], y: y1, z: B.z + d[1] }); });
+      ring(B.x, y1, B.z, r, 'xy', 0, Math.PI, 14); ring(B.x, y1, B.z, r, 'zy', 0, Math.PI, 14);
+      ring(B.x, y0, B.z, r, 'xy', Math.PI, TAU, 14); ring(B.x, y0, B.z, r, 'zy', Math.PI, TAU, 14);
+    }
+    if (s.kind === 'ring') ring(s.c.x, s.c.y, s.c.z, s.r, 'xz', 0, TAU, 28);
+  };
+  /**
+   * Depuración: todo lo que hay en un mundo de física 3D tal como lo simula (incluidos los colisionadores que crea
+   * un nivel de rejilla): cajas giradas, esferas, mallas (solo su caja, tenue), cuerpos, personajes, vehículos y zonas.
+   */
+  R.drawWorld3D = function (g, seg, W) {
+    var C = R.COLLIDER_COLORS_3D, q = new V3(), line = function (col, a, w) { g.lineStyle(w || 1.5, col, a === undefined ? 0.95 : a); };
+    var v = function (p) { return { x: p.x, y: p.y, z: p.z }; };
+    W.statics.forEach(function (c) {
+      if (!c.enabled) return;
+      if (c.type === 'box') {
+        if (c.half.x > 5000 || c.half.z > 5000) return; // suelo infinito (addGround): no hay caja que ver
+        var P = [];
+        for (var i = 0; i < 8; i++) { q.set(i & 1 ? c.half.x : -c.half.x, i & 2 ? c.half.y : -c.half.y, i & 4 ? c.half.z : -c.half.z).applyQuat(c.quat); P.push({ x: c.center.x + q.x, y: c.center.y + q.y, z: c.center.z + q.z }); }
+        line(C.static); R.drawShape3D(g, seg, { kind: 'obox', P: P });
+      } else if (c.type === 'sphere') { line(C.static); R.drawShape3D(g, seg, { kind: 'sphere', c: v(c.center), r: c.radius }); }
+      else if (c.type === 'mesh') { line(C.mesh, 0.3, 1); R.drawShape3D(g, seg, { kind: 'box', min: v(c.min), max: v(c.max) }); }
+    });
+    W.bodies.forEach(function (b) {
+      if (!b.enabled) return; line(b.sleeping ? 0x868e96 : C.body);
+      if (b.shape === 'sphere') R.drawShape3D(g, seg, { kind: 'sphere', c: v(b.position), r: b.radius });
+      else R.drawShape3D(g, seg, { kind: 'box', min: { x: b.position.x - b.half.x, y: b.position.y - b.half.y, z: b.position.z - b.half.z }, max: { x: b.position.x + b.half.x, y: b.position.y + b.half.y, z: b.position.z + b.half.z } });
+    });
+    W.characters.forEach(function (ch) { if (!ch.enabled) return; line(ch.onGround ? C.character : 0xb197fc); R.drawShape3D(g, seg, { kind: 'capsule', base: v(ch.position), r: ch.radius, h: ch.height }); });
+    W.vehicles.forEach(function (ve) { if (ve.enabled === false) return; line(C.body); R.drawShape3D(g, seg, { kind: 'ring', c: v(ve.position), r: ve.radius }); });
+    W.triggers.forEach(function (t) {
+      if (!t.enabled) return; line(C.trigger);
+      if (t.half) R.drawShape3D(g, seg, { kind: 'box', min: { x: t.center.x - t.half.x, y: t.center.y - t.half.y, z: t.center.z - t.half.z }, max: { x: t.center.x + t.half.x, y: t.center.y + t.half.y, z: t.center.z + t.half.z } });
+      else if (t.radius) R.drawShape3D(g, seg, { kind: 'sphere', c: v(t.center), r: t.radius });
+    });
+  };
   function makeFilter(e) {
     var E = S.EFFECTS[e.type]; if (!E || typeof UG[E.cls] !== 'function') return null;
     var o = {}; E.params.forEach(function (p) { var v = e.params[p.key]; o[p.key] = p.type === 'color' ? colorNum(v) : v; });
@@ -223,11 +306,12 @@
     var game = ctx.game = new UG.Game({
       parent: opts.parent, width: P.settings.width, height: P.settings.height, backgroundColor: colorNum(P.settings.background),
       renderer: opts.renderer || P.settings.renderer, pixelArt: P.settings.pixelArt, scale: { mode: P.settings.scale, autoCenter: true },
-      physics: { arcade: { gravity: { x: 0, y: 0 }, debug: !!opts.debugPhysics } }, title: P.name, banner: false, audio: opts.audio,
+      physics: { arcade: { gravity: { x: 0, y: 0 }, debug: false } }, title: P.name, banner: false, audio: opts.audio,
       scenes: [bootScene(ctx)].concat(P.scenes.map(function (sc) { return sceneConfig(ctx, sc); }))
     });
     game.on('error', function (e, scene) { ctx.log('error', (e && e.message) || String(e), scene ? 'escena ' + ctx.sceneName(scene.scene.key) : 'motor'); });
     game.ugs = ctx; game.bridge = ctx.bridge;
+    game.ugsDebugPhysics = function (on) { R.setDebugPhysics(game, on); };
     game.once('destroy', function () { ctx.destroy(); });
     if (P.settings.bridgeOrigins.length) ctx.bridge._listen();
     ctx.initPlugins();
@@ -243,7 +327,7 @@
     P.scenes.forEach(function (s) { self.scenesById[s.id] = s; if (!self.scenesByName[s.name]) self.scenesByName[s.name] = s; });
     this.assetURL = typeof opts.assetURL === 'function' ? opts.assetURL : function (a) { return a.file; };
     this._logCount = 0;
-    this.evq = []; this.plugins = []; this.rts = []; this.destroyed = false;
+    this.evq = []; this.plugins = []; this.rts = []; this.destroyed = false; this.debugPhysics = !!opts.debugPhysics;
     this._w3 = null; this._w3api = null; this._cc = Object.create(null); this._http = 0; this._httpT = [];
     this.bridge = new Bridge(this);
   }
@@ -572,6 +656,7 @@
     (this.children[''] || []).forEach(function (n) { if (!n.prefab) self.spawnTree(n, null, null); });
     this.setupColliders();
     if (this.rigid && !this.editMode) this.rigidBounds();
+    if (this.ctx.debugPhysics) this.setDebug(true);
     // interacción
     sc.input.on('pointerdown', function () { self.pointerDownFrame = self.frame + 1; });
     // script de escena
@@ -1028,6 +1113,34 @@
     return ent.ch;
   };
   /**
+   * Colisionador 3D tal como lo crea (o lo ha creado) el juego, en coordenadas de mundo, para dibujarlo en el editor o
+   * al depurar: { type, kind: 'box', min, max } | { type, kind: 'sphere', c, r } | { type, kind: 'capsule', base, r, h }.
+   * Con la partida en marcha usa los cuerpos vivos (se mueven); en el editor, lo mismo que calcula setupPhysics.
+   */
+  SceneRT.prototype.colliderShape3D = function (ent) {
+    var ph = ent.node.physics, o = ent.obj;
+    if (!o || !ph || ph.type === 'none' || !ent.is3d || !o.traverse) return null;
+    var t = ph.type, v = function (p) { return { x: p.x, y: p.y, z: p.z }; };
+    if (t === 'static' && ent.level) return null; // los niveles de rejilla crean sus propios colisionadores
+    if (t === 'character') {
+      if (ent.ch && !ent.ch.destroyed) return { type: t, kind: 'capsule', base: v(ent.ch.position), r: ent.ch.radius, h: ent.ch.height };
+      var bb = worldAABB(o), pos = o.getWorldPosition(new V3()), off = Math.min(0, bb.min.y - pos.y);
+      if (!isFinite(off) || off < -1000) off = 0;
+      var cr = ph.radius || 0.35;
+      return { type: t, kind: 'capsule', base: { x: pos.x, y: pos.y + off, z: pos.z }, r: cr, h: Math.max(ph.height || 1.8, cr * 2 + 0.01) };
+    }
+    if (t === 'body') {
+      var b = ent.body;
+      if (b && !b.destroyed) return b.shape === 'sphere' ? { type: t, kind: 'sphere', c: v(b.position), r: b.radius } : { type: t, kind: 'box', min: { x: b.position.x - b.half.x, y: b.position.y - b.half.y, z: b.position.z - b.half.z }, max: { x: b.position.x + b.half.x, y: b.position.y + b.half.y, z: b.position.z + b.half.z } };
+      var ab = worldAABB(o), half = ab.getSize(new V3()).scale(0.5), ctr = ab.getCenter(new V3());
+      if (ph.shape === 'sphere') return { type: t, kind: 'sphere', c: v(ctr), r: Math.max(half.x, half.y, half.z) };
+      return { type: t, kind: 'box', min: v(ab.min), max: v(ab.max) };
+    }
+    if (t === 'trigger' && ent.trigger && ent.trigger.box) return { type: t, kind: 'box', min: v(ent.trigger.box.min), max: v(ent.trigger.box.max) };
+    if (t === 'static' || t === 'mesh' || t === 'trigger') { var sb = worldAABB(o); return { type: t, kind: 'box', min: v(sb.min), max: v(sb.max) }; }
+    return null;
+  };
+  /**
    * Si un cuerpo empieza hundido en el suelo (colocado a ojo en el editor), se sube justo encima.
    * below/above: distancia desde b.position hasta su base y hasta su parte de arriba.
    */
@@ -1138,6 +1251,9 @@
   AP.weather = function (kind, o) { this._rt.setWeather(kind, o); };
   AP.timeOfDay = function (h) { if (h === undefined) { var dn = this.view && this.view._dayNight; return dn && !dn.destroyed ? dn.time : null; } this._rt.setTimeOfDay(h); return h; };
   AP.decal = function (kind, x, y, z, o) { if (!this.view) return null; return this.view.addDecal(kind, new V3(x, y, z), (o && o.normal) || new V3(0, 1, 0), o || {}); };
+  AP.velocity = function (obj) { return this._rt.velocityOf(obj ? this.entityOf(obj) : this._ent); };
+  AP.setVelocity = function (x, y, z, obj) { this._rt.setVelocityOf(obj ? this.entityOf(obj) : this._ent, x, y, z); };
+  AP.onGround = function (obj) { return this._rt.groundedOf(obj ? this.entityOf(obj) : this._ent); };
   AP.impulse = function (obj, x, y, z) { var e = obj ? this.entityOf(obj) : this._ent; if (e) this._rt.impulse(e, +x || 0, +y || 0, +z || 0); };
   AP.light = function (x, y, radius, color, intensity, o) { if (this.view) return null; this._rt.enableLights(); return this.scene.lights2d.addLight(x, y, radius, color === undefined ? 0xffe0a8 : colorNum(color), intensity, o); };
   AP.distance = function (a, b) { var p = this._rt.posOf(this.entityOf(a) || { obj: a }), q = this._rt.posOf(this.entityOf(b) || { obj: b }); return Math.hypot(p.x - q.x, p.y - q.y, (p.z || 0) - (q.z || 0)); };
@@ -1491,6 +1607,28 @@
     if (o.rbody) { var b = o.rbody; if (b.invMass > 0) b.applyImpulse(x * b.mass, y * b.mass); }
     else if (o.body) o.body.setVelocity(o.body.velocity.x + x, o.body.velocity.y + y);
   };
+  /** Velocidad de un objeto con cualquier motor (arcade, rígidos, cuerpo o personaje 3D): { x, y, z } */
+  SceneRT.prototype.velocityOf = function (e) {
+    if (!e || !e.alive || !e.obj) return { x: 0, y: 0, z: 0 };
+    if (e.is3d) { var v = e.body ? e.body.velocity : e.ch ? e.ch.velocity : null; return v ? { x: v.x, y: v.y, z: v.z } : { x: 0, y: 0, z: 0 }; }
+    var o = e.obj, b = o.rbody || o.body;
+    return b && b.velocity ? { x: b.velocity.x, y: b.velocity.y, z: 0 } : { x: 0, y: 0, z: 0 };
+  };
+  SceneRT.prototype.setVelocityOf = function (e, x, y, z) {
+    if (!e || !e.alive || !e.obj) return;
+    var n = function (v) { return v === null || v === undefined || !isFinite(v) ? null : +v; };
+    x = n(x); y = n(y); z = n(z);
+    if (e.is3d) { var v = e.body ? e.body.velocity : e.ch ? e.ch.velocity : null; if (!v) return; if (x !== null) v.x = x; if (y !== null) v.y = y; if (z !== null) v.z = z; if (e.body && e.body.wake) e.body.wake(); return; }
+    setVel2(e.obj, x, y);
+  };
+  /** ¿Está apoyado en algo? (suelo, plataforma, otro cuerpo) */
+  SceneRT.prototype.groundedOf = function (e) {
+    if (!e || !e.alive || !e.obj) return false;
+    if (e.is3d) return !!((e.ch && e.ch.onGround) || (e.body && e.body.onGround));
+    var o = e.obj;
+    if (o.rbody) return rigidGrounded(this, o.rbody);
+    return !!(o.body && (o.body.blocked.down || o.body.touching.down));
+  };
   SceneRT.prototype.setWeather = function (kind, o) {
     kind = String(kind || 'clear');
     if (this.view) { this.view.weather(kind === 'none' ? 'clear' : kind, o); return; }
@@ -1553,9 +1691,43 @@
       var txt = this.interp(d.tpl, d.ent); if (txt !== d.last) { d.last = txt; if (d.ent.obj.setText) d.ent.obj.setText(txt); }
     }
     if (this._dirtyDead) this.flushDead();
+    if (this._debugOn && this.is3d) this.drawDebug3D();
     if (this._goto) { var g = this._goto; this._goto = null; this.alive = false; this.scene.scene.start(g); }
   };
   var EMPTY = [];
+  /**
+   * Ver las colisiones durante la partida (casilla «Colisiones» de Jugar): en 2D el dibujo del propio motor (arcade o
+   * cuerpos rígidos), en 3D líneas sobre la vista con todo lo que hay en el mundo de física.
+   */
+  SceneRT.prototype.setDebug = function (on) {
+    on = !!on; if (this.editMode || !!this._debugOn === on) return;
+    this._debugOn = on;
+    var sc = this.scene;
+    if (!this.is3d) {
+      if (this.rigid) { if (sc.rigid) sc.rigid.debug(on); return; }
+      var aw = sc.physics && sc.physics.world; if (!aw) return;
+      aw.drawDebug = on;
+      if (!on && aw.debugGraphic) { aw.debugGraphic.destroy(); aw.debugGraphic = null; }
+      return;
+    }
+    if (!on && this._dbg3) { this._dbg3.destroy(); this._dbg3 = null; }
+  };
+  SceneRT.prototype.drawDebug3D = function () {
+    if (!this.view || !this.world3) return;
+    var g = this._dbg3; if (!g || g.destroyed) { g = this._dbg3 = this.scene.add.graphics(); g.depth = 1e9; }
+    g.clear();
+    var seg = R.projector3D(this.view);
+    R.drawWorld3D(g, seg, this.world3);
+    // zonas del Studio (Física › Zona): cajas que avisan al entrar, sin choque
+    g.lineStyle(1.5, R.COLLIDER_COLORS_3D.trigger, 0.9);
+    for (var i = 0; i < this.entities.length; i++) { var e = this.entities[i]; if (e.alive && e.trigger && e.trigger.box) R.drawShape3D(g, seg, { kind: 'box', min: e.trigger.box.min, max: e.trigger.box.max }); }
+  };
+  /** Activa o desactiva la depuración de colisiones en todas las escenas en marcha (y en las siguientes) */
+  R.setDebugPhysics = function (game, on) {
+    var ctx = game && game.ugs; if (!ctx || ctx.destroyed) return;
+    ctx.debugPhysics = !!on;
+    ctx.rts.slice().forEach(function (rt) { if (rt.alive) rt.setDebug(on); });
+  };
   SceneRT.prototype.pick3DClicks = function () {
     if (this.pointerDownFrame !== this.frame) return;
     var clickable = this.entities.filter(function (e) { return e.alive && e._click === 'ray'; });
@@ -1585,7 +1757,7 @@
   SceneRT.prototype.shutdown = function () {
     var self = this;
     this.papi.forEach(function (a, i) { if (self.ctx.plugins[i]) callHookCtx(self.ctx, self.ctx.plugins[i], 'onSceneEnd', [a]); });
-    this.papi = []; this.lights2 = []; this.evNow = EMPTY; this.rigidWalls = null;
+    this.papi = []; this.lights2 = []; this.evNow = EMPTY; this.rigidWalls = null; this._debugOn = false; this._dbg3 = null;
     var ri = this.ctx.rts.indexOf(this); if (ri >= 0) this.ctx.rts.splice(ri, 1);
     this.alive = false;
     this.def.events.forEach(function (ev) { ev._st = null; });

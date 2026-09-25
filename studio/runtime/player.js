@@ -83,7 +83,7 @@
       try {
         game = UGStudio.runtime.start(msg.project, {
           parent: 'game', renderer: /^(webgpu|webgl2|webgl|canvas)$/.test(msg.renderer) ? msg.renderer : undefined, startScene: msg.startScene || null,
-          assetURL: function (a) { return map[a.id] || null; }, onLog: log,
+          assetURL: function (a) { return map[a.id] || null; }, onLog: log, debugPhysics: msg.debugPhysics === true,
           onBridge: function (name, data) { post({ type: 'bridge-out', name: name, data: data }); },
           web3Provider: msg.web3 === 'studio' ? proxyProvider : null,
           backendURL: msg.backend && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(msg.backend.url) ? msg.backend.url : '',
@@ -106,6 +106,7 @@
     var msg = e.data; if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'run') run(msg);
     else if (msg.type === 'stop') { runId++; cleanup(); post({ type: 'stopped' }); }
+    else if (msg.type === 'debug' && game && UGStudio.runtime.setDebugPhysics) UGStudio.runtime.setDebugPhysics(game, msg.physics === true);
     else if (msg.type === 'pause' && game) game.pause();
     else if (msg.type === 'resume' && game) game.resume();
     else if (msg.type === 'bridge-in' && game && game.bridge && typeof msg.name === 'string') game.bridge.receive(msg.name, msg.data);
@@ -122,8 +123,11 @@
         else if (typeof v === 'undefined') out[k] = null;
         else { try { var j = JSON.stringify(v); out[k] = j === undefined ? String(v) : j.length > 2000 ? j.slice(0, 2000) + '…' : JSON.parse(j); } catch (x) { out[k] = '[' + (typeof v) + ']'; } }
       });
-      post({ type: 'vars', vars: out });
+      var scenes = (game.ugs.rts || []).filter(function (rt) { return rt.alive && rt.def; }).map(function (rt) { return String(rt.def.name).slice(0, 60); });
+      post({ type: 'vars', vars: out, fps: game.loop ? Math.round(game.loop.actualFps) : 0, scene: scenes.join(', '), paused: !!(game.loop && game.loop.paused) });
     }
+    // el panel de variables del Studio cambia un valor (para probar: vida, puntos, nivel…)
+    else if (msg.type === 'setVar' && game && game.ugs && typeof msg.name === 'string') game.ugs.setVar(msg.name.slice(0, 40), msg.value);
   });
   window.addEventListener('pointerdown', function () { window.focus(); });
   post({ type: 'ready' });

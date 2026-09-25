@@ -169,7 +169,23 @@ var CASES = {
   },
   /* mapa de Tiled dentro de un nodo desplazado: en arcade y en rígidos los tiles chocan donde se ven */
   tiledArcade: function () { return tiled(false); },
-  tiledRigid: function () { return tiled(true); }
+  tiledRigid: function () { return tiled(true); },
+  /* Jugar › Colisiones: el dibujo de depuración se enciende y se apaga en caliente (arcade y rígidos) sin dejar nada */
+  debug2d: async function () {
+    var res = {};
+    for (var rigid of [false, true]) {
+      var sc = scene2d();
+      sc.nodes.push(N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } }), N('shape', '2d', { name: 'P', x: 100, y: 100, props: { width: 20, height: 20 }, physics: { type: 'dynamic' } }));
+      res[rigid ? 'rigid' : 'arcade'] = await run(project(sc, { rigid: rigid }), 'canvas', async function (r, g) {
+        var on = function () { return rigid ? !!r.scene.rigid._dbg : !!(r.scene.physics.world.debugGraphic && !r.scene.physics.world.debugGraphic.destroyed); };
+        await steps(g, 5); var before = on();
+        RT.setDebugPhysics(g, true); await steps(g, 3); var mid = on();
+        RT.setDebugPhysics(g, false); await steps(g, 2); var after = on();
+        return { ok: !before && mid && !after, before: before, on: mid, after: after };
+      });
+    }
+    return { ok: res.arcade.ok && res.rigid.ok, arcade: res.arcade, rigid: res.rigid };
+  }
 };
 function tiled(rigid) {
   var sc = scene2d();
@@ -193,8 +209,13 @@ async function check3D() {
     await steps(g, 180);
     var cap = ent(r, 'Capsula'), sunk = ent(r, 'Hundida'), bx = ent(r, 'Caja'), ball = ent(r, 'Bola');
     var bb = function (e) { var b = RT.worldAABB(e.obj); return +b.min.y.toFixed(3); };
-    return { ok: cap.ch.onGround && near(bb(cap), 0, 0.06) && near(cap.obj.position.y, 0.9, 0.06) && sunk.ch.onGround && near(bb(sunk), 0, 0.06) && near(bb(bx), 0, 0.06) && near(bb(ball), 0, 0.08),
-      capsule: { y: cap.obj.position.y, bottom: bb(cap), onGround: cap.ch.onGround }, sunk: { bottom: bb(sunk) }, box: { bottom: bb(bx) }, ball: { bottom: bb(ball) } };
+    // lo que dibuja el editor (colliderShape3D) es el cuerpo real, y la depuración de Jugar se enciende y apaga
+    var cs = r.colliderShape3D(cap), bs = r.colliderShape3D(bx);
+    var shapesOk = cs && cs.kind === 'capsule' && near(cs.base.y, cap.ch.position.y, 1e-6) && near(cs.r, 0.35, 1e-6) && bs && bs.kind === 'box' && near(bs.min.y, bx.body.position.y - bx.body.half.y, 1e-6);
+    RT.setDebugPhysics(g, true); await steps(g, 2); var dbgOn = !!(r._dbg3 && !r._dbg3.destroyed);
+    RT.setDebugPhysics(g, false); await steps(g, 1); var dbgOff = !r._dbg3;
+    return { ok: shapesOk && dbgOn && dbgOff && cap.ch.onGround && near(bb(cap), 0, 0.06) && near(cap.obj.position.y, 0.9, 0.06) && sunk.ch.onGround && near(bb(sunk), 0, 0.06) && near(bb(bx), 0, 0.06) && near(bb(ball), 0, 0.08),
+      shapes: shapesOk, debug: { on: dbgOn, off: dbgOff }, capsule: { y: cap.obj.position.y, bottom: bb(cap), onGround: cap.ch.onGround }, sunk: { bottom: bb(sunk) }, box: { bottom: bb(bx) }, ball: { bottom: bb(ball) } };
   });
 }
 async function check() {
