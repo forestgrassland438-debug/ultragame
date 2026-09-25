@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070914">
+<title>Minijuegos · UltraGame</title>
+<style>
+  :root {
+    --bg: #070914; --panel: #0e1224; --panel2: #141a33; --line: #232b4d; --text: #e7ebff; --muted: #9aa3c7;
+    --accent: #7c8cff; --accent2: #ff6ad5; --good: #63e6be; --warn: #ffd43b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  body { min-height: 100vh; background:
+    radial-gradient(900px 500px at 12% -10%, rgba(124, 140, 255, 0.22), transparent 60%),
+    radial-gradient(700px 420px at 95% 0%, rgba(255, 106, 213, 0.16), transparent 60%), var(--bg); }
+  a { color: inherit; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 18px 60px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 14px; text-decoration: none; }
+  .brand svg { width: 52px; height: 52px; flex: none; }
+  .brand h1 { margin: 0; font-size: 28px; letter-spacing: 0.5px; }
+  .brand h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  nav a { text-decoration: none; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 13.5px; background: rgba(255, 255, 255, 0.02); }
+  nav a:hover, nav a:focus-visible { color: var(--text); border-color: var(--accent); outline: none; }
+  .bar { margin: 26px 0 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  .caps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip.on { color: var(--good); border-color: rgba(99, 230, 190, 0.35); }
+  .chip.off { color: #ff8787; border-color: rgba(255, 135, 135, 0.3); text-decoration: line-through; }
+  .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 9px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: linear-gradient(135deg, #3b4bd8, #7c3aed); color: #fff; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); }
+  .seg-label { color: var(--muted); font-size: 13px; margin-right: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(262px, 1fr)); gap: 18px; }
+  .card { position: relative; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; text-decoration: none; transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+  .card:hover, .card:focus-visible { transform: translateY(-3px); border-color: var(--c, var(--accent)); box-shadow: 0 14px 40px -18px var(--c, var(--accent)); outline: none; }
+  .thumb { position: relative; aspect-ratio: 16 / 10; background: #000; overflow: hidden; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+  .card:hover .thumb img { transform: scale(1.04); }
+  .thumb .n { position: absolute; left: 10px; top: 10px; font: 700 12px/1 ui-monospace, Consolas, monospace; padding: 5px 7px; border-radius: 7px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+  .thumb .o { position: absolute; right: 10px; top: 10px; font-size: 11.5px; padding: 4px 8px; border-radius: 7px; background: rgba(0, 0, 0, 0.55); color: #dfe4ff; }
+  .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .title h2 { margin: 0; font-size: 19px; }
+  .genre { color: var(--c, var(--accent)); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .desc { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+  .tags span { font-size: 11.5px; color: #c9d0f5; padding: 3px 7px; border-radius: 6px; background: rgba(124, 140, 255, 0.1); border: 1px solid rgba(124, 140, 255, 0.18); }
+  .foot { margin-top: auto; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .play { font-weight: 700; color: #fff; padding: 6px 12px; border-radius: 9px; background: var(--c, var(--accent)); color: #0b0e1a; }
+  .best { color: var(--warn); }
+  footer { margin-top: 34px; color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 18px; }
+  footer code { color: #c9d0f5; }
+  @media (max-width: 560px) { .brand h1 { font-size: 23px; } .wrap { padding-top: 18px; } }
+  @media (prefers-reduced-motion: reduce) { .card, .thumb img { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="../docs/index.html" aria-label="Documentación de UltraGame">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c8cff"/><stop offset="1" stop-color="#ff6ad5"/></linearGradient></defs>
+        <rect x="4" y="4" width="56" height="56" rx="16" fill="#101531" stroke="url(#lg)" stroke-width="3"/>
+        <path d="M20 18v17a12 12 0 0 0 24 0V18" fill="none" stroke="url(#lg)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="32" cy="48" r="3" fill="#63e6be"/>
+      </svg>
+      <div><h1><span>UltraGame</span> · Minijuegos</h1><p>8 juegos completos que ponen a prueba el motor desde ángulos distintos</p></div>
+    </a>
+    <nav aria-label="Enlaces">
+      <a href="../docs/index.html">Documentación</a>
+      <a href="../examples/effects.html">Galería de efectos</a>
+      <a href="../tests/index.html">Pruebas</a>
+    </nav>
+  </header>
+
+  <div class="bar">
+    <div class="caps" id="caps" aria-label="Capacidades de este navegador"></div>
+    <div><span class="seg-label" id="seg-label">Renderizador:</span><div class="seg" role="group" aria-labelledby="seg-label" id="seg"></div></div>
+  </div>
+
+  <main class="grid" id="grid"></main>
+
+  <footer>
+    <span>Todos los juegos funcionan con teclado, ratón y pantalla táctil · récords guardados solo en este navegador.</span>
+    <span id="ver"></span>
+  </footer>
+</div>
+<script src="../dist/ultragame.js"></script>
+<script>
+(function () {
+  'use strict';
+  var GAMES = [
+    { id: 'star-blaster', name: 'Star Blaster', genre: 'Shooter vertical', color: '#74c0fc', orient: 'Vertical', desc: 'Oleadas de naves, jefes con barra de vida, bombas y power-ups.', tags: ['pools de balas', 'BitmapText', 'Bloom', 'Shockwave', 'patrones de movimiento'] },
+    { id: 'pixel-knight', name: 'Pixel Knight', genre: 'Plataformas', color: '#8ce99a', orient: 'Horizontal', desc: 'Un caballero pixel art recorre un nivel hecho en Tiled.', tags: ['Tiled TMJ + TSJ externo', 'base64 + zlib', 'plataformas de un sentido', 'tiles animados', 'parallax'] },
+    { id: 'brick-breaker', name: 'Brick Breaker', genre: 'Arcade', color: '#ffd43b', orient: 'Horizontal', desc: 'Rompe ladrillos con combos, multibola y power-ups.', tags: ['círculo vs AABB', 'Rope (estela)', 'GlowFilter', 'stagger en rejilla', 'música por pasos'] },
+    { id: 'neon-asteroids', name: 'Neon Asteroids', genre: 'Arcade 360°', color: '#ff6ad5', orient: 'Horizontal', desc: 'Asteroides vectoriales de neón, OVNI e hiperespacio.', tags: ['physics.world.wrap', 'CRT + RGB split', 'Bloom', 'Shockwave', 'joystick 360°'] },
+    { id: 'gem-match', name: 'Gem Match', genre: 'Puzle match-3', color: '#da77f2', orient: 'Vertical', desc: 'Cascadas, gemas rayadas, bombas y arcoíris contrarreloj.', tags: ['promesas de tweens', 'clipRect', 'RNG con semilla', 'teclado accesible', 'pistas'] },
+    { id: 'sky-hopper', name: 'Sky Hopper', genre: 'Un solo botón', color: '#4dabf7', orient: 'Vertical', desc: 'Vuela entre tuberías mientras cae la noche.', tags: ['4 capas de parallax', 'spritesheet procedural', 'ciclo día/noche', 'medallas', 'pooling'] },
+    { id: 'iso-defense', name: 'Iso Defense', genre: 'Estrategia isométrica', color: '#69db7c', orient: 'Horizontal', desc: 'Defiende el castillo con torres mejorables durante 12 oleadas.', tags: ['tilemap isométrico', 'orden por profundidad', 'proyectiles parabólicos', 'timeScale x2', 'UI táctil'] },
+    { id: 'dungeon-lights', name: 'Dungeon Lights', genre: 'Roguelite', color: '#ff922b', orient: 'Horizontal', desc: 'Mazmorras procedurales iluminadas solo por tu antorcha.', tags: ['sombras por raycast', 'Mesh + RenderTexture', 'niebla de guerra', 'minimapa (2ª cámara)', 'IA con visión'] }
+  ];
+  var RENDERERS = [['auto', 'Auto'], ['webgpu', 'WebGPU'], ['webgl2', 'WebGL2'], ['webgl', 'WebGL'], ['canvas', 'Canvas']];
+  var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* modo privado */ } } };
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  var current = store.get('ug-mg-renderer') || 'auto';
+
+  // capacidades del navegador
+  var caps = document.getElementById('caps'), C = UG.Capabilities;
+  [['WebGPU', C.webgpu()], ['WebGL2', C.webgl2()], ['WebGL', C.webgl()], ['Canvas 2D', C.canvas()], ['Táctil', ('ontouchstart' in window) || navigator.maxTouchPoints > 0]].forEach(function (c) {
+    caps.appendChild(el('span', 'chip ' + (c[1] ? 'on' : 'off'), c[0]));
+  });
+  var wasmChip = caps.appendChild(el('span', 'chip', 'WebAssembly SIMD…'));
+  UG.Wasm.init().then(function (ok) { wasmChip.className = 'chip ' + (ok ? 'on' : 'off'); wasmChip.textContent = 'WebAssembly SIMD'; });
+  document.getElementById('ver').textContent = 'UltraGame ' + UG.VERSION;
+
+  var grid = document.getElementById('grid'), links = [];
+  GAMES.forEach(function (g, i) {
+    var a = el('a', 'card'); a.style.setProperty('--c', g.color);
+    var th = el('div', 'thumb'), img = new Image(); img.alt = 'Captura de ' + g.name; img.loading = 'lazy'; img.decoding = 'async'; img.src = 'thumbs/' + g.id + '.png';
+    img.onerror = function () { img.remove(); th.style.background = 'linear-gradient(135deg,' + g.color + '33, #000)'; };
+    th.appendChild(img); th.appendChild(el('span', 'n', String(i + 1).padStart(2, '0'))); th.appendChild(el('span', 'o', g.orient));
+    var body = el('div', 'body'), title = el('div', 'title');
+    title.appendChild(el('h2', '', g.name)); title.appendChild(el('span', 'genre', g.genre));
+    body.appendChild(title); body.appendChild(el('p', 'desc', g.desc));
+    var tags = el('div', 'tags'); g.tags.forEach(function (t) { tags.appendChild(el('span', '', t)); }); body.appendChild(tags);
+    var foot = el('div', 'foot'), best = +(store.get('ug-mg-' + g.id) || 0);
+    foot.appendChild(el('span', best ? 'best' : '', best ? '★ Récord ' + best : 'Sin récord todavía'));
+    foot.appendChild(el('span', 'play', 'Jugar ▶'));
+    body.appendChild(foot);
+    a.appendChild(th); a.appendChild(body);
+    grid.appendChild(a); links.push([a, g.id]);
+  });
+  function applyRenderer() {
+    links.forEach(function (l) { l[0].href = l[1] + '/index.html' + (current === 'auto' ? '' : '?r=' + current); });
+    Array.prototype.forEach.call(document.querySelectorAll('#seg button'), function (b) { b.setAttribute('aria-pressed', b.dataset.r === current ? 'true' : 'false'); });
+  }
+  var seg = document.getElementById('seg');
+  RENDERERS.forEach(function (r) {
+    var b = el('button', '', r[1]); b.type = 'button'; b.dataset.r = r[0];
+    b.onclick = function () { current = r[0]; store.set('ug-mg-renderer', current); applyRenderer(); };
+    seg.appendChild(b);
+  });
+  applyRenderer();
+})();
+</script>
+</body>
+</html>

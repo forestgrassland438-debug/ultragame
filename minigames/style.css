@@ -1,0 +1,4 @@
+html, body { margin: 0; height: 100%; background: #05060c; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+#game { position: fixed; inset: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+#game canvas { box-shadow: 0 0 60px rgba(90, 120, 255, 0.18); }
+noscript { color: #fff; font: 16px system-ui; display: block; padding: 20px; }

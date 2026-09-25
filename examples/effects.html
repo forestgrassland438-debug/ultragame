@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070914">
+<title>Galería de efectos · UltraGame</title>
+<style>
+  :root { --bg: #070914; --panel: #0e1224; --panel2: #151b36; --line: #252e52; --text: #e7ebff; --muted: #9aa3c7; --accent: #7c8cff; --accent2: #ff6ad5; --good: #63e6be; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.5 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  body { min-height: 100vh; background: radial-gradient(900px 500px at 0% -10%, rgba(124, 140, 255, 0.2), transparent 60%), radial-gradient(700px 400px at 100% 0%, rgba(255, 106, 213, 0.14), transparent 60%), var(--bg); }
+  a { color: #b4bfff; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; padding: 16px 18px 6px; max-width: 1360px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 22px; }
+  header h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
+  .links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .links a, .btn { text-decoration: none; padding: 7px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel); font: inherit; font-size: 13px; cursor: pointer; }
+  .btn:hover, .links a:hover { border-color: var(--accent); }
+  .btn.primary { background: linear-gradient(135deg, #3b4bd8, #7c3aed); border-color: transparent; font-weight: 600; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; padding: 12px 18px 30px; max-width: 1360px; margin: 0 auto; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .stage-wrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  #stage { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: #000; box-shadow: 0 20px 60px -30px rgba(124, 140, 255, 0.6); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toolbar .sp { flex: 1; }
+  .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12.5px; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #2b3470; color: #fff; }
+  pre { margin: 0; background: #0a0d1c; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; color: #cdd5ff; }
+  .panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 16px; display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 110px); overflow: hidden; }
+  @media (max-width: 980px) { .panel { max-height: none; } }
+  .panel h2 { margin: 0; font-size: 15px; padding: 12px 14px 8px; }
+  .search { margin: 0 14px 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0a0d1c; color: var(--text); font: inherit; }
+  .list { overflow: auto; padding: 0 8px 8px; flex: 1; min-height: 160px; }
+  .cat { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 1px; margin: 10px 6px 4px; }
+  .fx { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; text-align: left; background: none; border: 1px solid transparent; border-radius: 9px; color: var(--text); font: inherit; padding: 6px 8px; cursor: pointer; }
+  .fx:hover { background: rgba(124, 140, 255, 0.08); }
+  .fx[aria-current="true"] { background: rgba(124, 140, 255, 0.16); border-color: rgba(124, 140, 255, 0.4); }
+  .fx small { color: var(--muted); font-size: 11.5px; }
+  .params { border-top: 1px solid var(--line); padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 8px; max-height: 45%; overflow: auto; }
+  .params h3 { margin: 0; font-size: 14px; }
+  .params p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .row { display: grid; grid-template-columns: 110px 1fr 54px; gap: 8px; align-items: center; font-size: 12.5px; }
+  .row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row output { text-align: right; color: #cdd5ff; font-variant-numeric: tabular-nums; }
+  .stack { display: flex; flex-wrap: wrap; gap: 6px; }
+  .stack span { font-size: 12px; padding: 3px 8px; border-radius: 7px; background: rgba(255, 106, 213, 0.12); border: 1px solid rgba(255, 106, 213, 0.3); }
+  label.chk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  #status { color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span>UltraGame</span> · Galería de efectos</h1>
+    <p>35 efectos con shaders GLSL (WebGL/WebGL2) y WGSL (WebGPU), y equivalente CSS en Canvas 2D. Todo es código: sin imágenes externas.</p>
+  </div>
+  <div class="links"><a href="../minigames/index.html">Minijuegos</a><a href="../docs/index.html">Documentación</a></div>
+</header>
+<main>
+  <section class="stage-wrap">
+    <div id="stage"></div>
+    <div class="toolbar">
+      <div class="seg" id="target" role="group" aria-label="Aplicar a">
+        <button type="button" data-t="camera" aria-pressed="true">Escena (cámara)</button>
+        <button type="button" data-t="object" aria-pressed="false">Solo el logo</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="stackMode"> Apilar efectos</label>
+      <span class="sp"></span>
+      <button class="btn" id="compare" type="button" title="Mantén pulsado para ver sin efecto">Mantener: original</button>
+      <button class="btn" id="clear" type="button">Quitar</button>
+      <button class="btn primary" id="gif" type="button">Grabar GIF</button>
+    </div>
+    <div class="toolbar"><span id="status"></span><span class="sp"></span><div class="seg" id="rend" role="group" aria-label="Renderizador"></div></div>
+    <pre id="code" aria-label="Código"></pre>
+    <div class="toolbar" id="tools" hidden><button class="btn" id="genAll" type="button">Generar muestras en docs/media</button><span id="genLog"></span></div>
+  </section>
+  <aside class="panel">
+    <h2>Efectos</h2>
+    <input class="search" id="search" type="search" placeholder="Buscar efecto…" aria-label="Buscar efecto">
+    <div class="list" id="list"></div>
+    <div class="params" id="params"></div>
+  </aside>
+</main>
+<script src="../dist/ultragame.js"></script>
+<script>
+(function () {
+  'use strict';
+  var W = 640, H = 400, qs = new URLSearchParams(location.search);
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  var P = function (k, label, min, max, step, kind) { return { k: k, label: label, min: min, max: max, step: step, kind: kind || 'range' }; };
+
+  /* Catálogo: make(defaults) crea el filtro; params = controles; anim = depende del tiempo (se graba como GIF) */
+  var FX = [
+    { id: 'grayscale', cat: 'Color', name: 'Escala de grises', cls: 'GrayscaleFilter', make: function () { return new UG.GrayscaleFilter(1); }, params: [], code: 'new UG.GrayscaleFilter(1)' },
+    { id: 'sepia', cat: 'Color', name: 'Sepia', cls: 'SepiaFilter', make: function () { return new UG.SepiaFilter(); }, params: [], code: 'new UG.SepiaFilter()' },
+    { id: 'invert', cat: 'Color', name: 'Negativo', make: function () { return new UG.InvertFilter(); }, params: [], code: 'new UG.InvertFilter()' },
+    { id: 'hue', cat: 'Color', name: 'Rotar tono', make: function () { var f = new UG.HueRotateFilter(120); f._deg = 120; return f; }, params: [P('_deg', 'Grados', 0, 360, 1)], apply: function (f) { f.hue(f._deg); }, code: function (f) { return 'new UG.HueRotateFilter(' + f._deg + ')'; } },
+    { id: 'adjust', cat: 'Color', name: 'Brillo · contraste · saturación', make: function () { var f = new UG.ColorMatrixFilter(); f._b = 1.1; f._c = 0.3; f._s = 0.6; return f; }, params: [P('_b', 'Brillo', 0, 2, 0.01), P('_c', 'Contraste', -1, 1, 0.01), P('_s', 'Saturación', -1, 1, 0.01)], apply: function (f) { f.reset(); f.brightness(f._b, true); f.contrast(f._c, true); f.saturate(f._s, true); }, code: function (f) { return 'new UG.ColorMatrixFilter().brightness(' + f._b + ').contrast(' + f._c + ', true).saturate(' + f._s + ', true)'; } },
+    { id: 'vintage', cat: 'Color', name: 'Preajustes de color', make: function () { var f = new UG.ColorMatrixFilter(); f._p = 0; return f; }, params: [P('_p', 'Preajuste', 0, 7, 1)], apply: function (f) { var n = ['kodachrome', 'technicolor', 'polaroid', 'vintage', 'browni', 'night', 'predator', 'lsd'][f._p | 0]; f.reset(); if (n === 'night') f.night(0.4); else if (n === 'predator') f.predator(4); else f[n](); f._pn = n; }, code: function (f) { return 'new UG.ColorMatrixFilter().' + (f._pn || 'kodachrome') + '()'; } },
+    { id: 'overlay', cat: 'Color', name: 'Superposición de color', make: function () { return new UG.ColorOverlayFilter(0xff3d7f, 0.35); }, params: [P('color', 'Color', 0, 0, 0, 'color'), P('alpha', 'Intensidad', 0, 1, 0.01)], code: function (f) { return 'new UG.ColorOverlayFilter(0x' + f.color.toString(16).padStart(6, '0') + ', ' + f.alpha + ')'; } },
+    { id: 'gradmap', cat: 'Color', name: 'Mapa de degradado', make: function () { return new UG.GradientMapFilter([0x1b0b3a, 0xc2255c, 0xffd43b], 1); }, params: [P('amount', 'Mezcla', 0, 1, 0.01)], code: function (f) { return 'new UG.GradientMapFilter([0x1b0b3a, 0xc2255c, 0xffd43b], ' + f.amount + ')'; } },
+    { id: 'posterize', cat: 'Color', name: 'Posterizar', make: function () { return new UG.PosterizeFilter(4); }, params: [P('levels', 'Niveles', 2, 12, 1)], code: function (f) { return 'new UG.PosterizeFilter(' + f.levels + ')'; } },
+    { id: 'threshold', cat: 'Color', name: 'Umbral', make: function () { return new UG.ThresholdFilter(0.45); }, params: [P('threshold', 'Umbral', 0, 1, 0.01)], code: function (f) { return 'new UG.ThresholdFilter(' + f.threshold + ')'; } },
+    { id: 'dither', cat: 'Color', name: 'Tramado (dither)', make: function () { return new UG.DitherFilter({ levels: 3, scale: 2 }); }, params: [P('levels', 'Niveles', 2, 8, 1), P('scale', 'Escala', 1, 6, 1)], code: function (f) { return 'new UG.DitherFilter({ levels: ' + f.levels + ', scale: ' + f.scale + ' })'; } },
+    { id: 'blur', cat: 'Desenfoque y luz', name: 'Desenfoque gaussiano', make: function () { return new UG.BlurFilter({ strength: 6, quality: 3 }); }, params: [P('strength', 'Fuerza', 0, 24, 0.5), P('quality', 'Calidad', 1, 5, 1)], code: function (f) { return 'new UG.BlurFilter({ strength: ' + f.strengthX + ', quality: ' + f.quality + ' })'; } },
+    { id: 'tiltshift', cat: 'Desenfoque y luz', name: 'Tilt-shift (miniatura)', make: function () { return new UG.TiltShiftFilter({ blur: 14, focus: 0.62, focusSize: 0.12 }); }, params: [P('blur', 'Desenfoque', 0, 30, 1), P('focus', 'Foco', 0, 1, 0.01), P('focusSize', 'Tamaño foco', 0, 0.5, 0.01)], code: function (f) { return 'new UG.TiltShiftFilter({ blur: ' + f.blur + ', focus: ' + f.focus + ', focusSize: ' + f.focusSize + ' })'; } },
+    { id: 'zoomblur', cat: 'Desenfoque y luz', name: 'Desenfoque radial (zoom)', make: function () { return new UG.ZoomBlurFilter({ x: W / 2, y: H * 0.34, strength: 0.18, innerRadius: 40 }); }, params: [P('strength', 'Fuerza', 0, 0.5, 0.01), P('innerRadius', 'Radio interior', 0, 200, 1)], code: function (f) { return 'new UG.ZoomBlurFilter({ x: ' + f.centerX + ', y: ' + f.centerY + ', strength: ' + f.strength + ' })'; } },
+    { id: 'motionblur', cat: 'Desenfoque y luz', name: 'Desenfoque de movimiento', make: function () { return new UG.MotionBlurFilter({ x: 26, y: 0 }); }, params: [P('velocityX', 'Velocidad X', -60, 60, 1), P('velocityY', 'Velocidad Y', -60, 60, 1)], code: function (f) { return 'new UG.MotionBlurFilter({ x: ' + f.velocityX + ', y: ' + f.velocityY + ' })'; } },
+    { id: 'bloom', cat: 'Desenfoque y luz', name: 'Bloom (resplandor HDR)', anim: true, make: function () { return new UG.BloomFilter({ threshold: 0.45, bloomScale: 1.6, blur: 10 }); }, params: [P('threshold', 'Umbral', 0, 1, 0.01), P('bloomScale', 'Intensidad', 0, 4, 0.05), P('blur', 'Radio', 1, 24, 1)], code: function (f) { return 'new UG.BloomFilter({ threshold: ' + f.threshold + ', bloomScale: ' + f.bloomScale + ', blur: ' + f.blur + ' })'; } },
+    { id: 'godrays', cat: 'Desenfoque y luz', name: 'Rayos de luz (god rays)', anim: true, make: function () { return new UG.GodRaysFilter({ x: W * 0.72, y: H * 0.3, exposure: 0.45, decay: 0.96, density: 0.8, weight: 0.5, threshold: 0.62 }); }, params: [P('exposure', 'Exposición', 0, 1.5, 0.01), P('threshold', 'Umbral', 0, 1, 0.01), P('decay', 'Caída', 0.8, 1, 0.005), P('density', 'Densidad', 0, 1, 0.01), P('weight', 'Peso', 0, 1, 0.01)], code: function (f) { return 'new UG.GodRaysFilter({ x: ' + f.lightX + ', y: ' + f.lightY + ', exposure: ' + f.exposure + ', decay: ' + f.decay + ' })'; } },
+    { id: 'glow', cat: 'Desenfoque y luz', name: 'Resplandor (glow)', object: true, make: function () { return new UG.GlowFilter({ distance: 14, outerStrength: 2.5, color: 0x9dfcff }); }, params: [P('distance', 'Distancia', 1, 30, 1), P('outerStrength', 'Fuerza', 0, 6, 0.1), P('color', 'Color', 0, 0, 0, 'color')], code: function (f) { return 'sprite.filters = [new UG.GlowFilter({ distance: ' + f.distance + ', outerStrength: ' + f.outerStrength + ', color: 0x' + (f.color >>> 0).toString(16).padStart(6, '0') + ' })]'; } },
+    { id: 'dropshadow', cat: 'Desenfoque y luz', name: 'Sombra proyectada', object: true, make: function () { return new UG.DropShadowFilter({ blur: 4, alpha: 0.7, offset: { x: 8, y: 10 } }); }, params: [P('blur', 'Desenfoque', 0, 16, 0.5), P('alpha', 'Opacidad', 0, 1, 0.01)], code: function (f) { return 'sprite.filters = [new UG.DropShadowFilter({ blur: ' + f.blur + ', alpha: ' + f.alpha + ', offset: { x: 8, y: 10 } })]'; } },
+    { id: 'outline', cat: 'Desenfoque y luz', name: 'Contorno', object: true, make: function () { return new UG.OutlineFilter({ thickness: 4, color: 0x63e6be }); }, params: [P('thickness', 'Grosor', 1, 10, 0.5)], code: function (f) { return 'sprite.filters = [new UG.OutlineFilter({ thickness: ' + f.thickness + ', color: 0x63e6be })]'; } },
+    { id: 'shockwave', cat: 'Distorsión', name: 'Onda expansiva', anim: true, make: function () { return new UG.ShockwaveFilter({ x: W / 2, y: H / 2, amplitude: 26, wavelength: 140, speed: 420, loop: true }); }, params: [P('amplitude', 'Amplitud', 0, 60, 1), P('wavelength', 'Longitud', 20, 300, 1), P('speed', 'Velocidad', 50, 1000, 10)], code: function (f) { return 'new UG.ShockwaveFilter({ x: ' + f.centerX + ', y: ' + f.centerY + ', amplitude: ' + f.amplitude + ', wavelength: ' + f.wavelength + ', speed: ' + f.speed + ' })'; } },
+    { id: 'wave', cat: 'Distorsión', name: 'Ondulación', anim: true, make: function () { return new UG.WaveFilter({ amplitudeX: 6, amplitudeY: 3, frequencyX: 0.04, frequencyY: 0.03, speed: 2 }); }, params: [P('amplitudeX', 'Amplitud X', 0, 20, 0.5), P('amplitudeY', 'Amplitud Y', 0, 20, 0.5), P('frequencyX', 'Frecuencia X', 0, 0.2, 0.002), P('speed', 'Velocidad', 0, 8, 0.1)], code: function (f) { return 'new UG.WaveFilter({ amplitudeX: ' + f.amplitudeX + ', amplitudeY: ' + f.amplitudeY + ', frequencyX: ' + f.frequencyX + ', speed: ' + f.speed + ' })'; } },
+    { id: 'heathaze', cat: 'Distorsión', name: 'Calima (heat haze)', anim: true, make: function () { return new UG.HeatHazeFilter({ strength: 4, scale: 0.06, speed: 2.5 }); }, params: [P('strength', 'Fuerza', 0, 12, 0.1), P('scale', 'Escala', 0.01, 0.3, 0.005), P('speed', 'Velocidad', 0, 8, 0.1)], code: function (f) { return 'new UG.HeatHazeFilter({ strength: ' + f.strength + ', scale: ' + f.scale + ', speed: ' + f.speed + ' })'; } },
+    { id: 'bulge', cat: 'Distorsión', name: 'Abombar / pellizcar', make: function () { return new UG.BulgePinchFilter({ x: W / 2, y: H * 0.36, radius: 150, strength: 0.7 }); }, params: [P('radius', 'Radio', 10, 320, 1), P('strength', 'Fuerza', -1, 1, 0.01)], code: function (f) { return 'new UG.BulgePinchFilter({ x: ' + f.centerX + ', y: ' + f.centerY + ', radius: ' + f.radius + ', strength: ' + f.strength + ' })'; } },
+    { id: 'twist', cat: 'Distorsión', name: 'Remolino', make: function () { return new UG.TwistFilter({ x: W / 2, y: H * 0.36, radius: 170, angle: 3 }); }, params: [P('radius', 'Radio', 10, 320, 1), P('angle', 'Ángulo', -10, 10, 0.1)], code: function (f) { return 'new UG.TwistFilter({ x: ' + f.centerX + ', y: ' + f.centerY + ', radius: ' + f.radius + ', angle: ' + f.angle + ' })'; } },
+    { id: 'reflection', cat: 'Distorsión', name: 'Reflejo en agua', anim: true, make: function () { return new UG.ReflectionFilter({ boundary: 0.62, amplitude: 3, wavelength: 40, speed: 2 }); }, params: [P('boundary', 'Horizonte', 0, 1, 0.01), P('amplitude', 'Amplitud', 0, 12, 0.1), P('wavelength', 'Longitud', 5, 120, 1)], code: function (f) { return 'new UG.ReflectionFilter({ boundary: ' + f.boundary + ', amplitude: ' + f.amplitude + ', wavelength: ' + f.wavelength + ' })'; } },
+    { id: 'crt', cat: 'Retro y pantalla', name: 'Monitor CRT', anim: true, make: function () { return new UG.CRTFilter({ curvature: 1, lineWidth: 3, lineContrast: 0.3, noise: 0.1, vignetting: 0.3, flicker: 0.4, chromatic: 1 }); }, params: [P('curvature', 'Curvatura', 0, 4, 0.05), P('lineWidth', 'Líneas', 1, 8, 0.5), P('lineContrast', 'Contraste líneas', 0, 1, 0.01), P('noise', 'Ruido', 0, 0.5, 0.01), P('vignetting', 'Viñeta', 0, 1, 0.01), P('chromatic', 'Aberración', 0, 4, 0.1)], code: function (f) { return 'new UG.CRTFilter({ curvature: ' + f.curvature + ', lineWidth: ' + f.lineWidth + ', lineContrast: ' + f.lineContrast + ', noise: ' + f.noise + ' })'; } },
+    { id: 'pixelate', cat: 'Retro y pantalla', name: 'Pixelar', make: function () { return new UG.PixelateFilter(6); }, params: [P('size', 'Tamaño', 1, 24, 1)], code: function (f) { return 'new UG.PixelateFilter(' + f.sizeX + ')'; } },
+    { id: 'rgbsplit', cat: 'Retro y pantalla', name: 'Aberración cromática', make: function () { return new UG.ChromaticAberrationFilter({ offset: 5, radial: true }); }, params: [P('redX', 'Rojo X', -20, 20, 0.5), P('blueX', 'Azul X', -20, 20, 0.5), P('redY', 'Rojo Y', -20, 20, 0.5)], code: function (f) { return 'new UG.ChromaticAberrationFilter({ redX: ' + f.redX + ', blueX: ' + f.blueX + ', radial: true })'; } },
+    { id: 'glitch', cat: 'Retro y pantalla', name: 'Glitch digital', anim: true, make: function () { return new UG.GlitchFilter({ slices: 18, offset: 24, density: 0.35, speed: 8, rgbSplit: 4 }); }, params: [P('slices', 'Cortes', 2, 60, 1), P('offset', 'Desplazamiento', 0, 80, 1), P('density', 'Densidad', 0, 1, 0.01), P('speed', 'Velocidad', 0, 30, 0.5), P('rgbSplit', 'Separación RGB', 0, 16, 0.5)], code: function (f) { return 'new UG.GlitchFilter({ slices: ' + f.slices + ', offset: ' + f.offset + ', density: ' + f.density + ' })'; } },
+    { id: 'noise', cat: 'Retro y pantalla', name: 'Ruido / grano', anim: true, make: function () { return new UG.NoiseFilter({ noise: 0.3, seed: 0.37, animated: true }); }, params: [P('noise', 'Cantidad', 0, 1, 0.01)], code: function (f) { return 'new UG.NoiseFilter({ noise: ' + f.noise + ', animated: true })'; } },
+    { id: 'oldfilm', cat: 'Retro y pantalla', name: 'Película antigua', anim: true, make: function () { return new UG.OldFilmFilter({ sepia: 0.4, noise: 0.25, scratch: 0.5, vignetting: 0.35, flicker: 0.3 }); }, params: [P('sepia', 'Sepia', 0, 1, 0.01), P('noise', 'Ruido', 0, 1, 0.01), P('scratch', 'Arañazos', 0, 1, 0.01), P('vignetting', 'Viñeta', 0, 1, 0.01), P('flicker', 'Parpadeo', 0, 1, 0.01)], code: function (f) { return 'new UG.OldFilmFilter({ sepia: ' + f.sepia + ', noise: ' + f.noise + ', scratch: ' + f.scratch + ' })'; } },
+    { id: 'vignette', cat: 'Retro y pantalla', name: 'Viñeta', make: function () { return new UG.VignetteFilter({ radius: 0.3, softness: 0.65, strength: 0.9 }); }, params: [P('radius', 'Inicio', 0, 1, 0.01), P('softness', 'Suavidad', 0, 1, 0.01), P('strength', 'Fuerza', 0, 1, 0.01)], code: function (f) { return 'new UG.VignetteFilter({ radius: ' + f.radius + ', softness: ' + f.softness + ', strength: ' + f.strength + ' })'; } },
+    { id: 'dotscreen', cat: 'Retro y pantalla', name: 'Trama de puntos (cómic)', make: function () { return new UG.DotScreenFilter({ scale: 1, angle: 5, grayscale: 0 }); }, params: [P('scale', 'Escala', 0.3, 4, 0.05), P('angle', 'Ángulo', 0, 6.28, 0.01), P('grayscale', 'Grises', 0, 1, 1)], code: function (f) { return 'new UG.DotScreenFilter({ scale: ' + f.scale + ', angle: ' + f.angle + ' })'; } },
+    { id: 'emboss', cat: 'Estilizado', name: 'Relieve / nitidez / bordes', make: function () { var f = UG.ConvolutionFilter.emboss(2); f._m = 0; return f; }, params: [P('_m', 'Tipo', 0, 2, 1), P('strength', 'Fuerza', 0, 2, 0.01)], apply: function (f) { var m = [UG.ConvolutionFilter.emboss(2), UG.ConvolutionFilter.sharpen(1.2), UG.ConvolutionFilter.edgeDetect()][f._m | 0]; f.setMatrix(Array.prototype.slice.call(m.uniforms, 0, 9)); f._mn = ['emboss(2)', 'sharpen(1.2)', 'edgeDetect()'][f._m | 0]; }, code: function (f) { return 'UG.ConvolutionFilter.' + (f._mn || 'emboss(2)'); } }
+  ];
+
+  // ------------------------------------------------------------------ escena de demostración
+  var Demo = {
+    key: 'Demo',
+    create: function () {
+      var s = this, T = this.textures;
+      T.generate('fx-glow', 128, 128, function (c) { var g = c.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.3, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 128, 128); });
+      T.generate('fx-spark', 12, 12, function (c) { var g = c.createRadialGradient(6, 6, 0, 6, 6, 6); g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 12, 12); });
+      T.generate('fx-hero', 96, 96, function (c) {
+        var g = c.createRadialGradient(38, 34, 6, 48, 52, 44); g.addColorStop(0, '#b2f2bb'); g.addColorStop(0.6, '#20c997'); g.addColorStop(1, '#087f5b');
+        c.fillStyle = g; c.beginPath(); c.moveTo(10, 86); c.quadraticCurveTo(6, 14, 48, 12); c.quadraticCurveTo(90, 14, 86, 86); c.closePath(); c.fill();
+        c.lineWidth = 4; c.strokeStyle = '#063f30'; c.stroke();
+        c.fillStyle = '#fff'; c.beginPath(); c.arc(34, 44, 11, 0, 6.3); c.arc(62, 44, 11, 0, 6.3); c.fill();
+        c.fillStyle = '#212529'; c.beginPath(); c.arc(37, 46, 5, 0, 6.3); c.arc(65, 46, 5, 0, 6.3); c.fill();
+        c.strokeStyle = '#063f30'; c.lineWidth = 3; c.beginPath(); c.arc(48, 60, 10, 0.2, Math.PI - 0.2); c.stroke();
+      });
+      // cielo de atardecer, sol, montañas y ciudad
+      var sky = this.add.graphics(); sky.fillGradientStyle(0x2b1055, 0x2b1055, 0xff8a5b, 0xffc371, 1).fillRect(0, 0, W, H); sky.cacheAsTexture = true;
+      var sun = this.add.image(W * 0.72, H * 0.3, 'fx-glow').setScale(2.2); sun.tint = 0xfff3bf; sun.blendMode = 'add';
+      var disk = this.add.graphics(); disk.fillStyle(0xfff9db, 1).fillCircle(W * 0.72, H * 0.3, 34);
+      var mt = this.add.graphics();
+      mt.fillStyle(0x6c3483, 0.85).fillPoints([{ x: 0, y: 300 }, { x: 90, y: 200 }, { x: 170, y: 262 }, { x: 260, y: 170 }, { x: 350, y: 250 }, { x: 440, y: 190 }, { x: 540, y: 262 }, { x: 640, y: 210 }, { x: 640, y: 400 }, { x: 0, y: 400 }], true);
+      mt.fillStyle(0x3b1f5c, 1).fillPoints([{ x: 0, y: 330 }, { x: 120, y: 268 }, { x: 230, y: 312 }, { x: 330, y: 262 }, { x: 460, y: 316 }, { x: 560, y: 276 }, { x: 640, y: 300 }, { x: 640, y: 400 }, { x: 0, y: 400 }], true);
+      var city = this.add.graphics(), r = new UG.RNG('city');
+      for (var x = 0; x < W; x += r.int(28, 46)) {
+        var bh = r.int(40, 120), bw = r.int(22, 40);
+        city.fillStyle(0x190b2e, 1).fillRect(x, H - bh, bw, bh);
+        for (var wy = H - bh + 8; wy < H - 8; wy += 12) for (var wx = x + 5; wx < x + bw - 6; wx += 9) if (r.chance(0.35)) city.fillStyle(r.chance(0.5) ? 0xffd43b : 0xff922b, 0.9).fillRect(wx, wy, 4, 6);
+      }
+      city.cacheAsTexture = true;
+      // brillos flotantes y partículas
+      this.orbs = [];
+      for (var i = 0; i < 6; i++) { var o = this.add.image(80 + i * 96, 240, 'fx-glow').setScale(0.45); o.tint = [0x74c0fc, 0xff6ad5, 0x63e6be, 0xffd43b, 0xb197fc, 0xff8787][i]; o.blendMode = 'add'; o.ph = i; this.orbs.push(o); }
+      this.add.particles('fx-spark', { emitZone: { source: new UG.Rectangle(0, 0, W, H * 0.7), type: 'random' }, lifespan: { min: 900, max: 2000 }, speed: { min: 5, max: 30 }, scale: { start: 1.2, end: 0 }, color: [0xffffff, 0xffe066, 0xff8cc6], blendMode: 'add', frequency: 40, maxParticles: 200 });
+      // logo, héroe y estrella: el grupo "focus" recibe los filtros de objeto
+      this.focus = this.add.container(0, 0);
+      var logo = new UG.Text(W / 2, 108, 'UltraGame', { fontFamily: 'system-ui, Segoe UI, Arial', fontSize: 76, fontWeight: 900, fill: [0xfff3bf, 0xff6ad5], stroke: 0x2b1055, strokeThickness: 8 }); logo.setOrigin(0.5);
+      var sub = new UG.Text(W / 2, 162, 'WebGPU · WebGL2 · WebGL · Canvas', { fontFamily: 'system-ui, Segoe UI, Arial', fontSize: 20, fontWeight: 700, fill: 0xffffff, stroke: 0x2b1055, strokeThickness: 4 }); sub.setOrigin(0.5);
+      this.hero = new UG.Sprite(W / 2 - 150, 250, 'fx-hero'); this.hero.setScale(0.9);
+      this.star = new UG.Graphics(); this.star.x = W / 2 + 160; this.star.y = 250;
+      this.star.fillStyle(0xffd43b, 1).fillStar(0, 0, 5, 44, 20).lineStyle(4, 0xe67700, 1).strokeStar(0, 0, 5, 44, 20);
+      this.focus.add(logo); this.focus.add(sub); this.focus.add(this.hero); this.focus.add(this.star);
+      this.t = 0;
+    },
+    update: function (t, dt) {
+      this.t += dt / 1000; var k = this.t;
+      this.hero.y = 250 + Math.sin(k * 3) * 12; this.hero.rotation = Math.sin(k * 2) * 0.12;
+      this.star.rotation = k * 1.2; this.star.setScale(1 + Math.sin(k * 4) * 0.06);
+      this.orbs.forEach(function (o) { o.y = 240 + Math.sin(k * 1.4 + o.ph) * 26; o.alpha = 0.6 + Math.sin(k * 2 + o.ph) * 0.3; });
+    }
+  };
+
+  var renderer = qs.get('r') || 'auto';
+  var game = window.game = new UG.Game({ parent: 'stage', width: W, height: H, renderer: renderer, scale: { mode: 'fit', autoCenter: true }, backgroundColor: 0x000000, banner: false, audio: { noAudio: true }, scenes: [Demo] });
+
+  // ------------------------------------------------------------------ UI
+  var state = { fx: null, filter: null, target: 'camera', stack: [] };
+  var list = document.getElementById('list'), params = document.getElementById('params'), codeEl = document.getElementById('code'), status = document.getElementById('status');
+  function scene() { return game.scene.getScene('Demo'); }
+  function buildList(filter) {
+    list.textContent = '';
+    var cat = null;
+    FX.forEach(function (f) {
+      if (filter && (f.name + ' ' + f.id + ' ' + f.cat).toLowerCase().indexOf(filter) < 0) return;
+      if (f.cat !== cat) { cat = f.cat; list.appendChild(el('div', 'cat', cat)); }
+      var b = el('button', 'fx'); b.type = 'button'; b.dataset.id = f.id;
+      b.appendChild(el('span', '', f.name)); b.appendChild(el('small', '', (f.anim ? 'animado' : '') + (f.object ? (f.anim ? ' · ' : '') + 'objeto' : '')));
+      b.setAttribute('aria-current', state.fx === f ? 'true' : 'false');
+      b.onclick = function () { select(f); };
+      list.appendChild(b);
+    });
+  }
+  function targets() { var s = scene(); return { cam: s.cameras.main, obj: s.focus }; }
+  function applyFilters() {
+    var t = targets(), all = state.stack.slice(); if (state.filter && all.indexOf(state.filter) < 0) all.push(state.filter);
+    var camF = [], objF = [];
+    all.forEach(function (f) { ((f._target || state.target) === 'object' ? objF : camF).push(f); });
+    t.cam.setFilters(camF.length ? camF : null); t.obj.filters = objF.length ? objF : null;
+    codeEl.textContent = codeFor(camF, objF);
+    status.textContent = 'Renderizador: ' + game.rendererType.toUpperCase() + (game.rendererType === 'canvas' ? ' (efectos como filtros CSS equivalentes cuando existen)' : '') + ' · ' + all.length + ' efecto(s)';
+  }
+  function codeFor(camF, objF) {
+    var line = function (f) { var d = f._def; return typeof d.code === 'function' ? d.code(f) : d.code; };
+    var out = [];
+    if (camF.length) out.push('// toda la escena (post-proceso de cámara)\nthis.cameras.main.setFilters([\n  ' + camF.map(line).join(',\n  ') + '\n]);');
+    if (objF.length) out.push('// solo un objeto (sprite, texto, contenedor...)\nlogo.filters = [\n  ' + objF.map(function (f) { return line(f).replace(/^sprite\.filters = \[|\]$/g, ''); }).join(',\n  ') + '\n];');
+    return out.join('\n\n') || '// Elige un efecto de la lista';
+  }
+  function select(f) {
+    if (!f) return;
+    var target = f.object ? 'object' : state.target;
+    var fl = f.make(); fl._def = f; fl._target = target;
+    if (f.apply) f.apply(fl);
+    if (document.getElementById('stackMode').checked && state.filter) state.stack.push(state.filter);
+    state.fx = f; state.filter = fl;
+    buildParams(f, fl); applyFilters(); buildList(document.getElementById('search').value.trim().toLowerCase());
+    try { history.replaceState(null, '', '#' + f.id); } catch (e) { /* */ }
+  }
+  function buildParams(f, fl) {
+    params.textContent = '';
+    params.appendChild(el('h3', '', f.name));
+    params.appendChild(el('p', '', (f.object ? 'Se aplica al logo, el personaje y la estrella (filtro de objeto). ' : '') + (f.anim ? 'Efecto animado: depende del tiempo. ' : '') + (f.params.length ? 'Ajusta los parámetros en vivo:' : 'Sin parámetros.')));
+    f.params.forEach(function (p) {
+      var row = el('div', 'row'), lab = el('label', '', p.label), inp = el('input'), out = el('output');
+      var id = 'p-' + f.id + '-' + p.k; inp.id = id; lab.htmlFor = id;
+      if (p.kind === 'color') { inp.type = 'color'; inp.value = '#' + ((fl[p.k] >>> 0) & 0xffffff).toString(16).padStart(6, '0'); }
+      else { inp.type = 'range'; inp.min = p.min; inp.max = p.max; inp.step = p.step; var v = p.k === 'size' ? fl.sizeX : (p.k === 'strength' && fl.strengthX !== undefined ? fl.strengthX : fl[p.k]); inp.value = v; out.textContent = (+v).toFixed(p.step < 1 ? 2 : 0); }
+      inp.oninput = function () {
+        var v = p.kind === 'color' ? parseInt(inp.value.slice(1), 16) : +inp.value;
+        fl[p.k] = v; if (f.apply) f.apply(fl);
+        if (p.kind !== 'color') out.textContent = v.toFixed(p.step < 1 ? 2 : 0);
+        applyFilters();
+      };
+      row.appendChild(lab); row.appendChild(inp); row.appendChild(out); params.appendChild(row);
+    });
+    if (state.stack.length) { var st = el('div', 'stack'); state.stack.concat([fl]).forEach(function (x) { st.appendChild(el('span', '', x._def.name)); }); params.appendChild(el('p', '', 'Pila de efectos (en orden):')); params.appendChild(st); }
+  }
+  document.getElementById('search').oninput = function () { buildList(this.value.trim().toLowerCase()); };
+  Array.prototype.forEach.call(document.querySelectorAll('#target button'), function (b) {
+    b.onclick = function () { state.target = b.dataset.t; Array.prototype.forEach.call(document.querySelectorAll('#target button'), function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); }); if (state.filter && !state.fx.object) state.filter._target = state.target; applyFilters(); };
+  });
+  document.getElementById('clear').onclick = function () { state.stack = []; state.filter = null; state.fx = null; params.textContent = ''; applyFilters(); buildList(''); };
+  var cmp = document.getElementById('compare'), saved = null;
+  var hold = function (on) { var t = targets(); if (on) { saved = [t.cam.filters, t.obj.filters]; t.cam.setFilters(null); t.obj.filters = null; } else if (saved) { t.cam.setFilters(saved[0]); t.obj.filters = saved[1]; saved = null; } };
+  cmp.onpointerdown = function () { hold(true); }; cmp.onpointerup = cmp.onpointerleave = function () { hold(false); };
+  cmp.onkeydown = function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); hold(true); } }; cmp.onkeyup = function () { hold(false); };
+  // grabación GIF (descarga local)
+  document.getElementById('gif').onclick = function () {
+    var btn = this; btn.disabled = true; btn.textContent = 'Grabando…';
+    var rec = new UG.Recorder(game); rec.start({ fps: 15, scale: 0.5, maxFrames: 36 });
+    var poll = setInterval(function () {
+      if (rec.recording) return; clearInterval(poll);
+      var blob = new Blob([rec.lastGif], { type: 'image/gif' }), a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'ultragame-' + (state.fx ? state.fx.id : 'escena') + '.gif'; a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+      btn.disabled = false; btn.textContent = 'Grabar GIF';
+    }, 200);
+  };
+  // selector de renderizador (recarga con ?r=)
+  var rend = document.getElementById('rend');
+  [['auto', 'Auto'], ['webgpu', 'WebGPU'], ['webgl2', 'WebGL2'], ['webgl', 'WebGL'], ['canvas', 'Canvas']].forEach(function (r) {
+    var b = el('button', '', r[1]); b.type = 'button'; b.setAttribute('aria-pressed', r[0] === renderer ? 'true' : 'false');
+    b.onclick = function () { var u = new URL(location.href); if (r[0] === 'auto') u.searchParams.delete('r'); else u.searchParams.set('r', r[0]); location.href = u.toString(); };
+    rend.appendChild(b);
+  });
+
+  // ------------------------------------------------------------------ generación de muestras (docs/media)
+  if (qs.get('tools') === '1') document.getElementById('tools').hidden = false;
+  window.__fxGen = { done: false };
+  async function generateAll() {
+    var logEl = document.getElementById('genLog'), s = scene(), cam = s.cameras.main, r = game.renderer, index = [];
+    game.loop.stop(); var oldRes = r.resolution; r.resize(W, H, 0.5); // muestras a 320x200
+    var sheet = document.createElement('canvas'), cols = 6, cw = 320, ch = 200, rows = Math.ceil((FX.length + 1) / cols);
+    sheet.width = cols * cw; sheet.height = rows * (ch + 28); var sx = sheet.getContext('2d');
+    sx.fillStyle = '#070914'; sx.fillRect(0, 0, sheet.width, sheet.height); sx.font = '600 16px system-ui, Segoe UI, Arial'; sx.textBaseline = 'middle';
+    var put = async function (i, label) {
+      var url = await game.snapshot('image/png'), img = new Image(); img.src = url; await img.decode();
+      var x = (i % cols) * cw, y = Math.floor(i / cols) * (ch + 28);
+      sx.drawImage(img, x, y, cw, ch); sx.fillStyle = '#e7ebff'; sx.fillText(label, x + 10, y + ch + 14);
+      return url;
+    };
+    var save = async function (name, blob) { var res = await fetch('/__save?dir=media&name=' + name, { method: 'POST', body: blob }); if (!res.ok) throw new Error(name + ': ' + res.status); };
+    cam.setFilters(null); s.focus.filters = null;
+    for (var w = 0; w < 30; w++) game.loop.step(33);
+    await put(0, 'Original');
+    for (var i = 0; i < FX.length; i++) {
+      var f = FX[i], fl = f.make(); fl._def = f; if (f.apply) f.apply(fl);
+      cam.setFilters(null); s.focus.filters = null;
+      if (f.object) s.focus.filters = [fl]; else cam.setFilters([fl]);
+      logEl.textContent = (i + 1) + '/' + FX.length + ' ' + f.name;
+      if (f.anim) {
+        var rec = new UG.Recorder(game); rec.start({ fps: 15, scale: 0.5, maxFrames: 1e6 }); rec.recording = false; // grabación manual a 320x200
+        for (var k = 0; k < 30; k++) { game.loop.step(1000 / 15); rec.capture(); }
+        var blob = rec.stop(); await save('fx-' + f.id + '.gif', blob);
+        index.push({ id: f.id, name: f.name, cat: f.cat, file: 'fx-' + f.id + '.gif', anim: true, code: typeof f.code === 'function' ? f.code(fl) : f.code });
+        await put(i + 1, f.name);
+      } else {
+        game.loop.step(33);
+        var url = await put(i + 1, f.name);
+        await save('fx-' + f.id + '.png', await (await fetch(url)).blob());
+        index.push({ id: f.id, name: f.name, cat: f.cat, file: 'fx-' + f.id + '.png', anim: false, code: typeof f.code === 'function' ? f.code(fl) : f.code });
+      }
+    }
+    await save('fx-sheet.png', await new Promise(function (res) { sheet.toBlob(res, 'image/png'); }));
+    await save('effects.json', new Blob([JSON.stringify({ renderer: game.rendererType, effects: index }, null, 1)], { type: 'application/json' }));
+    cam.setFilters(null); s.focus.filters = null; r.resize(W, H, oldRes); game.loop.start();
+    logEl.textContent = 'Listo: ' + index.length + ' muestras + hoja de contacto en docs/media';
+    window.__fxGen = { done: true, count: index.length };
+  }
+  document.getElementById('genAll').onclick = function () { this.disabled = true; generateAll().catch(function (e) { document.getElementById('genLog').textContent = 'Error: ' + e.message; window.__fxGen = { done: true, error: e.message }; }); };
+
+  game.ready.then(function () {
+    var start = FX.filter(function (f) { return f.id === location.hash.slice(1); })[0] || FX.filter(function (f) { return f.id === 'crt'; })[0];
+    buildList(''); select(start);
+    if (qs.get('tools') === '1' && qs.get('auto') === '1') document.getElementById('genAll').click();
+  });
+})();
+</script>
+</body>
+</html>
