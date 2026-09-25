@@ -9077,6 +9077,7 @@ class Loader extends EventEmitter {
     this.queue = [];
     this.loading = false;
     this.path = ''; this.baseURL = '';
+    this.urlResolver = null;
     this.maxParallel = 6;
     this.timeout = 60000;
     this.crossOrigin = 'anonymous';
@@ -9095,6 +9096,9 @@ class Loader extends EventEmitter {
   get cache() { return this.game.cache; }
   setPath(p) { this.path = p ? (p.charAt(p.length - 1) === '/' ? p : p + '/') : ''; return this; }
   setBaseURL(u) { this.baseURL = u ? (u.charAt(u.length - 1) === '/' ? u : u + '/') : ''; return this; }
+  /** Resuelve archivos virtuales sin perder la carpeta original de sus dependencias. */
+  setURLResolver(fn) { this.urlResolver = typeof fn === 'function' ? fn : null; return this; }
+  resolveURL(url) { return this.urlResolver && typeof url === 'string' ? this.urlResolver(url) : url; }
   setCORS(v) { this.crossOrigin = v; return this; }
   _url(u) {
     if (!u || typeof u !== 'string') return u;
@@ -9231,11 +9235,12 @@ class Loader extends EventEmitter {
     if (r) r(this);
   }
   reset() { this.abort(); this.failed = []; this._aborted = false; return this; }
-  destroy() { this.abort(); this.off(); this.game = null; this.scene = null; }
+  destroy() { this.abort(); this.off(); this.urlResolver = null; this.game = null; this.scene = null; }
 
   /* ------------- red ------------- */
   fetchBytes(url, file) {
     var self = this;
+    url = this.resolveURL(url);
     if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL bloqueada por la política de seguridad: ' + String(url).slice(0, 80)));
     var integrity = file && file.integrity;
     var check = function (buf) {
@@ -9281,6 +9286,7 @@ class Loader extends EventEmitter {
   fetchJSON(url, file) { return this.fetchText(url, file).then(function (t) { return JSON.parse(t); }); }
   loadImageElement(url, file) {
     var self = this;
+    url = this.resolveURL(url);
     if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL de imagen bloqueada: ' + String(url).slice(0, 80)));
     if (typeof Image === 'undefined') {
       if (typeof createImageBitmap === 'function') return this.fetchBytes(url, file).then(function (b) { return createImageBitmap(new Blob([b])); });
@@ -9369,7 +9375,11 @@ class Loader extends EventEmitter {
           if (sj) g.cache.audio.set(f.key, sj);
           if (g.sound.disabled) return null;
           g.sound._ensureContext();
-          if (g.sound.useHTML5 || !g.sound.ctx) { g.sound.addHTML5(f.key, aurl); return aurl; }
+          if (g.sound.useHTML5 || !g.sound.ctx) {
+            var resolvedAudio = self.resolveURL(aurl);
+            if (!Security.isSafeURL(resolvedAudio)) throw new Error('URL de audio bloqueada');
+            g.sound.addHTML5(f.key, resolvedAudio); return resolvedAudio;
+          }
           return self.fetchBytes(aurl, f).then(function (buf) { return g.sound.decodeAudio(f.key, buf); });
         });
       }
@@ -9378,6 +9388,7 @@ class Loader extends EventEmitter {
       case 'generate': return Promise.resolve(g.textures.generate(f.key, f.w, f.h, f.draw, f.opts));
       case 'font': {
         if (typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return Promise.resolve(null);
+        url = this.resolveURL(url);
         if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL de fuente bloqueada'));
         var face = new FontFace(f.key, 'url("' + String(url).replace(/["\\\n\r]/g, '') + '")', f.descriptors);
         return face.load().then(function (loaded) { document.fonts.add(loaded); return loaded; });
@@ -10173,6 +10184,7 @@ UG.TilesetRuntime = TilesetRuntime;
  * Paso fijo (60 Hz por defecto) => simulación estable y reproducible. */
 
 function makeDirs(v) { return { none: v === undefined ? true : v, up: false, down: false, left: false, right: false }; }
+var _anchorTmp = { x: 0, y: 0 }, _worldM = new Matrix();
 function resetDirs(d, none) { d.none = none; d.up = false; d.down = false; d.left = false; d.right = false; }
 
 class Body {
@@ -10190,6 +10202,8 @@ class Body {
     this.maxVelocity = new Vec2(10000, 10000); this.maxSpeed = -1;
     this.bounce = new Vec2(); this.friction = new Vec2(1, 0); this.gravity = new Vec2();
     this.worldBounce = null;
+    /** Plataforma de un sentido: solo choca con lo que cae encima desde arriba */
+    this.oneWay = false; this.useWorldBounds = false;
     this.allowGravity = !isStatic; this.allowDrag = true; this.useDamping = false;
     this.immovable = !!isStatic; this.pushable = !isStatic; this.moves = !isStatic; this.mass = 1;
     this.collideWorldBounds = false; this.onWorldBounds = false; this.onCollide = false; this.onOverlap = false;
@@ -10220,30 +10234,81 @@ class Body {
   onWall() { return this.blocked.left || this.blocked.right; }
   _goDims() {
     var go = this.gameObject, sx = Math.abs(go.scaleX || 1), sy = Math.abs(go.scaleY || 1), w, h;
-    if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
+    // Mosaicos, 9-slice y texto bitmap tienen tamaño propio (_w/_h): su textura es solo el patrón que se repite
+    if (typeof go._w === 'number' && typeof go._h === 'number') { if (typeof go._layout === 'function') go._layout(); w = go._w; h = go._h; }
+    else if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
     else if (go.zoneWidth !== undefined) { w = go.zoneWidth; h = go.zoneHeight; }
     else if (go.shapeWidth !== undefined) { w = go.shapeWidth; h = go.shapeHeight; }
-    else if (go._w !== undefined) { w = go._w; h = go._h; }
     else { var lb = go.getLocalBounds ? go.getLocalBounds() : null; w = lb && lb.width ? lb.width : 16; h = lb && lb.height ? lb.height : 16; }
     return { w: w, h: h, sx: sx, sy: sy };
   }
   _syncSize() {
-    var d = this._goDims();
+    var d = this._goDims(), go = this.gameObject;
     if (!this._customSize) { this.sourceWidth = d.w; this.sourceHeight = d.h; }
     if (this.isCircle) { this.width = this.height = this.radius * 2 * d.sx; }
     else { this.width = this.sourceWidth * d.sx; this.height = this.sourceHeight * d.sy; }
-    this._dims = d;
+    this._dims = d; this._lastSX = go.scaleX; this._lastSY = go.scaleY; this._lastTex = go._texture; this._lastW = go._w; this._lastH = go._h;
+    if (this.useWorldBounds) { var wb = this._worldBox(); this.width = wb.w; this.height = wb.h; }
   }
-  /** Coloca el cuerpo según la posición del objeto. */
+  /**
+   * Cuerpo ajustado a la caja que ocupa el objeto en el mundo: tiene en cuenta rotación, escala y grupos padre.
+   * Pensado para cuerpos estáticos (suelos y muros girados o dentro de un grupo); los dinámicos se mueven en x/y locales.
+   */
+  setWorldBounds(on) { this.useWorldBounds = on !== false; this.isCircle = this.isCircle && !this.useWorldBounds; this._syncSize(); this.resetFromGameObject(); if (this.world && this.isStatic) this.world._staticDirty = true; return this; }
+  _worldBox() {
+    var go = this.gameObject, d = this._dims || this._goDims(), shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = 0.5; if (ay === undefined) ay = 0.5;
+    var sw = this._customSize ? this.sourceWidth : d.w, sh = this._customSize ? this.sourceHeight : d.h;
+    // el volteo refleja el dibujo dentro de su rectángulo; la escala negativa ya va en la matriz
+    var ox = go.flipX ? d.w - this.offset.x - sw : this.offset.x, oy = go.flipY ? d.h - this.offset.y - sh : this.offset.y;
+    var x0 = -ax * d.w + ox, y0 = -ay * d.h + oy, x1 = x0 + sw, y1 = y0 + sh;
+    var m = go.getWorldMatrix ? go.getWorldMatrix(_worldM, 0, 0) : null;
+    if (!m) return { x: go.x + x0, y: go.y + y0, w: sw, h: sh, sig: '' };
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var k = 0; k < 4; k++) {
+      var lx = k & 1 ? x1 : x0, ly = k & 2 ? y1 : y0, wx = m.a * lx + m.c * ly + m.tx, wy = m.b * lx + m.d * ly + m.ty;
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx; if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, sig: m.a + ',' + m.b + ',' + m.c + ',' + m.d + ',' + m.tx + ',' + m.ty };
+  }
+  /** Punto de anclaje (0..1) del objeto: las formas usan originX/Y; sprites, textos y mosaicos, anchorX/Y. */
+  _anchor(out) {
+    var go = this.gameObject, shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = go.originX !== undefined ? go.originX : 0.5;
+    if (ay === undefined) ay = go.originY !== undefined ? go.originY : 0.5;
+    // escala negativa: el objeto se dibuja reflejado alrededor de su ancla
+    if (go.scaleX < 0) ax = 1 - ax;
+    if (go.scaleY < 0) ay = 1 - ay;
+    out.x = ax; out.y = ay;
+    return out;
+  }
+  /** Coloca el cuerpo según la posición del objeto (respeta ancla, escala negativa y volteo del sprite). */
   resetFromGameObject() {
-    var go = this.gameObject, d = this._dims || this._goDims();
-    var ax = go.anchorX !== undefined ? go.anchorX : (go.originX !== undefined ? go.originX : 0.5), ay = go.anchorY !== undefined ? go.anchorY : (go.originY !== undefined ? go.originY : 0.5);
+    var go = this.gameObject, d = this._dims || this._goDims(), a = this._anchor(_anchorTmp);
+    if (this.useWorldBounds) {
+      var wb = this._worldBox();
+      this.position.x = wb.x; this.position.y = wb.y; this.width = wb.w; this.height = wb.h; this._wsig = wb.sig;
+      this.prev.copy(this.position); this._start.copy(this.position);
+      this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+      return;
+    }
     var dw = d.w * d.sx, dh = d.h * d.sy;
-    this.position.x = go.x - ax * dw + this.offset.x * d.sx;
-    this.position.y = go.y - ay * dh + this.offset.y * d.sy;
-    if (!this._customSize && !this.isCircle) { this.position.x = go.x - ax * dw + this.offset.x * d.sx; }
+    // con el sprite volteado (o escala negativa) un cuerpo desplazado debe reflejarse igual que el dibujo
+    var mx = (go.scaleX < 0) !== !!go.flipX, my = (go.scaleY < 0) !== !!go.flipY;
+    var ox = mx ? d.w - this.offset.x - this.sourceWidth : this.offset.x, oy = my ? d.h - this.offset.y - this.sourceHeight : this.offset.y;
+    this.position.x = go.x - a.x * dw + ox * d.sx;
+    this.position.y = go.y - a.y * dh + oy * d.sy;
     this.prev.copy(this.position); this._start.copy(this.position);
-    this._goX = go.x; this._goY = go.y;
+    this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+  }
+  /** ¿Cambió algo del objeto (tamaño, escala, fotograma) que obligue a recalcular el cuerpo? */
+  _goChanged() {
+    var go = this.gameObject;
+    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY || go._texture !== this._lastTex || go._w !== this._lastW || go._h !== this._lastH) return true;
+    // en modo mundo también cuentan la rotación y el movimiento de los grupos padre
+    return !!this.useWorldBounds && this._worldBox().sig !== this._wsig;
   }
   setSize(w, h, center) {
     var d = this._goDims();
@@ -10282,6 +10347,8 @@ class Body {
   setFriction(x, y) { this.friction.set(x, y === undefined ? 0 : y); return this; }
   setCollideWorldBounds(v, bx, by, onWorldBounds) { this.collideWorldBounds = v !== false; if (bx !== undefined) this.worldBounce = new Vec2(bx, by === undefined ? bx : by); if (onWorldBounds !== undefined) this.onWorldBounds = !!onWorldBounds; return this; }
   setEnable(v) { this.enable = v !== false; return this; }
+  /** Plataforma de un sentido (se atraviesa desde abajo y por los lados) */
+  setOneWay(v) { this.oneWay = v !== false; return this; }
   setAngularVelocity(v) { this.angularVelocity = v; return this; }
   setAllowRotation(v) { this.allowRotation = v !== false; return this; }
   stop() { this.velocity.set(0, 0); this.acceleration.set(0, 0); this.angularVelocity = 0; return this; }
@@ -10302,8 +10369,14 @@ class Body {
     var go = this.gameObject;
     this.wasTouching.none = this.touching.none; this.wasTouching.up = this.touching.up; this.wasTouching.down = this.touching.down; this.wasTouching.left = this.touching.left; this.wasTouching.right = this.touching.right;
     resetDirs(this.touching, true); resetDirs(this.blocked, true);
-    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY) { this._syncSize(); this._lastSX = go.scaleX; this._lastSY = go.scaleY; }
-    if (go.x !== this._goX || go.y !== this._goY) this.resetFromGameObject();
+    var reset = go.x !== this._goX || go.y !== this._goY || !!go.flipX !== this._flipX || !!go.flipY !== this._flipY;
+    if (this._goChanged()) {
+      var d0 = this._dims, sx0 = this._lastSX, sy0 = this._lastSY;
+      this._syncSize();
+      // cambio de escala o de tamaño (fotograma distinto): el cuerpo se recoloca alrededor del ancla
+      if (!d0 || d0.w !== this._dims.w || d0.h !== this._dims.h || sx0 !== go.scaleX || sy0 !== go.scaleY) reset = true;
+    }
+    if (reset) this.resetFromGameObject();
     this.prev.copy(this.position); this._start.copy(this.position);
     this._rot0 = go.rotation;
   }
@@ -10488,6 +10561,13 @@ class ArcadeWorld extends EventEmitter {
       b = bodies[i];
       if (!b.gameObject || b.gameObject.destroyed) { b.destroy(); continue; }
     }
+    // los cuerpos estáticos siguen a su objeto si alguien lo mueve, escala o voltea (tweens, scripts, editor)
+    var st = this.staticBodies;
+    for (i = st.length - 1; i >= 0; i--) {
+      b = st[i]; var sgo = b.gameObject;
+      if (!sgo || sgo.destroyed) { b.destroy(); continue; }
+      if (b.enable && (sgo.x !== b._goX || sgo.y !== b._goY || !!sgo.flipX !== b._flipX || !!sgo.flipY !== b._flipY || b._goChanged())) { b._syncSize(); b.resetFromGameObject(); this._staticDirty = true; }
+    }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.preUpdate(); }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.update(dt); }
     var cols = this.colliders;
@@ -10574,6 +10654,7 @@ class ArcadeWorld extends EventEmitter {
     return b1.right > b2.left && b1.left < b2.right && b1.bottom > b2.top && b1.top < b2.bottom;
   }
   separate(b1, b2) {
+    if (b1.oneWay || b2.oneWay) return this._separateOneWay(b1, b2);
     if (b1.isCircle || b2.isCircle) return this._separateCircle(b1, b2);
     var ox1 = b1.prev.x + b1.width > b2.prev.x && b1.prev.x < b2.prev.x + b2.width;
     var oy1 = b1.prev.y + b1.height > b2.prev.y && b1.prev.y < b2.prev.y + b2.height;
@@ -10585,6 +10666,25 @@ class ArcadeWorld extends EventEmitter {
     return r;
   }
   _fixed(b) { return b.immovable || !b.pushable || !b.moves; }
+  /**
+   * Plataforma de un sentido (body.oneWay): solo sostiene a quien llega desde arriba; se atraviesa al saltar
+   * desde abajo o por los lados. Quien la pisa se coloca encima y la plataforma lo arrastra si se mueve.
+   */
+  _separateOneWay(b1, b2) {
+    var p = b1.oneWay ? b1 : b2, o = p === b1 ? b2 : b1;
+    if (o.oneWay || this._fixed(o)) return false;
+    var top = p.top, pTop = p.prev.y;
+    // venía de arriba: su base estaba por encima de la plataforma en el paso anterior (con margen por su movimiento)
+    if (o.prev.y + o.height > pTop + Math.max(0, p.position.y - p.prev.y) + 0.5) return false;
+    if (o.velocity.y < p.velocity.y - 0.01) return false; // subiendo: la atraviesa
+    var ov = o.bottom - top;
+    if (ov <= 0 || !o.checkCollision.down) return false;
+    o.position.y -= ov;
+    if (o.velocity.y > p.velocity.y) o.velocity.y = p.velocity.y - (o.velocity.y - p.velocity.y) * o.bounce.y;
+    if (p.moves && p.friction.x) o.position.x += p.deltaX() * p.friction.x;
+    o.blocked.down = true; o.blocked.none = false; o.touching.down = true; o.touching.none = false; p.touching.up = true; p.touching.none = false;
+    return true;
+  }
   _sepX(b1, b2) {
     var left = b1.centerX < b2.centerX;
     var ov = left ? b1.right - b2.left : b2.right - b1.left;
@@ -11224,16 +11324,30 @@ class RigidWorld2D extends EventEmitter {
   /** Cajas estáticas a partir de una capa de tilemap (fusiona tiles contiguos por filas). tiles: índices sólidos (por defecto todos > 0) */
   addTilemapLayer(layer, o) {
     o = o || {};
-    var data = layer.data || layer.layer && layer.layer.data, tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
-    if (!data) return out;
-    var ox = (layer.x || 0), oy = (layer.y || 0), solid = o.tiles ? new Set(o.tiles) : null;
-    for (var y = 0; y < data.length; y++) {
-      var row = data[y], x = 0;
-      while (x < row.length) {
-        var t = row[x], idx = t && typeof t === 'object' ? t.index : t, ok = solid ? solid.has(idx) : idx > 0;
-        if (!ok) { x++; continue; }
-        var x0 = x; while (x < row.length) { var t2 = row[x], i2 = t2 && typeof t2 === 'object' ? t2.index : t2; if (!(solid ? solid.has(i2) : i2 > 0)) break; x++; }
-        out.push(this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o));
+    var tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
+    var solid = o.tiles ? new Set(o.tiles) : null, W, H, sx = 0, sy = 0, isSolid;
+    if (typeof layer.collidesAt === 'function' && layer.tileData) {
+      // TilemapLayer del motor: datos planos; sólido = colisión activada en la capa (o índices de o.tiles)
+      W = layer.layerWidth; H = layer.layerHeight; sx = layer.startX || 0; sy = layer.startY || 0;
+      isSolid = solid ? function (x, y) { return solid.has(layer.gidAt(x + sx, y + sy) & TILE_GID_MASK); } : function (x, y) { return layer.collidesAt(x + sx, y + sy) !== 0; };
+    } else {
+      // datos por filas (array de arrays de índices o de {index})
+      var data = layer.data || layer.layer && layer.layer.data; if (!data || !data.length || !Array.isArray(data[0]) && typeof data[0] !== 'object') return out;
+      H = data.length; W = 0; for (var r = 0; r < H; r++) W = Math.max(W, data[r] ? data[r].length : 0);
+      isSolid = function (x, y) { var row = data[y], t = row ? row[x] : 0, idx = t && typeof t === 'object' ? t.index : t; return solid ? solid.has(idx) : idx > 0; };
+    }
+    // posición y escala reales de la capa (puede estar dentro de un grupo desplazado o escalado)
+    var m = layer.getWorldMatrix ? layer.getWorldMatrix(new Matrix(), 0, 0) : null;
+    var ox = m ? m.tx : (layer.x || 0), oy = m ? m.ty : (layer.y || 0);
+    if (m) { tw *= Math.hypot(m.a, m.b) || 1; th *= Math.hypot(m.c, m.d) || 1; }
+    ox += sx * tw; oy += sy * th;
+    // tiles contiguos de cada fila en una sola caja (menos cuerpos y sin enganches entre tiles)
+    for (var y = 0; y < H && out.length < 20000; y++) {
+      var x = 0;
+      while (x < W) {
+        if (!isSolid(x, y)) { x++; continue; }
+        var x0 = x; while (x < W && isSolid(x, y)) x++;
+        var b = this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o); if (b) out.push(b);
       }
     }
     return out;
@@ -18667,7 +18781,7 @@ UG.GLTFExporter = GLTFExporter; UG.encodePNG = encodePNG;
  * - Vehículo arcade: aceleración, frenado, derrape, suspensión por rayos, inclinación con el terreno.
  * - Rayos (disparos, línea de visión, picking), disparadores (zonas) y consultas de solapamiento. */
 
-var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4();
+var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4(), _p3o = new Vec3();
 
 /** Punto más cercano de un triángulo a p (Ericson, Real-Time Collision Detection 5.1.5) */
 function closestPtTriangle(px, py, pz, t, o, out) {
@@ -18826,12 +18940,14 @@ class Body3D extends EventEmitter {
     this.world = world; this.node = node || null; this.id = uid();
     this.shape = o.shape === 'box' ? 'box' : 'sphere';
     this.radius = o.radius || 0.5; this.half = o.half ? new Vec3(o.half.x, o.half.y, o.half.z) : new Vec3(0.5, 0.5, 0.5);
-    this.position = node ? node.getWorldPosition(new Vec3()) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
+    /** Desplazamiento del centro del cuerpo respecto al origen del nodo (modelos con el origen en la base) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
     this.velocity = new Vec3(); this.mass = o.mass === undefined ? 1 : Math.max(0, o.mass); this.invMass = this.mass > 0 ? 1 / this.mass : 0;
     this.restitution = o.restitution === undefined ? 0.2 : o.restitution; this.friction = o.friction === undefined ? 0.6 : o.friction;
     this.gravityScale = o.gravityScale === undefined ? 1 : o.gravityScale; this.linearDamping = o.damping === undefined ? 0.02 : o.damping;
     this.sleeping = false; this._still = 0; this.onGround = false; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
-    this.roll = o.roll !== false && this.shape === 'sphere'; // la malla de la esfera rueda visualmente
+    this.roll = o.roll !== false && this.shape === 'sphere' && this.offset.length() < 1e-3; // la malla de la esfera rueda visualmente
     this.userData = o.userData || {};
     this.min = new Vec3(); this.max = new Vec3(); this._aabb();
     this.destroyed = false;
@@ -18843,7 +18959,8 @@ class Body3D extends EventEmitter {
   wake() { this.sleeping = false; this._still = 0; return this; }
   _sync(dt) {
     var n = this.node; if (!n) return;
-    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position);
+    var wp = _p3o.subVectors(this.position, this.offset);
+    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp);
     if (this.roll && dt > 0) { var vx = this.velocity.x, vz = this.velocity.z, sp = Math.hypot(vx, vz); if (sp > 1e-4 && this.onGround) { var ax = _p3n.set(vz / sp, 0, -vx / sp); n.rotateOnWorldAxis(ax, sp * dt / this.radius); } }
   }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
@@ -18859,7 +18976,9 @@ class CharacterController3D extends EventEmitter {
     this.stepHeight = o.stepHeight === undefined ? 0.4 : o.stepHeight; this.maxSlope = (o.maxSlope === undefined ? 50 : o.maxSlope) * DEG_TO_RAD;
     this.gravity = o.gravity === undefined ? null : o.gravity; this.jumpSpeed = o.jumpSpeed || 8; this.coyoteTime = o.coyoteTime === undefined ? 0.12 : o.coyoteTime;
     this.pushForce = o.pushForce === undefined ? 2 : o.pushForce;
-    this.position = node ? node.getWorldPosition(new Vec3()) : new Vec3();
+    /** Desplazamiento de los pies respecto al origen del nodo (p. ej. una cápsula con el origen en el centro) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : new Vec3();
     this.velocity = new Vec3(); this.onGround = false; this.groundNormal = new Vec3(0, 1, 0); this.hitCeiling = false; this.hitWall = false;
     this._move = new Vec3(); this._jump = false; this._air = 0; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
     this.userData = o.userData || {}; this.min = new Vec3(); this.max = new Vec3(); this._aabb(); this.destroyed = false;
@@ -18889,7 +19008,7 @@ class CharacterController3D extends EventEmitter {
   move(vx, vz) { this._move.set(vx || 0, 0, vz || 0); return this; }
   jump(speed) { if (this.onGround || this._air <= this.coyoteTime) { this._jump = speed || this.jumpSpeed; return true; } return false; }
   teleport(x, y, z) { if (typeof x === 'object') this.position.copy(x); else this.position.set(x, y, z); this.velocity.set(0, 0, 0); this.vaulting = null; this._aabb(); this._sync(); return this; }
-  _sync() { var n = this.node; if (!n) return; if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position); }
+  _sync() { var n = this.node; if (!n) return; var wp = _p3o.subVectors(this.position, this.offset); if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp); }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
 }
 

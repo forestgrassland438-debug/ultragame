@@ -5,7 +5,7 @@
  * - Vehículo arcade: aceleración, frenado, derrape, suspensión por rayos, inclinación con el terreno.
  * - Rayos (disparos, línea de visión, picking), disparadores (zonas) y consultas de solapamiento. */
 
-var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4();
+var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4(), _p3o = new Vec3();
 
 /** Punto más cercano de un triángulo a p (Ericson, Real-Time Collision Detection 5.1.5) */
 function closestPtTriangle(px, py, pz, t, o, out) {
@@ -164,12 +164,14 @@ class Body3D extends EventEmitter {
     this.world = world; this.node = node || null; this.id = uid();
     this.shape = o.shape === 'box' ? 'box' : 'sphere';
     this.radius = o.radius || 0.5; this.half = o.half ? new Vec3(o.half.x, o.half.y, o.half.z) : new Vec3(0.5, 0.5, 0.5);
-    this.position = node ? node.getWorldPosition(new Vec3()) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
+    /** Desplazamiento del centro del cuerpo respecto al origen del nodo (modelos con el origen en la base) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
     this.velocity = new Vec3(); this.mass = o.mass === undefined ? 1 : Math.max(0, o.mass); this.invMass = this.mass > 0 ? 1 / this.mass : 0;
     this.restitution = o.restitution === undefined ? 0.2 : o.restitution; this.friction = o.friction === undefined ? 0.6 : o.friction;
     this.gravityScale = o.gravityScale === undefined ? 1 : o.gravityScale; this.linearDamping = o.damping === undefined ? 0.02 : o.damping;
     this.sleeping = false; this._still = 0; this.onGround = false; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
-    this.roll = o.roll !== false && this.shape === 'sphere'; // la malla de la esfera rueda visualmente
+    this.roll = o.roll !== false && this.shape === 'sphere' && this.offset.length() < 1e-3; // la malla de la esfera rueda visualmente
     this.userData = o.userData || {};
     this.min = new Vec3(); this.max = new Vec3(); this._aabb();
     this.destroyed = false;
@@ -181,7 +183,8 @@ class Body3D extends EventEmitter {
   wake() { this.sleeping = false; this._still = 0; return this; }
   _sync(dt) {
     var n = this.node; if (!n) return;
-    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position);
+    var wp = _p3o.subVectors(this.position, this.offset);
+    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp);
     if (this.roll && dt > 0) { var vx = this.velocity.x, vz = this.velocity.z, sp = Math.hypot(vx, vz); if (sp > 1e-4 && this.onGround) { var ax = _p3n.set(vz / sp, 0, -vx / sp); n.rotateOnWorldAxis(ax, sp * dt / this.radius); } }
   }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
@@ -197,7 +200,9 @@ class CharacterController3D extends EventEmitter {
     this.stepHeight = o.stepHeight === undefined ? 0.4 : o.stepHeight; this.maxSlope = (o.maxSlope === undefined ? 50 : o.maxSlope) * DEG_TO_RAD;
     this.gravity = o.gravity === undefined ? null : o.gravity; this.jumpSpeed = o.jumpSpeed || 8; this.coyoteTime = o.coyoteTime === undefined ? 0.12 : o.coyoteTime;
     this.pushForce = o.pushForce === undefined ? 2 : o.pushForce;
-    this.position = node ? node.getWorldPosition(new Vec3()) : new Vec3();
+    /** Desplazamiento de los pies respecto al origen del nodo (p. ej. una cápsula con el origen en el centro) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : new Vec3();
     this.velocity = new Vec3(); this.onGround = false; this.groundNormal = new Vec3(0, 1, 0); this.hitCeiling = false; this.hitWall = false;
     this._move = new Vec3(); this._jump = false; this._air = 0; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
     this.userData = o.userData || {}; this.min = new Vec3(); this.max = new Vec3(); this._aabb(); this.destroyed = false;
@@ -227,7 +232,7 @@ class CharacterController3D extends EventEmitter {
   move(vx, vz) { this._move.set(vx || 0, 0, vz || 0); return this; }
   jump(speed) { if (this.onGround || this._air <= this.coyoteTime) { this._jump = speed || this.jumpSpeed; return true; } return false; }
   teleport(x, y, z) { if (typeof x === 'object') this.position.copy(x); else this.position.set(x, y, z); this.velocity.set(0, 0, 0); this.vaulting = null; this._aabb(); this._sync(); return this; }
-  _sync() { var n = this.node; if (!n) return; if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position); }
+  _sync() { var n = this.node; if (!n) return; var wp = _p3o.subVectors(this.position, this.offset); if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp); }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
 }
 

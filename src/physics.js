@@ -4,6 +4,7 @@
  * Paso fijo (60 Hz por defecto) => simulación estable y reproducible. */
 
 function makeDirs(v) { return { none: v === undefined ? true : v, up: false, down: false, left: false, right: false }; }
+var _anchorTmp = { x: 0, y: 0 }, _worldM = new Matrix();
 function resetDirs(d, none) { d.none = none; d.up = false; d.down = false; d.left = false; d.right = false; }
 
 class Body {
@@ -21,6 +22,8 @@ class Body {
     this.maxVelocity = new Vec2(10000, 10000); this.maxSpeed = -1;
     this.bounce = new Vec2(); this.friction = new Vec2(1, 0); this.gravity = new Vec2();
     this.worldBounce = null;
+    /** Plataforma de un sentido: solo choca con lo que cae encima desde arriba */
+    this.oneWay = false; this.useWorldBounds = false;
     this.allowGravity = !isStatic; this.allowDrag = true; this.useDamping = false;
     this.immovable = !!isStatic; this.pushable = !isStatic; this.moves = !isStatic; this.mass = 1;
     this.collideWorldBounds = false; this.onWorldBounds = false; this.onCollide = false; this.onOverlap = false;
@@ -51,30 +54,81 @@ class Body {
   onWall() { return this.blocked.left || this.blocked.right; }
   _goDims() {
     var go = this.gameObject, sx = Math.abs(go.scaleX || 1), sy = Math.abs(go.scaleY || 1), w, h;
-    if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
+    // Mosaicos, 9-slice y texto bitmap tienen tamaño propio (_w/_h): su textura es solo el patrón que se repite
+    if (typeof go._w === 'number' && typeof go._h === 'number') { if (typeof go._layout === 'function') go._layout(); w = go._w; h = go._h; }
+    else if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
     else if (go.zoneWidth !== undefined) { w = go.zoneWidth; h = go.zoneHeight; }
     else if (go.shapeWidth !== undefined) { w = go.shapeWidth; h = go.shapeHeight; }
-    else if (go._w !== undefined) { w = go._w; h = go._h; }
     else { var lb = go.getLocalBounds ? go.getLocalBounds() : null; w = lb && lb.width ? lb.width : 16; h = lb && lb.height ? lb.height : 16; }
     return { w: w, h: h, sx: sx, sy: sy };
   }
   _syncSize() {
-    var d = this._goDims();
+    var d = this._goDims(), go = this.gameObject;
     if (!this._customSize) { this.sourceWidth = d.w; this.sourceHeight = d.h; }
     if (this.isCircle) { this.width = this.height = this.radius * 2 * d.sx; }
     else { this.width = this.sourceWidth * d.sx; this.height = this.sourceHeight * d.sy; }
-    this._dims = d;
+    this._dims = d; this._lastSX = go.scaleX; this._lastSY = go.scaleY; this._lastTex = go._texture; this._lastW = go._w; this._lastH = go._h;
+    if (this.useWorldBounds) { var wb = this._worldBox(); this.width = wb.w; this.height = wb.h; }
   }
-  /** Coloca el cuerpo según la posición del objeto. */
+  /**
+   * Cuerpo ajustado a la caja que ocupa el objeto en el mundo: tiene en cuenta rotación, escala y grupos padre.
+   * Pensado para cuerpos estáticos (suelos y muros girados o dentro de un grupo); los dinámicos se mueven en x/y locales.
+   */
+  setWorldBounds(on) { this.useWorldBounds = on !== false; this.isCircle = this.isCircle && !this.useWorldBounds; this._syncSize(); this.resetFromGameObject(); if (this.world && this.isStatic) this.world._staticDirty = true; return this; }
+  _worldBox() {
+    var go = this.gameObject, d = this._dims || this._goDims(), shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = 0.5; if (ay === undefined) ay = 0.5;
+    var sw = this._customSize ? this.sourceWidth : d.w, sh = this._customSize ? this.sourceHeight : d.h;
+    // el volteo refleja el dibujo dentro de su rectángulo; la escala negativa ya va en la matriz
+    var ox = go.flipX ? d.w - this.offset.x - sw : this.offset.x, oy = go.flipY ? d.h - this.offset.y - sh : this.offset.y;
+    var x0 = -ax * d.w + ox, y0 = -ay * d.h + oy, x1 = x0 + sw, y1 = y0 + sh;
+    var m = go.getWorldMatrix ? go.getWorldMatrix(_worldM, 0, 0) : null;
+    if (!m) return { x: go.x + x0, y: go.y + y0, w: sw, h: sh, sig: '' };
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var k = 0; k < 4; k++) {
+      var lx = k & 1 ? x1 : x0, ly = k & 2 ? y1 : y0, wx = m.a * lx + m.c * ly + m.tx, wy = m.b * lx + m.d * ly + m.ty;
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx; if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, sig: m.a + ',' + m.b + ',' + m.c + ',' + m.d + ',' + m.tx + ',' + m.ty };
+  }
+  /** Punto de anclaje (0..1) del objeto: las formas usan originX/Y; sprites, textos y mosaicos, anchorX/Y. */
+  _anchor(out) {
+    var go = this.gameObject, shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = go.originX !== undefined ? go.originX : 0.5;
+    if (ay === undefined) ay = go.originY !== undefined ? go.originY : 0.5;
+    // escala negativa: el objeto se dibuja reflejado alrededor de su ancla
+    if (go.scaleX < 0) ax = 1 - ax;
+    if (go.scaleY < 0) ay = 1 - ay;
+    out.x = ax; out.y = ay;
+    return out;
+  }
+  /** Coloca el cuerpo según la posición del objeto (respeta ancla, escala negativa y volteo del sprite). */
   resetFromGameObject() {
-    var go = this.gameObject, d = this._dims || this._goDims();
-    var ax = go.anchorX !== undefined ? go.anchorX : (go.originX !== undefined ? go.originX : 0.5), ay = go.anchorY !== undefined ? go.anchorY : (go.originY !== undefined ? go.originY : 0.5);
+    var go = this.gameObject, d = this._dims || this._goDims(), a = this._anchor(_anchorTmp);
+    if (this.useWorldBounds) {
+      var wb = this._worldBox();
+      this.position.x = wb.x; this.position.y = wb.y; this.width = wb.w; this.height = wb.h; this._wsig = wb.sig;
+      this.prev.copy(this.position); this._start.copy(this.position);
+      this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+      return;
+    }
     var dw = d.w * d.sx, dh = d.h * d.sy;
-    this.position.x = go.x - ax * dw + this.offset.x * d.sx;
-    this.position.y = go.y - ay * dh + this.offset.y * d.sy;
-    if (!this._customSize && !this.isCircle) { this.position.x = go.x - ax * dw + this.offset.x * d.sx; }
+    // con el sprite volteado (o escala negativa) un cuerpo desplazado debe reflejarse igual que el dibujo
+    var mx = (go.scaleX < 0) !== !!go.flipX, my = (go.scaleY < 0) !== !!go.flipY;
+    var ox = mx ? d.w - this.offset.x - this.sourceWidth : this.offset.x, oy = my ? d.h - this.offset.y - this.sourceHeight : this.offset.y;
+    this.position.x = go.x - a.x * dw + ox * d.sx;
+    this.position.y = go.y - a.y * dh + oy * d.sy;
     this.prev.copy(this.position); this._start.copy(this.position);
-    this._goX = go.x; this._goY = go.y;
+    this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+  }
+  /** ¿Cambió algo del objeto (tamaño, escala, fotograma) que obligue a recalcular el cuerpo? */
+  _goChanged() {
+    var go = this.gameObject;
+    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY || go._texture !== this._lastTex || go._w !== this._lastW || go._h !== this._lastH) return true;
+    // en modo mundo también cuentan la rotación y el movimiento de los grupos padre
+    return !!this.useWorldBounds && this._worldBox().sig !== this._wsig;
   }
   setSize(w, h, center) {
     var d = this._goDims();
@@ -113,6 +167,8 @@ class Body {
   setFriction(x, y) { this.friction.set(x, y === undefined ? 0 : y); return this; }
   setCollideWorldBounds(v, bx, by, onWorldBounds) { this.collideWorldBounds = v !== false; if (bx !== undefined) this.worldBounce = new Vec2(bx, by === undefined ? bx : by); if (onWorldBounds !== undefined) this.onWorldBounds = !!onWorldBounds; return this; }
   setEnable(v) { this.enable = v !== false; return this; }
+  /** Plataforma de un sentido (se atraviesa desde abajo y por los lados) */
+  setOneWay(v) { this.oneWay = v !== false; return this; }
   setAngularVelocity(v) { this.angularVelocity = v; return this; }
   setAllowRotation(v) { this.allowRotation = v !== false; return this; }
   stop() { this.velocity.set(0, 0); this.acceleration.set(0, 0); this.angularVelocity = 0; return this; }
@@ -133,8 +189,14 @@ class Body {
     var go = this.gameObject;
     this.wasTouching.none = this.touching.none; this.wasTouching.up = this.touching.up; this.wasTouching.down = this.touching.down; this.wasTouching.left = this.touching.left; this.wasTouching.right = this.touching.right;
     resetDirs(this.touching, true); resetDirs(this.blocked, true);
-    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY) { this._syncSize(); this._lastSX = go.scaleX; this._lastSY = go.scaleY; }
-    if (go.x !== this._goX || go.y !== this._goY) this.resetFromGameObject();
+    var reset = go.x !== this._goX || go.y !== this._goY || !!go.flipX !== this._flipX || !!go.flipY !== this._flipY;
+    if (this._goChanged()) {
+      var d0 = this._dims, sx0 = this._lastSX, sy0 = this._lastSY;
+      this._syncSize();
+      // cambio de escala o de tamaño (fotograma distinto): el cuerpo se recoloca alrededor del ancla
+      if (!d0 || d0.w !== this._dims.w || d0.h !== this._dims.h || sx0 !== go.scaleX || sy0 !== go.scaleY) reset = true;
+    }
+    if (reset) this.resetFromGameObject();
     this.prev.copy(this.position); this._start.copy(this.position);
     this._rot0 = go.rotation;
   }
@@ -319,6 +381,13 @@ class ArcadeWorld extends EventEmitter {
       b = bodies[i];
       if (!b.gameObject || b.gameObject.destroyed) { b.destroy(); continue; }
     }
+    // los cuerpos estáticos siguen a su objeto si alguien lo mueve, escala o voltea (tweens, scripts, editor)
+    var st = this.staticBodies;
+    for (i = st.length - 1; i >= 0; i--) {
+      b = st[i]; var sgo = b.gameObject;
+      if (!sgo || sgo.destroyed) { b.destroy(); continue; }
+      if (b.enable && (sgo.x !== b._goX || sgo.y !== b._goY || !!sgo.flipX !== b._flipX || !!sgo.flipY !== b._flipY || b._goChanged())) { b._syncSize(); b.resetFromGameObject(); this._staticDirty = true; }
+    }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.preUpdate(); }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.update(dt); }
     var cols = this.colliders;
@@ -405,6 +474,7 @@ class ArcadeWorld extends EventEmitter {
     return b1.right > b2.left && b1.left < b2.right && b1.bottom > b2.top && b1.top < b2.bottom;
   }
   separate(b1, b2) {
+    if (b1.oneWay || b2.oneWay) return this._separateOneWay(b1, b2);
     if (b1.isCircle || b2.isCircle) return this._separateCircle(b1, b2);
     var ox1 = b1.prev.x + b1.width > b2.prev.x && b1.prev.x < b2.prev.x + b2.width;
     var oy1 = b1.prev.y + b1.height > b2.prev.y && b1.prev.y < b2.prev.y + b2.height;
@@ -416,6 +486,25 @@ class ArcadeWorld extends EventEmitter {
     return r;
   }
   _fixed(b) { return b.immovable || !b.pushable || !b.moves; }
+  /**
+   * Plataforma de un sentido (body.oneWay): solo sostiene a quien llega desde arriba; se atraviesa al saltar
+   * desde abajo o por los lados. Quien la pisa se coloca encima y la plataforma lo arrastra si se mueve.
+   */
+  _separateOneWay(b1, b2) {
+    var p = b1.oneWay ? b1 : b2, o = p === b1 ? b2 : b1;
+    if (o.oneWay || this._fixed(o)) return false;
+    var top = p.top, pTop = p.prev.y;
+    // venía de arriba: su base estaba por encima de la plataforma en el paso anterior (con margen por su movimiento)
+    if (o.prev.y + o.height > pTop + Math.max(0, p.position.y - p.prev.y) + 0.5) return false;
+    if (o.velocity.y < p.velocity.y - 0.01) return false; // subiendo: la atraviesa
+    var ov = o.bottom - top;
+    if (ov <= 0 || !o.checkCollision.down) return false;
+    o.position.y -= ov;
+    if (o.velocity.y > p.velocity.y) o.velocity.y = p.velocity.y - (o.velocity.y - p.velocity.y) * o.bounce.y;
+    if (p.moves && p.friction.x) o.position.x += p.deltaX() * p.friction.x;
+    o.blocked.down = true; o.blocked.none = false; o.touching.down = true; o.touching.none = false; p.touching.up = true; p.touching.none = false;
+    return true;
+  }
   _sepX(b1, b2) {
     var left = b1.centerX < b2.centerX;
     var ov = left ? b1.right - b2.left : b2.right - b1.left;

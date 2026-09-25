@@ -240,27 +240,34 @@
   /* --------------------------------------------------------------- física */
   S.PHYSICS_2D = [
     { key: 'type', label: 'Física', type: 'select', def: 'none', options: [['none', 'Ninguna'], ['dynamic', 'Dinámica (cae, choca)'], ['static', 'Estática (suelo, muro)'], ['kinematic', 'Cinemática (se mueve sin gravedad)']] },
-    { key: 'gravity', label: 'Le afecta la gravedad', type: 'bool', def: true },
+    { key: 'gravity', label: 'Le afecta la gravedad', type: 'bool', def: true, types: ['dynamic'] },
     { key: 'bounce', label: 'Rebote', type: 'number', def: 0, min: 0, max: 1, step: 0.05 },
-    { key: 'drag', label: 'Rozamiento del aire', type: 'number', def: 0, min: 0, max: 5000, step: 10 },
-    { key: 'worldBounds', label: 'Choca con los bordes', type: 'bool', def: true },
+    { key: 'drag', label: 'Rozamiento del aire', type: 'number', def: 0, min: 0, max: 5000, step: 10, types: ['dynamic', 'kinematic'] },
+    { key: 'worldBounds', label: 'Choca con los bordes', type: 'bool', def: true, types: ['dynamic', 'kinematic'] },
+    // forma del cuerpo (lo que choca): por defecto se ajusta a los píxeles visibles del sprite
+    { key: 'fit', label: 'Tamaño del cuerpo', type: 'select', def: 'trim', options: [['trim', 'Ajustado al dibujo (sin bordes transparentes)'], ['full', 'Toda la imagen'], ['custom', 'A medida']] },
+    { key: 'bodyW', label: 'Ancho del cuerpo (0 = auto)', type: 'number', def: 0, min: 0, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyH', label: 'Alto del cuerpo (0 = auto)', type: 'number', def: 0, min: 0, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyX', label: 'Desplazamiento X del cuerpo', type: 'number', def: 0, min: -100000, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyY', label: 'Desplazamiento Y del cuerpo', type: 'number', def: 0, min: -100000, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
     { key: 'circle', label: 'Cuerpo circular', type: 'bool', def: false },
-    { key: 'pushable', label: 'Se puede empujar', type: 'bool', def: true },
-    { key: 'solid', label: 'Sólido para otros dinámicos', type: 'bool', def: false },
+    { key: 'oneWay', label: 'Plataforma de un sentido (se atraviesa desde abajo)', type: 'bool', def: false, types: ['static', 'kinematic'], engine: 'arcade' },
+    { key: 'pushable', label: 'Se puede empujar', type: 'bool', def: true, types: ['dynamic'], engine: 'arcade' },
+    { key: 'solid', label: 'Sólido para otros dinámicos', type: 'bool', def: false, types: ['dynamic', 'kinematic'], engine: 'arcade' },
     // solo con el motor de cuerpos rígidos (escena 2D con «Física: cuerpos rígidos»)
-    { key: 'density', label: 'Densidad (rígida)', type: 'number', def: 1, min: 0.01, max: 1000, step: 0.1 },
-    { key: 'friction', label: 'Fricción (rígida)', type: 'number', def: 0.4, min: 0, max: 5, step: 0.05 },
-    { key: 'fixedRotation', label: 'No gira (rígida)', type: 'bool', def: false },
+    { key: 'density', label: 'Densidad (rígida)', type: 'number', def: 1, min: 0.01, max: 1000, step: 0.1, engine: 'rigid' },
+    { key: 'friction', label: 'Fricción (rígida)', type: 'number', def: 0.4, min: 0, max: 5, step: 0.05, engine: 'rigid' },
+    { key: 'fixedRotation', label: 'No gira (rígida)', type: 'bool', def: false, engine: 'rigid' },
     // luces 2D: el objeto tapa la luz
-    { key: 'shadow', label: 'Proyecta sombra (luces 2D)', type: 'bool', def: false }
+    { key: 'shadow', label: 'Proyecta sombra (luces 2D)', type: 'bool', def: false, always: true }
   ];
   S.PHYSICS_3D = [
     { key: 'type', label: 'Física', type: 'select', def: 'none', options: [['none', 'Ninguna'], ['static', 'Estática (caja)'], ['mesh', 'Estática exacta (malla: casas, rampas)'], ['body', 'Cuerpo dinámico'], ['character', 'Personaje'], ['trigger', 'Zona (sin choque)']] },
-    { key: 'shape', label: 'Forma del cuerpo', type: 'select', def: 'box', options: [['box', 'Caja'], ['sphere', 'Esfera']] },
-    { key: 'mass', label: 'Masa', type: 'number', def: 1, min: 0.01, max: 10000, step: 0.1 },
-    { key: 'bounce', label: 'Rebote', type: 'number', def: 0.2, min: 0, max: 1, step: 0.05 },
-    { key: 'radius', label: 'Radio (personaje/esfera)', type: 'number', def: 0.4, min: 0.05, max: 50, step: 0.05 },
-    { key: 'height', label: 'Altura (personaje)', type: 'number', def: 1.8, min: 0.1, max: 50, step: 0.05 }
+    { key: 'shape', label: 'Forma del cuerpo', type: 'select', def: 'box', options: [['box', 'Caja'], ['sphere', 'Esfera']], types: ['body'] },
+    { key: 'mass', label: 'Masa', type: 'number', def: 1, min: 0.01, max: 10000, step: 0.1, types: ['body'] },
+    { key: 'bounce', label: 'Rebote', type: 'number', def: 0.2, min: 0, max: 1, step: 0.05, types: ['static', 'mesh', 'body'] },
+    { key: 'radius', label: 'Radio (personaje/esfera)', type: 'number', def: 0.4, min: 0.05, max: 50, step: 0.05, types: ['character', 'body'] },
+    { key: 'height', label: 'Altura (personaje)', type: 'number', def: 1.8, min: 0.1, max: 50, step: 0.05, types: ['character'] }
   ];
 
   /* --------------------------------------------------------------- comportamientos (sin código) */

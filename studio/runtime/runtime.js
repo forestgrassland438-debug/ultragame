@@ -542,7 +542,7 @@
     this.entities = []; this.byTag = Object.create(null); this.defsById = Object.create(null); this.defsByName = Object.create(null);
     this.children = Object.create(null); // id de nodo -> hijos (definiciones)
     this.t = 0; this.frame = 0; this._eid = 0; this.view = null; this.world3 = null;
-    this.statics = []; this.dynamics = []; this.solids = []; this.layers = [];
+    this.statics = []; this.dynamics = []; this.solids = []; this.loose = []; this.kinematics = []; this.layers = [];
     this.contacts = Object.create(null); this.newContacts = []; this.watch = []; this.clicked = []; this.pointerDownFrame = -1;
     this.dyn = []; this.sceneScript = null; this._goto = null; this.sfx3d = false; this.alive = true;
     this.cam3 = null; this.controls = null; this.W = scene.game.width; this.H = scene.game.height;
@@ -668,6 +668,7 @@
         o.setOrigin(p.originX, p.originY); o.setTint(colorNum(p.tint)); o.setFlip(p.flipX, p.flipY);
         var frames = sheet ? parseFrames(p.anim) : [];
         if (frames.length > 1) {
+          ent.animFrames = frames;
           var ak = 'ugs:' + node.id; if (!sc.anims.exists(ak)) sc.anims.create({ key: ak, frames: frames.map(function (f) { return { key: key, frame: f }; }), frameRate: p.animFps, repeat: p.animLoop ? -1 : 0 });
           o.play(ak); ent.animKey = ak;
         }
@@ -730,17 +731,19 @@
         break;
       }
       case 'tilemap': {
-        if (!assetExists(ctx, p.asset) || !sc.cache.tilemap.exists(p.asset)) { this.log('warn', 'Mapa de Tiled sin cargar', node.name); o = add.container(node.x, node.y); break; }
-        var map = sc.add.tilemap(p.asset), tsets = [];
-        (map.tilesets || []).forEach(function (ts) { var t = hasAsset(p.tileset) ? map.addTilesetImage(ts.name, p.tileset) : null; if (t) tsets.push(t); });
-        o = add.container(node.x, node.y);
+        if (!assetExists(ctx, p.asset) || !sc.cache.tilemap.has(p.asset)) { this.log('warn', 'Mapa de Tiled sin cargar', node.name); o = add.container(node.x, node.y); break; }
+        var map = sc.add.tilemap(p.asset);
+        // la imagen elegida en el Inspector: para el único tileset, o para los que no trajeron su propia imagen
+        if (hasAsset(p.tileset)) (map.tilesets.length === 1 ? map.tilesets : map.tilesets.filter(function (ts) { return !ts.texture && !ts.collection; })).forEach(function (ts) { map.addTilesetImage(ts.name, p.tileset); });
+        o = add.container(node.x, node.y); ent.map = map;
         var solidNames = p.collide.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-        (map.layers || []).forEach(function (L) {
-          if (L.type && L.type !== 'tilelayer') return;
-          var layer = map.createLayer(L.name, tsets, 0, 0); if (!layer) return;
-          o.addChild(layer);
+        // capas de datos del mapa (map.layers son las ya creadas)
+        ((map.data && map.data.layers) || []).forEach(function (L) {
+          if (L.type !== 'tilelayer') return;
+          var layer = map.createLayer(L.name, o); if (!layer) return;
           if (p.collideAll || solidNames.indexOf(L.name) >= 0) {
             layer.setCollisionByExclusion([-1, 0]); self.layers.push(layer);
+            if (self._collidersReady && !self.rigid) sc.physics.add.collider(self.dynamics, layer); // mapa creado en mitad de la partida
             if (self._lightsOn || self.env2d.lights) sc.lights2d.occludeTilemap(layer);
             if (self.rigid && !self.editMode) sc.rigid.add.tilemap(layer);
           }
@@ -866,62 +869,212 @@
   function mulColor(a, b) { var r = ((a >> 16) & 255) * ((b >> 16) & 255) / 255, g = ((a >> 8) & 255) * ((b >> 8) & 255) / 255, bl = (a & 255) * (b & 255) / 255; return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl); }
 
   /* ---------------------------------------------------------------- física */
-  SceneRT.prototype.setupPhysics = function (ent) {
+  /** Tamaño propio del objeto sin escalar (mismo criterio que el cuerpo arcade del motor) */
+  function srcDims(o) {
+    if (typeof o._w === 'number' && typeof o._h === 'number') { if (typeof o._layout === 'function') o._layout(); return { w: o._w, h: o._h }; }
+    if (o._texture && o._texture.source && o._texture !== UG.Texture.EMPTY) return { w: o._texture.width, h: o._texture.height };
+    if (o.zoneWidth !== undefined) return { w: o.zoneWidth, h: o.zoneHeight };
+    if (o.shapeWidth !== undefined) return { w: o.shapeWidth, h: o.shapeHeight };
+    var lb = o.getLocalBounds ? o.getLocalBounds() : null;
+    return { w: lb && lb.width ? lb.width : 16, h: lb && lb.height ? lb.height : 16 };
+  }
+  /** Ancla (0..1): las formas usan originX/Y; sprites, textos y mosaicos, anchorX/Y */
+  function anchorOf(o) {
+    var shape = o.shapeWidth !== undefined, ax = shape ? o.originX : o.anchorX, ay = shape ? o.originY : o.anchorY;
+    return { x: ax === undefined ? 0.5 : ax, y: ay === undefined ? 0.5 : ay };
+  }
+  /** Rectángulo de los píxeles visibles (alfa >= 100) de un fotograma, en unidades de la textura; en caché por imagen */
+  function alphaRect(tex) {
+    if (!tex || !tex.source || tex.rotate || tex.trim) return undefined;
+    var src = tex.source, res = src.resolution || 1, f = tex.frame, key = f.x + ',' + f.y + ',' + f.width + ',' + f.height;
+    var cache = src._ugsAlpha || (src._ugsAlpha = Object.create(null));
+    if (key in cache) return cache[key];
+    var out, w = Math.round(f.width), hh = Math.round(f.height), img = src.resource, d = null;
+    try {
+      if (img && w > 0 && hh > 0 && w * hh <= 4194304) {
+        if (img.data && typeof img.getContext !== 'function' && img.data.length >= src.width * src.height * 4) {
+          d = new Uint8ClampedArray(w * hh * 4);
+          for (var ry = 0; ry < hh; ry++) d.set(img.data.subarray(((f.y + ry) * src.width + f.x) * 4, ((f.y + ry) * src.width + f.x + w) * 4), ry * w * 4);
+        } else if (root.document && root.document.createElement) {
+          var c = root.document.createElement('canvas'); c.width = w; c.height = hh;
+          var g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, f.x, f.y, f.width, f.height, 0, 0, w, hh);
+          d = g.getImageData(0, 0, w, hh).data; c.width = c.height = 0;
+        }
+      }
+    } catch (e) { d = null; } // imagen de otro origen (canvas contaminado) o formato no dibujable: cuerpo completo
+    if (d) {
+      var x0 = w, y0 = hh, x1 = -1, y1 = -1;
+      for (var y = 0; y < hh; y++) { var row = y * w * 4; for (var x = 0; x < w; x++) if (d[row + x * 4 + 3] >= 100) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; y1 = y; } }
+      // vacío o sin bordes transparentes: todo el fotograma
+      out = x1 < 0 ? null : { x: x0 / res, y: y0 / res, w: (x1 - x0 + 1) / res, h: (y1 - y0 + 1) / res };
+    } else out = undefined;
+    cache[key] = out === undefined ? null : out;
+    return out;
+  }
+  R.alphaRect = alphaRect;
+  /**
+   * Rectángulo del cuerpo 2D en unidades de la imagen sin escalar, medido desde su esquina superior izquierda
+   * ({x, y, w, h}) o null = el objeto entero. «Ajustado al dibujo» une los píxeles visibles de todos los
+   * fotogramas de su animación para que el cuerpo no cambie de tamaño al animarse.
+   */
+  SceneRT.prototype.bodyRect2D = function (ent) {
+    var ph = ent.node.physics, o = ent.obj; if (!o || !ph) return null;
+    var dm = srcDims(o);
+    if (ph.fit === 'custom') {
+      var cw = ph.bodyW > 0 ? ph.bodyW : dm.w, ch = ph.bodyH > 0 ? ph.bodyH : dm.h;
+      return { x: (dm.w - cw) / 2 + ph.bodyX, y: (dm.h - ch) / 2 + ph.bodyY, w: cw, h: ch };
+    }
+    if (ph.fit !== 'trim' || ent.node.type !== 'sprite' || !o._texture || !o._texture.source) return null;
+    var key = o._texture.key, sc = this.scene, texs = [o._texture];
+    if (ent.animFrames && ent.animFrames.length > 1 && key && sc.textures.exists(key)) texs = ent.animFrames.map(function (f) { return sc.textures.get(key, f); }).filter(Boolean);
+    var u = null;
+    for (var i = 0; i < texs.length; i++) {
+      var r = alphaRect(texs[i]); if (!r) return null; // un fotograma sin recorte: cuerpo completo
+      u = !u ? { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h } : { x0: Math.min(u.x0, r.x), y0: Math.min(u.y0, r.y), x1: Math.max(u.x1, r.x + r.w), y1: Math.max(u.y1, r.y + r.h) };
+    }
+    if (!u) return null;
+    // si el recorte apenas cambia nada, el cuerpo entero (evita cuerpos a medio píxel)
+    if (u.x0 < 0.5 && u.y0 < 0.5 && u.x1 > dm.w - 0.5 && u.y1 > dm.h - 0.5) return null;
+    return { x: u.x0, y: u.y0, w: u.x1 - u.x0, h: u.y1 - u.y0 };
+  };
+  /**
+   * Geometría del cuerpo 2D tal como la usará el juego, en coordenadas de mundo (para dibujarla en el editor):
+   * { kind: 'rect'|'circle'|'poly', x, y, w, h, r, pts }. null si no tiene física.
+   */
+  SceneRT.prototype.colliderShape2D = function (ent) {
     var ph = ent.node.physics, o = ent.obj;
-    if (!ent.is3d && ph && ph.shadow && !ent.node.hud && !this.is3d && ph.type === 'none') { ent.occluder = this.scene.lights2d.addOccluder(o); return; }
-    if (!ph || ph.type === 'none' || this.editMode) { if (ph && ph.shadow && !ent.is3d && !ent.node.hud && !this.is3d) ent.occluder = this.scene.lights2d.addOccluder(o); return; }
+    if (!o || !ph || ph.type === 'none' || ent.is3d || ent.node.hud || this.is3d) return null;
+    var dm = srcDims(o), r = this.bodyRect2D(ent) || { x: 0, y: 0, w: dm.w, h: dm.h }, a = anchorOf(o), rigid = this.env2d.engine === 'rigid';
+    var rx = o.flipX ? dm.w - r.x - r.w : r.x, ry = o.flipY ? dm.h - r.y - r.h : r.y;
+    var x0 = -a.x * dm.w + rx, y0 = -a.y * dm.h + ry, x1 = x0 + r.w, y1 = y0 + r.h;
+    var m = o.getWorldMatrix(new UG.Matrix(), 0, 0);
+    var pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(function (p) { return { x: m.a * p[0] + m.c * p[1] + m.tx, y: m.b * p[0] + m.d * p[1] + m.ty }; });
+    var circle = ph.circle || (rigid && ent.node.props.shape === 'circle');
+    var parented = o.parent && o.parent !== this.scene.world && o.parent !== this.scene.hud;
+    var cx = (pts[0].x + pts[2].x) / 2, cy = (pts[0].y + pts[2].y) / 2;
+    if (circle) { var sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d); return { kind: 'circle', x: cx, y: cy, r: Math.min(r.w * sx, r.h * sy) / 2 }; }
+    // rígidos: caja girada; arcade: caja alineada (los estáticos girados o en grupos usan su caja envolvente en el mundo)
+    if (rigid) return { kind: 'poly', pts: pts };
+    var turned = Math.abs(Math.sin(o.rotation)) > 1e-6 || Math.cos(o.rotation) < 0;
+    if (ph.type === 'static' && (turned || parented)) {
+      var xs = pts.map(function (p) { return p.x; }), ys = pts.map(function (p) { return p.y; }), mnx = Math.min.apply(null, xs), mny = Math.min.apply(null, ys);
+      return { kind: 'rect', x: mnx, y: mny, w: Math.max.apply(null, xs) - mnx, h: Math.max.apply(null, ys) - mny };
+    }
+    var w = Math.abs(r.w * (o.scaleX || 1)), hh = Math.abs(r.h * (o.scaleY || 1));
+    // arcade ignora la rotación de los cuerpos que se mueven: caja sin girar alrededor del ancla
+    var lx = -a.x * dm.w + rx, ly = -a.y * dm.h + ry, px = parented ? m.tx : o.x, py = parented ? m.ty : o.y;
+    var bx = (o.scaleX || 1) < 0 ? px - (lx + r.w) * Math.abs(o.scaleX) : px + lx * Math.abs(o.scaleX || 1), by = (o.scaleY || 1) < 0 ? py - (ly + r.h) * Math.abs(o.scaleY) : py + ly * Math.abs(o.scaleY || 1);
+    return { kind: 'rect', x: bx, y: by, w: w, h: hh };
+  };
+  /** Un cuerpo que se mueve por física vive en el mundo: si estaba dentro de un grupo se saca conservando su posición */
+  SceneRT.prototype.detachToWorld = function (ent) {
+    var o = ent.obj, sc = this.scene, par = o.parent;
+    if (!par || par === sc.world || par === sc.hud || !sc.world) return;
+    var m = o.getWorldMatrix(new UG.Matrix(), 0, 0), sx = Math.hypot(m.a, m.b) || 1;
+    par.removeChild(o); sc.world.addChild(o);
+    o.x = m.tx; o.y = m.ty; o.rotation = Math.atan2(m.b, m.a); o.scaleX = sx; o.scaleY = (m.a * m.d - m.b * m.c) / sx;
+  };
+  SceneRT.prototype.setupPhysics = function (ent, override) {
+    var ph = override || ent.node.physics, o = ent.obj;
+    var shadow2d = ph && ph.shadow && !ent.is3d && !ent.node.hud && !this.is3d && !ent.occluder;
+    if (!ph || ph.type === 'none' || this.editMode) { if (shadow2d) ent.occluder = this.scene.lights2d.addOccluder(o); return; }
     if (!ent.is3d) {
       if (ent.node.hud || this.is3d) return;
-      if (this.rigid) { this.setupRigid(ent, ph, o); if (ph.shadow) ent.occluder = this.scene.lights2d.addOccluder(o.rbody || o); return; }
-      if (ph.shadow) ent.occluder = this.scene.lights2d.addOccluder(o);
-      var arcade = this.scene.physics;
-      if (ph.type === 'static') { arcade.add.existing(o, true); this.statics.push(o); return; }
-      arcade.add.existing(o, false);
+      if (this.rigid) { this.setupRigid(ent, ph, o); if (shadow2d) ent.occluder = this.scene.lights2d.addOccluder(o.rbody || o); return; }
+      if (shadow2d) ent.occluder = this.scene.lights2d.addOccluder(o);
+      var arcade = this.scene.physics, isStatic = ph.type === 'static', sc = this.scene;
+      var parented = o.parent && o.parent !== sc.world && o.parent !== sc.hud;
+      if (parented && !isStatic) { this.detachToWorld(ent); parented = false; }
+      arcade.add.existing(o, isStatic);
       var b = o.body; if (!b) return;
+      var r = this.bodyRect2D(ent);
+      if (r) { b.setSize(Math.max(1, r.w), Math.max(1, r.h), false); b.setOffset(r.x, r.y); }
+      var turned = Math.abs(Math.sin(o.rotation)) > 1e-6 || Math.cos(o.rotation) < 0;
+      if (isStatic && (turned || parented)) b.setWorldBounds(true); // suelos/muros girados o dentro de un grupo: su caja real
+      else if (ph.circle) { var sw = b.sourceWidth, sh = b.sourceHeight, rad = Math.min(sw, sh) / 2; b.setCircle(rad, (r ? r.x : 0) + (sw - rad * 2) / 2, (r ? r.y : 0) + (sh - rad * 2) / 2); }
+      b.setBounce(ph.bounce, ph.bounce);
+      if (ph.oneWay && ph.type !== 'dynamic') b.setOneWay(true);
+      if (isStatic) { this.statics.push(o); return; }
       b.setAllowGravity(ph.type === 'dynamic' && ph.gravity);
-      b.setBounce(ph.bounce, ph.bounce); b.setDrag(ph.drag, ph.drag); b.setCollideWorldBounds(ph.worldBounds);
-      if (ph.circle) { var r = Math.min(b.width, b.height) / 2; b.setCircle(r); }
-      if (ph.type === 'kinematic') { b.setImmovable(true); b.setAllowGravity(false); }
+      b.setDrag(ph.drag, ph.drag); b.setCollideWorldBounds(ph.worldBounds);
+      if (ph.type === 'kinematic') { b.setImmovable(true); b.setAllowGravity(false); this.kinematics.push(o); return; }
       b.pushable = ph.pushable;
-      this.dynamics.push(o); if (ph.solid) this.solids.push(o);
+      this.dynamics.push(o); if (ph.solid) this.solids.push(o); else this.loose.push(o);
       return;
     }
     var W = this.world3; if (!W) return;
     if (ph.type === 'static') { if (ent.level) return; var c = W.addBoxFromNode(o, { restitution: ph.bounce }); if (c) ent.statics.push(c); }
     else if (ph.type === 'mesh') { var mc = W.addMesh(o); if (mc) ent.statics.push(mc); }
     else if (ph.type === 'body') {
-      var bb = worldAABB(o), half = bb.getSize(new V3()).scale(0.5);
-      ent.body = W.addBody(o, { shape: ph.shape, mass: ph.mass, restitution: ph.bounce, radius: ph.shape === 'sphere' ? Math.max(half.x, half.y, half.z) : ph.radius, half: half });
+      // el cuerpo va en el centro de la caja del objeto (los modelos suelen tener el origen en la base)
+      var bb = worldAABB(o), half = bb.getSize(new V3()).scale(0.5), ctr = bb.getCenter(new V3()), pos = o.getWorldPosition(new V3());
+      var rad = ph.shape === 'sphere' ? Math.max(half.x, half.y, half.z) : ph.radius;
+      ent.body = W.addBody(o, { shape: ph.shape, mass: ph.mass, restitution: ph.bounce, radius: rad, half: half, offset: new V3(ctr.x - pos.x, ctr.y - pos.y, ctr.z - pos.z) });
+      this.liftOutOfGround(ent.body, ph.shape === 'sphere' ? rad : half.y, ph.shape === 'sphere' ? rad : half.y);
     }
-    else if (ph.type === 'character') ent.ch = W.addCharacter(o, { radius: ph.radius, height: ph.height });
+    else if (ph.type === 'character') this.addCharacter3D(ent, ph.radius, ph.height);
     else if (ph.type === 'trigger') { var tb = worldAABB(o); ent.trigger = { box: tb }; }
+  };
+  /**
+   * Personaje 3D: la cápsula empieza en la base visible del objeto (las primitivas tienen el origen en el centro,
+   * los modelos en los pies), así no se hunde en el suelo ni flota.
+   */
+  SceneRT.prototype.addCharacter3D = function (ent, radius, height) {
+    var W = this.world3, o = ent.obj; if (!W) return null;
+    var bb = worldAABB(o), pos = o.getWorldPosition(new V3()), off = Math.min(0, bb.min.y - pos.y);
+    if (!isFinite(off) || off < -1000) off = 0;
+    ent.ch = W.addCharacter(o, { radius: radius, height: height, offset: new V3(0, off, 0) });
+    this.liftOutOfGround(ent.ch, 0, ent.ch.height);
+    return ent.ch;
+  };
+  /**
+   * Si un cuerpo empieza hundido en el suelo (colocado a ojo en el editor), se sube justo encima.
+   * below/above: distancia desde b.position hasta su base y hasta su parte de arriba.
+   */
+  SceneRT.prototype.liftOutOfGround = function (b, below, above) {
+    var W = this.world3; if (!W || !b) return;
+    var feet = b.position.y - below, top = b.position.y + Math.max(above, 0.25);
+    var hit = W.raycast(new V3(b.position.x, top, b.position.z), new V3(0, -1, 0), top - feet + 0.01, { bodies: false, characters: false, ignore: b });
+    if (hit && hit.point && hit.point.y > feet + 1e-3 && (!hit.normal || hit.normal.y > 0.5)) {
+      var dy = hit.point.y - feet + 0.01;
+      if (b.teleport) b.teleport(b.position.x, b.position.y + dy, b.position.z); else b.setPosition(b.position.x, b.position.y + dy, b.position.z);
+    }
   };
   /** Cuerpo del motor de cuerpos rígidos: gira, se apila, fricción y densidad reales */
   SceneRT.prototype.setupRigid = function (ent, ph, o) {
-    var circle = ph.circle || ent.node.props.shape === 'circle', w = Math.abs(o.displayWidth || o.width * o.scaleX) || 32, h = Math.abs(o.displayHeight || o.height * o.scaleY) || 32;
-    var opt = { width: w, height: h, shape: circle ? 'circle' : 'box', radius: circle ? Math.min(w, h) / 2 : undefined, friction: ph.friction, restitution: ph.bounce, density: ph.density,
-      fixedRotation: ph.fixedRotation, gravityScale: ph.gravity ? 1 : 0, linearDamping: ph.drag > 0 ? Math.min(20, ph.drag / 200) : 0.02 };
-    if (ph.type === 'static') opt.isStatic = true; else if (ph.type === 'kinematic') opt.type = 'kinematic';
-    this.scene.rigid.add.existing(o, opt);
-    ent.rb = o.rbody || null;
+    this.detachToWorld(ent);
+    var W = this.scene.rigid.world, dm = srcDims(o), r = this.bodyRect2D(ent) || { x: 0, y: 0, w: dm.w, h: dm.h }, a = anchorOf(o);
+    var rx = o.flipX ? dm.w - r.x - r.w : r.x, ry = o.flipY ? dm.h - r.y - r.h : r.y;
+    // forma relativa al ancla del objeto (el origen del cuerpo es la posición del objeto): gira con él
+    var sx = o.scaleX || 1, sy = o.scaleY || 1, cx = (-a.x * dm.w + rx + r.w / 2) * sx, cy = (-a.y * dm.h + ry + r.h / 2) * sy;
+    var w = Math.max(1, Math.abs(r.w * sx)), hh = Math.max(1, Math.abs(r.h * sy)), circle = ph.circle || ent.node.props.shape === 'circle';
+    var b = W.addBody({ x: o.x, y: o.y, angle: o.rotation || 0, gameObject: o, type: ph.type === 'static' ? 'static' : ph.type === 'kinematic' ? 'kinematic' : 'dynamic',
+      fixedRotation: ph.fixedRotation, gravityScale: ph.gravity ? 1 : 0, linearDamping: ph.drag > 0 ? Math.min(20, ph.drag / 200) : 0.02 });
+    if (!b) return;
+    var shape = { friction: ph.friction, restitution: ph.bounce, density: ph.density, x: cx, y: cy };
+    if (circle) { shape.type = 'circle'; shape.radius = Math.max(0.5, Math.min(w, hh) / 2); }
+    else { shape.type = 'poly'; shape.vertices = [-w / 2, -hh / 2, w / 2, -hh / 2, w / 2, hh / 2, -w / 2, hh / 2]; }
+    b.addShape(shape);
+    o.rbody = b; b._syncObject();
+    o.once('destroy', function () { if (!b.destroyed) b.destroy(); });
+    ent.rb = b;
   };
+  /**
+   * Grupos de colisión arcade (listas vivas: los objetos creados después se añaden a la lista y ya chocan):
+   * dinámicos contra estáticos, cinemáticos (plataformas móviles), sólidos y capas de Tiled.
+   */
   SceneRT.prototype.setupColliders = function () {
     if (this.is3d || this.editMode || this.rigid) return;
     var ph = this.scene.physics;
-    if (this.dynamics.length && this.statics.length) ph.add.collider(this.dynamics, this.statics);
-    if (this.solids.length > 1) ph.add.collider(this.solids, this.solids);
-    if (this.solids.length && this.dynamics.length) ph.add.collider(this.dynamics.filter(function (d) { return this.solids.indexOf(d) < 0; }, this), this.solids);
-    for (var i = 0; i < this.layers.length; i++) if (this.dynamics.length) ph.add.collider(this.dynamics, this.layers[i]);
+    ph.add.collider(this.dynamics, this.statics);
+    ph.add.collider(this.dynamics, this.kinematics);
+    ph.add.collider(this.solids, this.solids);
+    ph.add.collider(this.loose, this.solids);
+    for (var i = 0; i < this.layers.length; i++) ph.add.collider(this.dynamics, this.layers[i]);
+    this._collidersReady = true;
   };
-  /** Cuerpos creados después del arranque (copias): se añaden a los grupos existentes */
-  SceneRT.prototype.addToColliders = function (ent) {
-    if (ent.is3d || this.editMode || !ent.obj.body || this.rigid) return;
-    var ph = this.scene.physics, o = ent.obj;
-    if (ent.node.physics.type === 'static') { if (this.dynamics.length) ph.add.collider(this.dynamics, o); return; }
-    if (this.statics.length) ph.add.collider(o, this.statics);
-    if (this.solids.length) ph.add.collider(o, this.solids);
-    for (var i = 0; i < this.layers.length; i++) ph.add.collider(o, this.layers[i]);
-  };
+  /** Cuerpos creados después del arranque (copias): ya están en las listas vivas; solo hace falta registrar capas nuevas */
+  SceneRT.prototype.addToColliders = function (ent) { void ent; };
 
   /* ---------------------------------------------------------------- scripts */
   SceneRT.prototype.makeScript = function (id, ent) {
@@ -1424,7 +1577,8 @@
     });
     this.entities = keep;
     Object.keys(this.byTag).forEach(function (t) { self.byTag[t] = self.byTag[t].filter(function (e) { return e.alive; }); });
-    ['dynamics', 'statics', 'solids'].forEach(function (k) { self[k] = self[k].filter(function (o) { return !o.destroyed; }); });
+    // en sitio: los colisionadores guardan estas mismas listas
+    ['dynamics', 'statics', 'solids', 'loose', 'kinematics'].forEach(function (k) { var l = self[k], j = 0; for (var i = 0; i < l.length; i++) if (!l[i].destroyed) l[j++] = l[i]; l.length = j; });
     this.dyn = this.dyn.filter(function (d) { return d.ent.alive; });
     this.lights2 = this.lights2.filter(function (e) { return e.alive; });
   };
@@ -1467,7 +1621,7 @@
       if (!o.rbody) { rt.log('warn', '"Jugador de plataformas" necesita física dinámica: se le añade', ent.name); rt.setupRigid(ent, Object.assign({}, ent.node.physics, { type: 'dynamic', gravity: true, fixedRotation: true }), o); }
       var rb = o.rbody; if (!rb) return null;
       if (!rb.fixedRotation) { rb.fixedRotation = true; rb.angle = 0; rb.angularVelocity = 0; rb._mass(); } // un personaje no rueda
-    } else if (!o.body) { rt.log('warn', '"Jugador de plataformas" necesita física dinámica: se le añade', ent.name); rt.scene.physics.add.existing(o, false); o.body.setCollideWorldBounds(true); o.body.setAllowGravity(true); rt.dynamics.push(o); rt.addToColliders(ent); }
+    } else if (!o.body) { rt.log('warn', '"Jugador de plataformas" necesita física dinámica: se le añade', ent.name); rt.setupPhysics(ent, Object.assign({}, ent.node.physics, { type: 'dynamic', gravity: true, worldBounds: true })); }
     return { update: function () {
       var b = o.rbody || o.body; if (!b) return;
       var ax = keyAxis(kb, ['LEFT', 'A'], ['RIGHT', 'D']) || Math.sign(padAxis(rt.scene, 0));
@@ -1582,8 +1736,8 @@
   BEHAVIORS.health = function (rt, ent, p) { ent.hp = p.hp; ent.deathFx = p.effect; return null; };
   function needCharacter(rt, ent) {
     if (ent.ch || !rt.world3) return ent.ch;
-    var ph = ent.node.physics; ent.ch = rt.world3.addCharacter(ent.obj, { radius: ph.radius || 0.4, height: ph.height || 1.8 });
-    return ent.ch;
+    var ph = ent.node.physics;
+    return rt.addCharacter3D(ent, ph.radius || 0.4, ph.height || 1.8);
   }
   BEHAVIORS.fpsPlayer = function (rt, ent, p) {
     var ch = needCharacter(rt, ent); if (!ch) return null;

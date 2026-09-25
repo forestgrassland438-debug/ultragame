@@ -163,7 +163,11 @@ export class Inspector {
     this.el.appendChild(section('beh', 'Comportamientos (sin código)', this.blocksEditor(n, 'behaviors', S.BEHAVIORS, is3d ? '3d' : '2d'), { count: n.behaviors.length }));
     // física
     const phys = is3d ? S.PHYSICS_3D : S.PHYSICS_2D;
-    const physFields = phys.filter((f) => f.key === 'type' || n.physics.type !== 'none').map((f) => field(f, n.physics[f.key], set('physics.' + f.key, 'Física: ' + f.label), ctx));
+    // solo los campos que aplican a este tipo de cuerpo y al motor de la escena (arcade o rígido)
+    const engine = !is3d && ed.scene && ed.scene.env2d ? ed.scene.env2d.engine : 'arcade', pt = n.physics.type;
+    const applies = (f) => f.key === 'type' || f.always || (pt !== 'none' && (!f.types || f.types.includes(pt)) && (!f.engine || f.engine === engine) && (!f.when || n.physics[f.when.key] === f.when.eq));
+    const physFields = phys.filter(applies).map((f) => field(f, n.physics[f.key], set('physics.' + f.key, 'Física: ' + f.label), ctx));
+    if (!is3d && pt !== 'none' && !n.hud) physFields.push(h('div.help', 'El recuadro naranja de la vista es el cuerpo que choca. «Ajustado al dibujo» ignora los bordes transparentes de la imagen.'));
     if (!is3d && n.hud) physFields.push(h('div.help', 'Los objetos del HUD no tienen física.'));
     this.el.appendChild(section('phys', 'Física', physFields, { closed: n.physics.type === 'none' }));
     // efectos (2D)

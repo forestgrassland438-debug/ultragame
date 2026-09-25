@@ -61,6 +61,7 @@ function ensureViewport(resetCam) {
   if (!kind) return;
   app.viewport = kind === '3d' ? new Viewport3D(app, vpHost) : new Viewport2D(app, vpHost);
   app.viewport.tool = currentTool; app.viewport.snap = document.getElementById('chk-snap').checked; app.viewport.snapStep = app.snapSteps[kind];
+  app.viewport.showColliders = document.getElementById('chk-colliders').checked;
   document.getElementById('inp-snap').value = String(app.snapSteps[kind]);
   document.getElementById('vp-hint').textContent = HINTS[kind];
   app.viewport.mount();
@@ -135,6 +136,9 @@ function setTool(t) {
 }
 $$('#tool-seg button').forEach((b) => { b.onclick = () => setTool(b.dataset.tool); });
 document.getElementById('chk-snap').onchange = (e) => { if (app.viewport) app.viewport.snap = e.target.checked; };
+const chkColliders = document.getElementById('chk-colliders');
+try { if (localStorage.getItem('ugs-colliders') === '0') chkColliders.checked = false; } catch (e) { /* modo privado */ }
+chkColliders.onchange = () => { if (app.viewport) app.viewport.showColliders = chkColliders.checked; try { localStorage.setItem('ugs-colliders', chkColliders.checked ? '1' : '0'); } catch (e) { /* modo privado */ } };
 document.getElementById('inp-snap').onchange = (e) => { const v = Math.max(0.01, Math.min(1000, parseFloat(e.target.value) || 1)); e.target.value = String(v); if (app.viewport) { app.snapSteps[app.viewport.kind] = v; app.viewport.snapStep = v; } };
 document.getElementById('inp-snap').addEventListener('keydown', (e) => e.stopPropagation());
 document.getElementById('btn-focus').onclick = () => app.focusSelection();

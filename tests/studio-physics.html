@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Física del Studio (suelos y cuerpos) · UltraGame</title>
+<style>body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px ui-monospace, Consolas, monospace; } #game { width: 640px; height: 360px; } pre { padding: 10px 14px; white-space: pre-wrap; } .ok { color: #69db7c; } .fail { color: #ff6b6b; }</style>
+</head>
+<body>
+<div id="game"></div>
+<pre id="out">Ejecuta check() en la consola, o abre con ?auto=1</pre>
+<script src="../dist/ultragame.js"></script>
+<script src="../studio/shared/schema.js"></script>
+<script src="../studio/runtime/runtime.js"></script>
+<script>
+'use strict';
+/* Cada caso arranca un proyecto mínimo con el runtime real del Studio, simula unos segundos con pasos fijos y
+ * comprueba que los cuerpos quedan donde se ven: suelos de formas, mosaicos, girados, dentro de grupos, de un sentido,
+ * plataformas móviles, recorte de bordes transparentes, volteo, motor rígido, mapas de Tiled desplazados y 3D. */
+var S = UGStudio.schema, RT = UGStudio.runtime;
+function N(type, kind, o) { var n = S.createNode(type, kind); Object.keys(o || {}).forEach(function (k) { if (k === 'props') Object.assign(n.props, o.props); else if (k === 'physics') Object.assign(n.physics, o.physics); else n[k] = o[k]; }); return n; }
+function B(type, params) { return { type: type, params: Object.assign(S.defaultsOf(S.BEHAVIORS[type].params), params || {}) }; }
+function png(w, h, draw) { var c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c.toDataURL('image/png'); }
+var IMAGES = {
+  // 32×32 con 8 px transparentes a los lados y 4 arriba: lo visible es 16×28 pegado abajo
+  pad: png(32, 32, function (g) { g.fillStyle = '#e8590c'; g.fillRect(8, 4, 16, 28); }),
+  // asimétrico: lo visible ocupa x 0..11 (izquierda) → al voltear, el cuerpo debe pasar a la derecha
+  left: png(32, 32, function (g) { g.fillStyle = '#4dabf7'; g.fillRect(0, 0, 12, 32); }),
+  tile: png(32, 32, function (g) { g.fillStyle = '#2f9e44'; g.fillRect(0, 0, 32, 32); g.fillStyle = '#8f5b2b'; g.fillRect(0, 8, 32, 24); }),
+  tiles: png(64, 32, function (g) { g.fillStyle = '#495057'; g.fillRect(0, 0, 32, 32); g.fillStyle = '#868e96'; g.fillRect(32, 0, 32, 32); })
+};
+// mapa de Tiled 10×6 de 32 px con la fila 4 (y = 128..160) sólida
+var TMJ = JSON.stringify({ width: 10, height: 6, tilewidth: 32, tileheight: 32, orientation: 'orthogonal', renderorder: 'right-down', type: 'map', version: '1.10', infinite: false,
+  tilesets: [{ firstgid: 1, name: 'tiles', image: 'tiles.png', imagewidth: 64, imageheight: 32, tilewidth: 32, tileheight: 32, tilecount: 2, columns: 2, margin: 0, spacing: 0 }],
+  layers: [{ id: 1, name: 'suelo', type: 'tilelayer', width: 10, height: 6, x: 0, y: 0, opacity: 1, visible: true, data: [].concat(new Array(40).fill(0), new Array(10).fill(1), new Array(10).fill(0)) }] });
+var DATA = { 'assets/pad.png': IMAGES.pad, 'assets/left.png': IMAGES.left, 'assets/tile.png': IMAGES.tile, 'assets/tiles.png': IMAGES.tiles, 'assets/map.tmj': 'data:application/json;base64,' + btoa(TMJ) };
+function project(scene, o) {
+  var p = S.createProject('Física'); p.settings.width = 640; p.settings.height = 360; p.scenes.push(scene); p.startScene = scene.id;
+  p.assets = Object.keys(DATA).map(function (f) { var id = f.slice(7).replace(/\W/g, '_'); return { id: id, name: id, file: f, type: S.assetTypeOf(f), frameWidth: 0, frameHeight: 0 }; });
+  if (o && o.rigid) scene.env2d.engine = 'rigid';
+  return p;
+}
+function scene2d(g) { var sc = S.createScene('2d', 'Prueba'); sc.gravity = g === undefined ? 1200 : g; return sc; }
+async function steps(g, n) { for (var i = 0; i < n; i++) { g.loop.step(1000 / 60); if ((i & 15) === 15) await null; } }
+function rt(g) { var s = g.scene.getScenes(true).find(function (x) { return x.ugs; }); return s ? s.ugs : null; }
+function ent(r, name) { return r.resolve('name:' + name)[0]; }
+async function run(p, renderer, fn) {
+  RT.resetScripts();
+  var errors = [];
+  var g = RT.start(p, { parent: 'game', renderer: renderer || 'canvas', assetURL: function (a) { return DATA[a.file] || null; }, onLog: function (l, t, s) { if (l === 'error') errors.push(s + ': ' + t); } });
+  await g.ready; g.loop.stop();
+  for (var k = 0; k < 300 && !rt(g); k++) { await steps(g, 1); await new Promise(function (r) { setTimeout(r, 5); }); }
+  var res;
+  try { res = await fn(rt(g), g); } catch (e) { res = { fail: e.message + '\n' + (e.stack || '').split('\n').slice(0, 3).join('\n') }; }
+  if (errors.length) res.errors = errors.slice(0, 4);
+  g.destroy(true);
+  return res;
+}
+var near = function (a, b, eps) { return Math.abs(a - b) <= (eps === undefined ? 0.75 : eps); };
+function box(o) { var b = o.body; return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height }; }
+/** El recuadro que dibuja el editor coincide con el cuerpo real del juego */
+function sameAsEditor(r, e) { var s = r.colliderShape2D(e), b = e.obj.body; if (!s || !b) return false; if (s.kind === 'circle') return near(s.x, b.centerX, 0.6) && near(s.y, b.centerY, 0.6) && near(s.r * 2, b.width, 0.6); return near(s.x, b.left, 0.6) && near(s.y, b.top, 0.6) && near(s.w, b.width, 0.6) && near(s.h, b.height, 0.6); }
+
+var CASES = {
+  /* suelo hecho con una Forma (origen en el centro): antes el cuerpo quedaba desplazado medio tamaño */
+  shapeGround: function () {
+    var sc = scene2d(), ground = N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } });
+    sc.nodes.push(ground, N('sprite', '2d', { name: 'P', x: 60, y: 100, props: { width: 32, height: 48 }, physics: { type: 'dynamic' } }), N('sprite', '2d', { name: 'Q', x: 600, y: 100, props: { width: 32, height: 48 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 120);
+      var p = ent(r, 'P').obj, q = ent(r, 'Q').obj, gr = ent(r, 'Suelo').obj;
+      return { ok: near(box(gr).t, 320) && near(box(gr).l, 0) && near(box(p).b, 320) && near(box(q).b, 320) && near(p.y + 24, 320) && p.body.blocked.down && sameAsEditor(r, ent(r, 'Suelo')) && sameAsEditor(r, ent(r, 'P')), ground: box(gr), p: box(p), q: box(q) };
+    });
+  },
+  /* suelo con Fondo en mosaico: antes el cuerpo medía lo que la textura (32×32), no el mosaico entero */
+  tileGround: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('tilesprite', '2d', { name: 'Suelo', x: 320, y: 328, props: { asset: 'tile_png', width: 640, height: 64 }, physics: { type: 'static' } }), N('sprite', '2d', { name: 'P', x: 600, y: 100, props: { width: 20, height: 20 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 120); var p = ent(r, 'P').obj, gr = ent(r, 'Suelo').obj;
+      return { ok: near(box(gr).w, 640) && near(box(gr).h, 64) && near(box(p).b, 296) && sameAsEditor(r, ent(r, 'Suelo')), ground: box(gr), p: box(p) };
+    });
+  },
+  /* muro girado 90°: la caja del cuerpo sigue al dibujo girado */
+  rotatedWall: function () {
+    var sc = scene2d(0);
+    sc.nodes.push(N('shape', '2d', { name: 'Muro', x: 400, y: 180, rotation: 90, props: { width: 300, height: 20 }, physics: { type: 'static' } }), N('sprite', '2d', { name: 'P', x: 200, y: 180, props: { width: 20, height: 20 }, physics: { type: 'dynamic', gravity: false } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      var p = ent(r, 'P').obj; p.body.setVelocity(500, 0); await steps(g, 80); var w = ent(r, 'Muro').obj;
+      return { ok: near(box(w).w, 20) && near(box(w).h, 300) && near(box(p).r, 390) && sameAsEditor(r, ent(r, 'Muro')), wall: box(w), p: box(p) };
+    });
+  },
+  /* suelo dentro de un grupo desplazado y escalado */
+  parentedGround: function () {
+    var sc = scene2d(), grp = N('container', '2d', { name: 'Grupo', x: 100, y: 50, scaleX: 2, scaleY: 1 });
+    var child = N('shape', '2d', { name: 'Suelo', x: 100, y: 250, parent: grp.id, props: { width: 100, height: 20 }, physics: { type: 'static' } });
+    sc.nodes.push(grp, child, N('sprite', '2d', { name: 'P', x: 300, y: 100, props: { width: 20, height: 20 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 120); var p = ent(r, 'P').obj, gr = ent(r, 'Suelo').obj;
+      return { ok: near(box(gr).l, 200) && near(box(gr).w, 200) && near(box(gr).t, 290) && near(box(p).b, 290) && sameAsEditor(r, ent(r, 'Suelo')), ground: box(gr), p: box(p) };
+    });
+  },
+  /* un cuerpo dinámico dentro de un grupo se simula en el mundo sin saltar de sitio */
+  parentedDynamic: function () {
+    var sc = scene2d(), grp = N('container', '2d', { name: 'Grupo', x: 100, y: 0 });
+    sc.nodes.push(N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } }), grp, N('sprite', '2d', { name: 'P', x: 50, y: 100, parent: grp.id, props: { width: 20, height: 20 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      var p = ent(r, 'P').obj, x0 = box(p).l; await steps(g, 120);
+      return { ok: near(x0, 140) && near(box(p).l, 140) && near(box(p).b, 320), p: box(p) };
+    });
+  },
+  /* plataforma de un sentido: se atraviesa saltando desde abajo y sostiene al caer */
+  oneWay: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('shape', '2d', { name: 'Plataforma', x: 320, y: 200, props: { width: 200, height: 16 }, physics: { type: 'static', oneWay: true } }), N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } }), N('sprite', '2d', { name: 'P', x: 320, y: 305, props: { width: 20, height: 30 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      var p = ent(r, 'P').obj; await steps(g, 20); var onFloor = near(box(p).b, 320);
+      p.body.setVelocity(0, -900); var minTop = 1e9; for (var i = 0; i < 120; i++) { await steps(g, 1); minTop = Math.min(minTop, box(p).t); }
+      return { ok: onFloor && minTop < 190 && near(box(p).b, 192) && p.body.blocked.down, p: box(p), minTop: minTop };
+    });
+  },
+  /* plataforma cinemática que patrulla: el jugador se queda encima y viaja con ella */
+  movingPlatform: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('shape', '2d', { name: 'Plataforma', x: 320, y: 250, props: { width: 160, height: 20 }, physics: { type: 'kinematic' }, behaviors: [B('patrol', { axis: 'x', distance: 200, speed: 100 })] }), N('sprite', '2d', { name: 'P', x: 320, y: 180, props: { width: 20, height: 30 }, physics: { type: 'dynamic' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 30); var p = ent(r, 'P').obj, pl = ent(r, 'Plataforma').obj, x0 = p.x, px0 = pl.x; await steps(g, 60);
+      return { ok: near(box(p).b, box(pl).t, 1.5) && Math.abs((p.x - x0) - (pl.x - px0)) < 3 && Math.abs(pl.x - px0) > 20, p: box(p), plat: box(pl) };
+    });
+  },
+  /* cuerpo circular en un sprite escalado: antes el radio se escalaba dos veces */
+  scaledCircle: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } }), N('sprite', '2d', { name: 'Bola', x: 320, y: 100, scaleX: 2, scaleY: 2, props: { width: 0, height: 0 }, physics: { type: 'dynamic', circle: true, fit: 'full' } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 120); var b = ent(r, 'Bola').obj;
+      return { ok: near(b.body.width, b.displayWidth) && near(box(b).b, 320) && sameAsEditor(r, ent(r, 'Bola')), b: box(b), dw: b.displayWidth };
+    });
+  },
+  /* «Ajustado al dibujo»: el cuerpo ignora los bordes transparentes y los pies tocan el suelo */
+  trimmed: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('shape', '2d', { name: 'Suelo', x: 320, y: 340, props: { width: 640, height: 40 }, physics: { type: 'static' } }), N('sprite', '2d', { name: 'P', x: 320, y: 100, scaleX: 2, scaleY: 2, props: { asset: 'pad_png' }, physics: { type: 'dynamic' } }),
+      N('sprite', '2d', { name: 'Completo', x: 500, y: 100, props: { asset: 'pad_png' }, physics: { type: 'dynamic', fit: 'full' } }), N('sprite', '2d', { name: 'Medida', x: 150, y: 100, props: { asset: 'pad_png' }, physics: { type: 'dynamic', fit: 'custom', bodyW: 10, bodyH: 10, bodyY: 11 } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 150); var p = ent(r, 'P').obj, f = ent(r, 'Completo').obj, m = ent(r, 'Medida').obj;
+      // visible: 16×28 → ×2 = 32×56; la base visible del sprite (y + 32) toca el suelo
+      return { ok: near(box(p).w, 32) && near(box(p).h, 56) && near(box(p).b, 320) && near(p.y + 32, 320) && near(box(f).h, 32) && near(box(m).w, 10) && near(box(m).b, 320) && near(m.y + 16, 320) && sameAsEditor(r, ent(r, 'P')) && sameAsEditor(r, ent(r, 'Medida')), p: box(p), full: box(f), custom: box(m) };
+    });
+  },
+  /* al voltear un sprite con recorte asimétrico, el cuerpo se refleja con el dibujo */
+  flipped: function () {
+    var sc = scene2d(0);
+    sc.nodes.push(N('sprite', '2d', { name: 'A', x: 100, y: 100, props: { asset: 'left_png' }, physics: { type: 'dynamic', gravity: false } }), N('sprite', '2d', { name: 'B', x: 300, y: 100, props: { asset: 'left_png', flipX: true }, physics: { type: 'dynamic', gravity: false } }));
+    return run(project(sc), 'canvas', async function (r, g) {
+      await steps(g, 4); var a = ent(r, 'A').obj, b = ent(r, 'B').obj;
+      var a0 = box(a), b0 = box(b); a.setFlipX(true); await steps(g, 3);
+      return { ok: near(a0.l, 84) && near(a0.w, 12) && near(b0.l, 304) && near(box(a).l, 104) && sameAsEditor(r, ent(r, 'B')), a0: a0, b0: b0, aFlipped: box(a) };
+    });
+  },
+  /* motor de cuerpos rígidos: caja sobre un mosaico y sprite recortado apoyado por sus pies */
+  rigid: function () {
+    var sc = scene2d();
+    sc.nodes.push(N('tilesprite', '2d', { name: 'Suelo', x: 320, y: 328, props: { asset: 'tile_png', width: 640, height: 64 }, physics: { type: 'static' } }), N('shape', '2d', { name: 'Caja', x: 500, y: 100, props: { width: 40, height: 40 }, physics: { type: 'dynamic' } }),
+      N('sprite', '2d', { name: 'P', x: 200, y: 100, props: { asset: 'pad_png' }, physics: { type: 'dynamic', fixedRotation: true } }));
+    return run(project(sc, { rigid: true }), 'canvas', async function (r, g) {
+      await steps(g, 200); var c = ent(r, 'Caja').obj, p = ent(r, 'P').obj;
+      return { ok: near(c.rbody.max.y, 296, 2) && near(c.y + 20, 296, 2) && near(p.y + 16, 296, 2) && near(p.x, 200, 1), caja: { y: c.y, maxY: c.rbody.max.y }, p: { x: p.x, y: p.y } };
+    });
+  },
+  /* mapa de Tiled dentro de un nodo desplazado: en arcade y en rígidos los tiles chocan donde se ven */
+  tiledArcade: function () { return tiled(false); },
+  tiledRigid: function () { return tiled(true); }
+};
+function tiled(rigid) {
+  var sc = scene2d();
+  sc.nodes.push(N('tilemap', '2d', { name: 'Mapa', x: 100, y: 60, props: { asset: 'map_tmj', tileset: 'tiles_png', collideAll: true } }), N('shape', '2d', { name: 'P', x: 260, y: 40, props: { width: 20, height: 20 }, physics: { type: 'dynamic' } }));
+  return run(project(sc, { rigid: rigid }), 'canvas', async function (r, g) {
+    await steps(g, 150); var p = ent(r, 'P').obj, bottom = rigid ? p.y + 10 : box(p).b;
+    // fila sólida: y local 128..160 → mundo 188..220
+    return { ok: near(bottom, 188, rigid ? 2 : 0.75), bottom: bottom, y: p.y };
+  });
+}
+/* 3D: personajes y cuerpos con primitivas (origen en el centro) sobre el suelo */
+async function check3D() {
+  var sc = S.createScene('3d', 'Mundo');
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Suelo', position: [0, -0.5, 0], props: { sizeX: 40, sizeY: 1, sizeZ: 40 }, physics: { type: 'static' } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Capsula', position: [0, 0.9, 0], props: { shape: 'capsule', sizeX: 0.7, sizeY: 1.8 }, physics: { type: 'character', radius: 0.35, height: 1.8 } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Hundida', position: [3, 0.1, 0], props: { shape: 'capsule', sizeX: 0.7, sizeY: 1.8 }, physics: { type: 'character', radius: 0.35, height: 1.8 } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Caja', position: [-3, 3, 0], props: { sizeX: 1, sizeY: 1, sizeZ: 1 }, physics: { type: 'body', shape: 'box' } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Bola', position: [-6, 3, 0], props: { shape: 'sphere', sizeX: 1 }, physics: { type: 'body', shape: 'sphere' } }));
+  var p = S.createProject('3D'); p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc); p.startScene = sc.id;
+  return run(p, 'webgl2', async function (r, g) {
+    await steps(g, 180);
+    var cap = ent(r, 'Capsula'), sunk = ent(r, 'Hundida'), bx = ent(r, 'Caja'), ball = ent(r, 'Bola');
+    var bb = function (e) { var b = RT.worldAABB(e.obj); return +b.min.y.toFixed(3); };
+    return { ok: cap.ch.onGround && near(bb(cap), 0, 0.06) && near(cap.obj.position.y, 0.9, 0.06) && sunk.ch.onGround && near(bb(sunk), 0, 0.06) && near(bb(bx), 0, 0.06) && near(bb(ball), 0, 0.08),
+      capsule: { y: cap.obj.position.y, bottom: bb(cap), onGround: cap.ch.onGround }, sunk: { bottom: bb(sunk) }, box: { bottom: bb(bx) }, ball: { bottom: bb(ball) } };
+  });
+}
+async function check() {
+  var out = {}, pass = 0, fail = 0, before = UG.Debug.snapshot();
+  for (var k of Object.keys(CASES)) { out[k] = await CASES[k](); if (out[k].ok) pass++; else fail++; }
+  out.d3 = await check3D(); if (out.d3.ok) pass++; else fail++;
+  await new Promise(function (r) { setTimeout(r, 50); });
+  out.leak = UG.Debug.diff(before, UG.Debug.snapshot());
+  out.summary = { pass: pass, fail: fail };
+  var el = document.getElementById('out'); el.textContent = '';
+  Object.keys(out).forEach(function (k) { var d = document.createElement('div'); d.className = out[k].ok ? 'ok' : out[k].ok === false || out[k].fail ? 'fail' : ''; d.textContent = k + ': ' + JSON.stringify(out[k]); el.appendChild(d); });
+  window.__res = out;
+  return out;
+}
+if (/auto=1/.test(location.search)) check();
+</script>
+</body>
+</html>

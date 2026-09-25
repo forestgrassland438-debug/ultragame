@@ -291,16 +291,30 @@ class RigidWorld2D extends EventEmitter {
   /** Cajas estáticas a partir de una capa de tilemap (fusiona tiles contiguos por filas). tiles: índices sólidos (por defecto todos > 0) */
   addTilemapLayer(layer, o) {
     o = o || {};
-    var data = layer.data || layer.layer && layer.layer.data, tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
-    if (!data) return out;
-    var ox = (layer.x || 0), oy = (layer.y || 0), solid = o.tiles ? new Set(o.tiles) : null;
-    for (var y = 0; y < data.length; y++) {
-      var row = data[y], x = 0;
-      while (x < row.length) {
-        var t = row[x], idx = t && typeof t === 'object' ? t.index : t, ok = solid ? solid.has(idx) : idx > 0;
-        if (!ok) { x++; continue; }
-        var x0 = x; while (x < row.length) { var t2 = row[x], i2 = t2 && typeof t2 === 'object' ? t2.index : t2; if (!(solid ? solid.has(i2) : i2 > 0)) break; x++; }
-        out.push(this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o));
+    var tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
+    var solid = o.tiles ? new Set(o.tiles) : null, W, H, sx = 0, sy = 0, isSolid;
+    if (typeof layer.collidesAt === 'function' && layer.tileData) {
+      // TilemapLayer del motor: datos planos; sólido = colisión activada en la capa (o índices de o.tiles)
+      W = layer.layerWidth; H = layer.layerHeight; sx = layer.startX || 0; sy = layer.startY || 0;
+      isSolid = solid ? function (x, y) { return solid.has(layer.gidAt(x + sx, y + sy) & TILE_GID_MASK); } : function (x, y) { return layer.collidesAt(x + sx, y + sy) !== 0; };
+    } else {
+      // datos por filas (array de arrays de índices o de {index})
+      var data = layer.data || layer.layer && layer.layer.data; if (!data || !data.length || !Array.isArray(data[0]) && typeof data[0] !== 'object') return out;
+      H = data.length; W = 0; for (var r = 0; r < H; r++) W = Math.max(W, data[r] ? data[r].length : 0);
+      isSolid = function (x, y) { var row = data[y], t = row ? row[x] : 0, idx = t && typeof t === 'object' ? t.index : t; return solid ? solid.has(idx) : idx > 0; };
+    }
+    // posición y escala reales de la capa (puede estar dentro de un grupo desplazado o escalado)
+    var m = layer.getWorldMatrix ? layer.getWorldMatrix(new Matrix(), 0, 0) : null;
+    var ox = m ? m.tx : (layer.x || 0), oy = m ? m.ty : (layer.y || 0);
+    if (m) { tw *= Math.hypot(m.a, m.b) || 1; th *= Math.hypot(m.c, m.d) || 1; }
+    ox += sx * tw; oy += sy * th;
+    // tiles contiguos de cada fila en una sola caja (menos cuerpos y sin enganches entre tiles)
+    for (var y = 0; y < H && out.length < 20000; y++) {
+      var x = 0;
+      while (x < W) {
+        if (!isSolid(x, y)) { x++; continue; }
+        var x0 = x; while (x < W && isSolid(x, y)) x++;
+        var b = this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o); if (b) out.push(b);
       }
     }
     return out;
