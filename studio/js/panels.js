@@ -192,7 +192,7 @@ export class Inspector {
     const rows = Object.keys(vars).map((k) => {
       const v = h('input', { type: 'text', value: String(vars[k]), spellcheck: 'false' });
       v.addEventListener('keydown', (e) => e.stopPropagation());
-      v.addEventListener('change', () => { const o = Object.assign({}, vars); const t = v.value.trim(); o[k] = t !== '' && isFinite(Number(t)) ? Number(t) : t === 'true' ? true : t === 'false' ? false : v.value; commit(o); });
+      v.addEventListener('change', () => { const o = Object.assign({}, vars); const t = v.value.trim(); o[k] = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(t) && Number.isFinite(Number(t)) && (Number.isSafeInteger(Number(t)) || !/^[+-]?\d+$/.test(t)) ? Number(t) : t === 'true' ? true : t === 'false' ? false : v.value; commit(o); }); // 0x… y enteros enormes quedan como texto
       return h('div.field', h('label', { title: k }, k), h('div', { style: { display: 'flex', gap: '4px' } }, v, h('button.icon', { type: 'button', title: 'Borrar variable', on: { click: () => { const o = Object.assign({}, vars); delete o[k]; commit(o); } } }, '✕')));
     });
     const add = h('button.btn.small', { type: 'button', on: { click: async () => { const k = await prompt('Nueva variable', 'Nombre (letras, números y _)', ''); if (!k) return; if (!/^[A-Za-z_\u00c0-\u024f][A-Za-z0-9_\u00c0-\u024f]{0,39}$/.test(k) || S.isForbiddenKey(k)) { toast('Nombre no válido', 'warn'); return; } const o = Object.assign({}, vars); o[k] = 0; commit(o); } } }, '＋ Variable');

@@ -87,6 +87,14 @@ module.exports = async function (UG, h) {
     const cyc = {}; cyc.a = cyc; A.eq(R.saveData(ctx, 'ciclo', cyc), false);
   });
 
+  test('Variables: una dirección 0x… o un importe en wei no se convierten en número (perdían el valor)', () => {
+    const addr = '0x' + 'aB'.repeat(20);
+    A.eq(R.toValue(addr), addr); A.eq(R.toValue('0xff'), '0xff');
+    A.eq(R.toValue('250000000000000000000'), '250000000000000000000', 'entero enorme: texto exacto');
+    A.eq(R.toValue('12'), 12); A.eq(R.toValue(' -3.5 '), -3.5); A.eq(R.toValue('1e3'), 1000);
+    A.eq(R.toValue('true'), true); A.eq(R.toValue('hola'), 'hola'); A.eq(R.toValue(''), '');
+  });
+
   section('Studio: exportación ZIP');
   await testAsync('makeZip produce un ZIP con CRC-32 correctos', async () => {
     globalThis.window = globalThis.window || { UGStudio: globalThis.UGStudio };

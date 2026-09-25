@@ -137,6 +137,7 @@ details.sub > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .fn-out { flex-basis: 100%; font: 12px var(--mono); color: var(--muted); white-space: pre-wrap; word-break: break-all; }
 .fn-out.ok { color: var(--ok); }
 .fn-out.bad { color: var(--err); }
+.fn-out.pending { color: var(--muted); font-style: italic; }
 .be-status { margin-left: 8px; }
 .be-routes { display: grid; gap: 5px; }
 .be-route { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding-bottom: 5px; border-bottom: 1px dashed var(--line); }

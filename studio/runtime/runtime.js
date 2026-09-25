@@ -204,13 +204,21 @@
   R.dotTexture = dotTexture;
   var _m2 = new UG.Matrix();
   var VAR_RE = /\{([^{}\s]{1,40})\}/g;
+  // número decimal («12», «-3.5», «1e3»); el hexadecimal (direcciones 0x…, hashes) NO es un número
+  var NUM_RE = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+  function isNumText(t) { return NUM_RE.test(t); }
   function toValue(v) {
     if (typeof v !== 'string') return v;
     var t = v.trim();
-    if (t !== '' && isFinite(Number(t))) return Number(t);
+    if (isNumText(t)) {
+      // los enteros más allá de 2^53 (importes en wei) se guardan como texto para no perder dígitos
+      var n = Number(t); if (isFinite(n) && (Number.isSafeInteger(n) || !/^[+-]?\d+$/.test(t))) return n;
+      return t;
+    }
     if (t === 'true') return true; if (t === 'false') return false;
     return v;
   }
+  R.toValue = toValue;
   function assetExists(ctx, id) { return !!(id && ctx.assetsById[id]); }
   /* Guardado persistente (récords, progreso): localStorage si existe; si no (iframe aislado del editor,
    * modo privado), memoria de la sesión. Solo JSON, con límite de tamaño y claves por proyecto. */
@@ -1479,7 +1487,8 @@
 
   /* ---------------------------------------------------------------- hojas de eventos */
   function cmp(a, op, b) {
-    var na = Number(a), nb = Number(b), numeric = isFinite(na) && isFinite(nb) && a !== '' && b !== '';
+    var num = function (x) { return typeof x === 'number' ? isFinite(x) : typeof x === 'string' && isNumText(x.trim()); };
+    var na = Number(a), nb = Number(b), numeric = num(a) && num(b);
     if (numeric) { a = na; b = nb; } else { a = String(a); b = String(b); }
     switch (op) { case '==': return a === b; case '!=': return a !== b; case '>': return a > b; case '>=': return a >= b; case '<': return a < b; case '<=': return a <= b; }
     return false;

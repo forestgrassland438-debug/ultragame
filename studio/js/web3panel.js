@@ -112,12 +112,13 @@ export class Web3Panel {
     this.hostProxy = new Web3Host(app);
     const ed = app.editor;
     ed.on('project', () => { this.sel = null; this.results.clear(); this._mockW = null; this._mockVer = null; if (this.visible) this.render(); });
-    ed.on('change', (d) => { if ((d.kind === 'all' || d.kind === 'web3') && this.visible && !this.typing) this.render(); });
+    // cualquier cambio de web3 (también los de este panel: renombrar, borrar, modo, redes…) se ve al momento
+    ed.on('change', (d) => { if ((d.kind === 'all' || d.kind === 'web3') && this.visible) this.render(); });
     (app.codeSources || (app.codeSources = [])).push(() => this.codeSources());
   }
   get w3() { const p = this.app.editor.project; return p ? p.web3 : null; }
   setVisible(on) { this.visible = on; if (on) this.render(); }
-  edit(label, fn) { this.typing = true; try { this.app.editor.edit(label, (p) => fn(p.web3), 'web3'); } finally { this.typing = false; } }
+  edit(label, fn) { this.app.editor.edit(label, (p) => fn(p.web3), 'web3'); }
   contract(id) { return this.w3 ? this.w3.contracts.find((c) => c.id === id) || null : null; }
   codeSources() {
     const ed = this.app.editor, w = this.w3; if (!w) return [];
@@ -175,7 +176,9 @@ export class Web3Panel {
     return this.studioWallet();
   }
   async callFn(c, f, args, value) {
-    const key = c.id + ':' + W3.signature(f);
+    const key = c.id + ':' + W3.signature(f), ro = f.stateMutability === 'view' || f.stateMutability === 'pure';
+    // al volver a pulsar se ve que está pendiente (antes el resultado anterior seguía ahí y parecía la respuesta nueva)
+    this.results.set(key, { ok: true, pending: true, text: ro ? 'Leyendo…' : 'Enviando…' }); this.renderResults();
     try {
       const w = this.testWallet(), mock = this.w3.mode === 'mock';
       if (!w.provider) throw new Error('Conecta tu cartera primero (arriba)');
@@ -188,10 +191,13 @@ export class Web3Panel {
       if (f.stateMutability === 'view' || f.stateMutability === 'pure') out = await k.read.apply(k, [W3.signature(f)].concat(parsed));
       else {
         const hash = await k.write(W3.signature(f), parsed, { value: value ? W3.parseUnits(value, 18) : BigInt(0) });
-        this.results.set(key, { ok: true, text: 'Enviada: ' + hash + ' · esperando confirmación…' }); this.renderResults();
+        this.results.set(key, { ok: true, pending: true, text: 'Enviada: ' + hash + ' · esperando confirmación…' }); this.renderResults();
         const rc = await w.waitForReceipt(hash); out = 'Confirmada en el bloque ' + parseInt(rc.blockNumber, 16);
       }
-      this.results.set(key, { ok: true, text: fmtVal(out) });
+      // saldos e importes de tokens en wei: también en unidades (lo habitual en ERC-20 son 18 decimales)
+      let txt = fmtVal(out);
+      if (typeof out === 'bigint' && out >= BigInt(1e15) && /balance|supply|allowance|price|amount|value|reward|saldo|precio|premio/i.test(f.name)) txt += '   (≈ ' + W3.formatUnits(out, 18, 6) + ' con 18 decimales)';
+      this.results.set(key, { ok: true, text: txt });
     } catch (e) { this.results.set(key, { ok: false, text: e.message }); }
     this.renderResults();
   }
@@ -227,7 +233,11 @@ export class Web3Panel {
 
   /* ---------------------------------------------------------------- interfaz */
   render() {
-    const host = this.host, ed = this.app.editor; clear(host);
+    const host = this.host, ed = this.app.editor;
+    // al redibujar se conservan las secciones abiertas y el desplazamiento (si no, cada cambio las cerraba)
+    const opened = new Set(Array.from(host.querySelectorAll('details')).filter((d) => d.open).map((d) => ((d.querySelector('summary') || {}).textContent || '').replace(/\d+/g, '#')));
+    const scrolls = Array.from(host.querySelectorAll('.pane-col')).map((c) => c.scrollTop), top = host.scrollTop;
+    clear(host);
     if (!ed.project) return;
     const w = this.w3;
     if (this.sel && !this.contract(this.sel)) this.sel = null;
@@ -257,6 +267,11 @@ export class Web3Panel {
     const left = h('div.pane-col.narrow', h('div.card', h('div.card-head', h('b.grow', 'Contratos'), add), list), settings, walletBox, this.helpCard());
     const right = h('div.pane-col', this.sel ? this.contractView(this.contract(this.sel)) : h('div.empty', 'Crea un contrato desde una plantilla: ERC-20 (monedas), ERC-721 (NFT únicos), ERC-1155 (inventario), clasificación, tienda o recompensas firmadas.'));
     host.appendChild(h('div.pane', head, h('div.pane-cols', left, right)));
+    if (this._renderedSel === this.sel) {
+      host.querySelectorAll('details').forEach((d) => { const t = ((d.querySelector('summary') || {}).textContent || '').replace(/\d+/g, '#'); if (opened.has(t)) d.open = true; });
+      host.querySelectorAll('.pane-col').forEach((c, i) => { if (scrolls[i]) c.scrollTop = scrolls[i]; }); host.scrollTop = top;
+    }
+    this._renderedSel = this.sel;
     this.renderResults();
   }
   helpCard() {
@@ -307,6 +322,6 @@ export class Web3Panel {
     return [head, addrs, tests, deploy, adv, events];
   }
   renderResults() {
-    this.host.querySelectorAll('.fn-out').forEach((el) => { const r = this.results.get(el.dataset.key); el.textContent = r ? r.text : ''; el.className = 'fn-out' + (r ? (r.ok ? ' ok' : ' bad') : ''); });
+    this.host.querySelectorAll('.fn-out').forEach((el) => { const r = this.results.get(el.dataset.key); el.textContent = r ? r.text : ''; el.className = 'fn-out' + (r ? (r.pending ? ' pending' : r.ok ? ' ok' : ' bad') : ''); });
   }
 }
