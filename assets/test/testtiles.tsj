@@ -1,0 +1,25 @@
+{
+ "type": "tileset",
+ "name": "testtiles",
+ "image": "testtiles.png",
+ "imagewidth": 32,
+ "imageheight": 16,
+ "tilewidth": 16,
+ "tileheight": 16,
+ "tilecount": 2,
+ "columns": 2,
+ "margin": 0,
+ "spacing": 0,
+ "tiles": [
+  {
+   "id": 0,
+   "properties": [
+    {
+     "name": "solid",
+     "type": "bool",
+     "value": true
+    }
+   ]
+  }
+ ]
+}

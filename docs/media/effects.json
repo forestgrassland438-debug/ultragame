@@ -1,0 +1,285 @@
+{
+ "renderer": "webgl2",
+ "effects": [
+  {
+   "id": "grayscale",
+   "name": "Escala de grises",
+   "cat": "Color",
+   "file": "fx-grayscale.png",
+   "anim": false,
+   "code": "new UG.GrayscaleFilter(1)"
+  },
+  {
+   "id": "sepia",
+   "name": "Sepia",
+   "cat": "Color",
+   "file": "fx-sepia.png",
+   "anim": false,
+   "code": "new UG.SepiaFilter()"
+  },
+  {
+   "id": "invert",
+   "name": "Negativo",
+   "cat": "Color",
+   "file": "fx-invert.png",
+   "anim": false,
+   "code": "new UG.InvertFilter()"
+  },
+  {
+   "id": "hue",
+   "name": "Rotar tono",
+   "cat": "Color",
+   "file": "fx-hue.png",
+   "anim": false,
+   "code": "new UG.HueRotateFilter(120)"
+  },
+  {
+   "id": "adjust",
+   "name": "Brillo · contraste · saturación",
+   "cat": "Color",
+   "file": "fx-adjust.png",
+   "anim": false,
+   "code": "new UG.ColorMatrixFilter().brightness(1.1).contrast(0.3, true).saturate(0.6, true)"
+  },
+  {
+   "id": "vintage",
+   "name": "Preajustes de color",
+   "cat": "Color",
+   "file": "fx-vintage.png",
+   "anim": false,
+   "code": "new UG.ColorMatrixFilter().kodachrome()"
+  },
+  {
+   "id": "overlay",
+   "name": "Superposición de color",
+   "cat": "Color",
+   "file": "fx-overlay.png",
+   "anim": false,
+   "code": "new UG.ColorOverlayFilter(0xff3d7f, 0.3499999940395355)"
+  },
+  {
+   "id": "gradmap",
+   "name": "Mapa de degradado",
+   "cat": "Color",
+   "file": "fx-gradmap.png",
+   "anim": false,
+   "code": "new UG.GradientMapFilter([0x1b0b3a, 0xc2255c, 0xffd43b], 1)"
+  },
+  {
+   "id": "posterize",
+   "name": "Posterizar",
+   "cat": "Color",
+   "file": "fx-posterize.png",
+   "anim": false,
+   "code": "new UG.PosterizeFilter(4)"
+  },
+  {
+   "id": "threshold",
+   "name": "Umbral",
+   "cat": "Color",
+   "file": "fx-threshold.png",
+   "anim": false,
+   "code": "new UG.ThresholdFilter(0.44999998807907104)"
+  },
+  {
+   "id": "dither",
+   "name": "Tramado (dither)",
+   "cat": "Color",
+   "file": "fx-dither.png",
+   "anim": false,
+   "code": "new UG.DitherFilter({ levels: 3, scale: 2 })"
+  },
+  {
+   "id": "blur",
+   "name": "Desenfoque gaussiano",
+   "cat": "Desenfoque y luz",
+   "file": "fx-blur.png",
+   "anim": false,
+   "code": "new UG.BlurFilter({ strength: 6, quality: 3 })"
+  },
+  {
+   "id": "tiltshift",
+   "name": "Tilt-shift (miniatura)",
+   "cat": "Desenfoque y luz",
+   "file": "fx-tiltshift.png",
+   "anim": false,
+   "code": "new UG.TiltShiftFilter({ blur: 14, focus: 0.62, focusSize: 0.12 })"
+  },
+  {
+   "id": "zoomblur",
+   "name": "Desenfoque radial (zoom)",
+   "cat": "Desenfoque y luz",
+   "file": "fx-zoomblur.png",
+   "anim": false,
+   "code": "new UG.ZoomBlurFilter({ x: 320, y: 136, strength: 0.18000000715255737 })"
+  },
+  {
+   "id": "motionblur",
+   "name": "Desenfoque de movimiento",
+   "cat": "Desenfoque y luz",
+   "file": "fx-motionblur.png",
+   "anim": false,
+   "code": "new UG.MotionBlurFilter({ x: 26, y: 0 })"
+  },
+  {
+   "id": "bloom",
+   "name": "Bloom (resplandor HDR)",
+   "cat": "Desenfoque y luz",
+   "file": "fx-bloom.gif",
+   "anim": true,
+   "code": "new UG.BloomFilter({ threshold: 0.45, bloomScale: 1.6, blur: 10 })"
+  },
+  {
+   "id": "godrays",
+   "name": "Rayos de luz (god rays)",
+   "cat": "Desenfoque y luz",
+   "file": "fx-godrays.gif",
+   "anim": true,
+   "code": "new UG.GodRaysFilter({ x: 460.79998779296875, y: 120, exposure: 0.44999998807907104, decay: 0.9599999785423279 })"
+  },
+  {
+   "id": "glow",
+   "name": "Resplandor (glow)",
+   "cat": "Desenfoque y luz",
+   "file": "fx-glow.png",
+   "anim": false,
+   "code": "sprite.filters = [new UG.GlowFilter({ distance: 14, outerStrength: 2.5, color: 0x9dfcff })]"
+  },
+  {
+   "id": "dropshadow",
+   "name": "Sombra proyectada",
+   "cat": "Desenfoque y luz",
+   "file": "fx-dropshadow.png",
+   "anim": false,
+   "code": "sprite.filters = [new UG.DropShadowFilter({ blur: 4, alpha: 0.7, offset: { x: 8, y: 10 } })]"
+  },
+  {
+   "id": "outline",
+   "name": "Contorno",
+   "cat": "Desenfoque y luz",
+   "file": "fx-outline.png",
+   "anim": false,
+   "code": "sprite.filters = [new UG.OutlineFilter({ thickness: 4, color: 0x63e6be })]"
+  },
+  {
+   "id": "shockwave",
+   "name": "Onda expansiva",
+   "cat": "Distorsión",
+   "file": "fx-shockwave.gif",
+   "anim": true,
+   "code": "new UG.ShockwaveFilter({ x: 320, y: 200, amplitude: 26, wavelength: 140, speed: 420 })"
+  },
+  {
+   "id": "wave",
+   "name": "Ondulación",
+   "cat": "Distorsión",
+   "file": "fx-wave.gif",
+   "anim": true,
+   "code": "new UG.WaveFilter({ amplitudeX: 6, amplitudeY: 3, frequencyX: 0.03999999910593033, speed: 2 })"
+  },
+  {
+   "id": "heathaze",
+   "name": "Calima (heat haze)",
+   "cat": "Distorsión",
+   "file": "fx-heathaze.gif",
+   "anim": true,
+   "code": "new UG.HeatHazeFilter({ strength: 4, scale: 0.05999999865889549, speed: 2.5 })"
+  },
+  {
+   "id": "bulge",
+   "name": "Abombar / pellizcar",
+   "cat": "Distorsión",
+   "file": "fx-bulge.png",
+   "anim": false,
+   "code": "new UG.BulgePinchFilter({ x: 320, y: 144, radius: 150, strength: 0.699999988079071 })"
+  },
+  {
+   "id": "twist",
+   "name": "Remolino",
+   "cat": "Distorsión",
+   "file": "fx-twist.png",
+   "anim": false,
+   "code": "new UG.TwistFilter({ x: 320, y: 144, radius: 170, angle: 3 })"
+  },
+  {
+   "id": "reflection",
+   "name": "Reflejo en agua",
+   "cat": "Distorsión",
+   "file": "fx-reflection.gif",
+   "anim": true,
+   "code": "new UG.ReflectionFilter({ boundary: 0.6200000047683716, amplitude: 3, wavelength: 40 })"
+  },
+  {
+   "id": "crt",
+   "name": "Monitor CRT",
+   "cat": "Retro y pantalla",
+   "file": "fx-crt.gif",
+   "anim": true,
+   "code": "new UG.CRTFilter({ curvature: 1, lineWidth: 3, lineContrast: 0.30000001192092896, noise: 0.10000000149011612 })"
+  },
+  {
+   "id": "pixelate",
+   "name": "Pixelar",
+   "cat": "Retro y pantalla",
+   "file": "fx-pixelate.png",
+   "anim": false,
+   "code": "new UG.PixelateFilter(6)"
+  },
+  {
+   "id": "rgbsplit",
+   "name": "Aberración cromática",
+   "cat": "Retro y pantalla",
+   "file": "fx-rgbsplit.png",
+   "anim": false,
+   "code": "new UG.ChromaticAberrationFilter({ redX: -5, blueX: 5, radial: true })"
+  },
+  {
+   "id": "glitch",
+   "name": "Glitch digital",
+   "cat": "Retro y pantalla",
+   "file": "fx-glitch.gif",
+   "anim": true,
+   "code": "new UG.GlitchFilter({ slices: 18, offset: 24, density: 0.3499999940395355 })"
+  },
+  {
+   "id": "noise",
+   "name": "Ruido / grano",
+   "cat": "Retro y pantalla",
+   "file": "fx-noise.gif",
+   "anim": true,
+   "code": "new UG.NoiseFilter({ noise: 0.30000001192092896, animated: true })"
+  },
+  {
+   "id": "oldfilm",
+   "name": "Película antigua",
+   "cat": "Retro y pantalla",
+   "file": "fx-oldfilm.gif",
+   "anim": true,
+   "code": "new UG.OldFilmFilter({ sepia: 0.4000000059604645, noise: 0.25, scratch: 0.5 })"
+  },
+  {
+   "id": "vignette",
+   "name": "Viñeta",
+   "cat": "Retro y pantalla",
+   "file": "fx-vignette.png",
+   "anim": false,
+   "code": "new UG.VignetteFilter({ radius: 0.30000001192092896, softness: 0.6499999761581421, strength: 0.8999999761581421 })"
+  },
+  {
+   "id": "dotscreen",
+   "name": "Trama de puntos (cómic)",
+   "cat": "Retro y pantalla",
+   "file": "fx-dotscreen.png",
+   "anim": false,
+   "code": "new UG.DotScreenFilter({ scale: 1, angle: 5 })"
+  },
+  {
+   "id": "emboss",
+   "name": "Relieve / nitidez / bordes",
+   "cat": "Estilizado",
+   "file": "fx-emboss.png",
+   "anim": false,
+   "code": "UG.ConvolutionFilter.emboss(2)"
+  }
+ ]
+}

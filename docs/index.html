@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070914">
+<meta name="description" content="Documentación de UltraGame: motor 2D y 3D para la web con WebGPU, WebGL2, WebGL y Canvas, escenas, física 2D y 3D, glTF/Blender, Tiled, audio, partículas, 35 efectos y el editor UltraGame Studio.">
+<title>Documentación · UltraGame</title>
+<style>
+  :root { --bg: #070914; --panel: #0e1224; --panel2: #141a33; --line: #232b4d; --text: #e7ebff; --muted: #9aa3c7; --accent: #7c8cff; --accent2: #ff6ad5; --good: #63e6be; --warn: #ffd43b; --bad: #ff8787;
+    --kw: #c792ea; --str: #c3e88d; --num: #f78c6c; --com: #697098; --fn: #82aaff; --ug: #ffcb6b; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15.5px/1.65 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(900px 500px at 10% -10%, rgba(124, 140, 255, 0.16), transparent 60%), radial-gradient(700px 420px at 100% 0%, rgba(255, 106, 213, 0.1), transparent 60%); }
+  a { color: #a9b6ff; }
+  a:hover { color: #fff; }
+  .layout { position: relative; display: grid; grid-template-columns: 270px minmax(0, 1fr); max-width: 1320px; margin: 0 auto; }
+  nav.side { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 22px 16px 30px; border-right: 1px solid var(--line); }
+  .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: var(--text); margin-bottom: 14px; }
+  .brand svg { width: 38px; height: 38px; }
+  .brand b { font-size: 19px; }
+  .brand small { display: block; color: var(--muted); font-size: 12px; }
+  .search { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0a0d1c; color: var(--text); font: inherit; font-size: 14px; margin-bottom: 10px; }
+  nav.side ol { list-style: none; margin: 0; padding: 0; }
+  nav.side li a { display: block; padding: 4px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; }
+  nav.side li a:hover { color: var(--text); background: rgba(124, 140, 255, 0.08); }
+  nav.side li a.on { color: #fff; background: rgba(124, 140, 255, 0.16); }
+  nav.side .grp { color: #6f7aa8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin: 14px 10px 4px; }
+  main { padding: 26px 34px 80px; min-width: 0; }
+  #tocwrap summary { display: none; }
+  @media (max-width: 900px) { #tocwrap summary { display: block; cursor: pointer; color: var(--muted); padding: 4px 2px; } .layout { grid-template-columns: 1fr; } nav.side { position: relative; height: auto; border-right: 0; border-bottom: 1px solid var(--line); } nav.side ol { columns: 2; } main { padding: 20px 16px 60px; } }
+  .hero { padding: 26px 26px 22px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, rgba(59, 75, 216, 0.25), rgba(124, 58, 237, 0.12) 50%, rgba(14, 18, 36, 0.8)); margin-bottom: 26px; }
+  .hero h1 { margin: 0 0 6px; font-size: 38px; line-height: 1.15; }
+  .hero h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { margin: 0 0 14px; color: #c9d0f5; max-width: 820px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cta a { text-decoration: none; padding: 9px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-weight: 600; font-size: 14px; }
+  .cta a.p { background: linear-gradient(135deg, #3b4bd8, #7c3aed); border-color: transparent; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 18px; }
+  .kpi { background: rgba(7, 9, 20, 0.55); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .kpi b { display: block; font-size: 20px; }
+  .kpi span { color: var(--muted); font-size: 12.5px; }
+  section { margin: 0 0 40px; }
+  h2 { font-size: 26px; margin: 0 0 10px; padding-top: 6px; border-top: 1px solid var(--line); padding-top: 26px; }
+  h3 { font-size: 18px; margin: 22px 0 8px; }
+  p, li { color: #d5dbfb; }
+  .muted { color: var(--muted); }
+  code { font: 0.9em ui-monospace, "Cascadia Code", Consolas, monospace; background: rgba(124, 140, 255, 0.1); padding: 1px 5px; border-radius: 5px; color: #dfe4ff; }
+  pre { position: relative; background: #0a0d1c; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow: auto; margin: 10px 0 16px; }
+  pre code { background: none; padding: 0; font-size: 13.2px; line-height: 1.6; color: #d6dcff; }
+  pre .cp { position: absolute; right: 8px; top: 8px; font: 12px system-ui; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; cursor: pointer; }
+  pre .cp:hover { color: #fff; }
+  .t-k { color: var(--kw); } .t-s { color: var(--str); } .t-n { color: var(--num); } .t-c { color: var(--com); font-style: italic; } .t-f { color: var(--fn); } .t-u { color: var(--ug); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; background: var(--panel2); white-space: nowrap; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 12px 0 18px; }
+  .card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .note { border-left: 3px solid var(--accent); background: rgba(124, 140, 255, 0.08); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; }
+  .note.warn { border-color: var(--warn); background: rgba(255, 212, 59, 0.07); }
+  .note.good { border-color: var(--good); background: rgba(99, 230, 190, 0.07); }
+  .fxgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .fxgrid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .fxgrid img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: #000; }
+  .fxgrid figcaption { padding: 7px 10px; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .fxgrid figcaption small { color: var(--muted); }
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .games a { display: block; text-decoration: none; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; color: var(--text); }
+  .games img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; }
+  .games span { display: block; padding: 7px 10px; font-size: 13.5px; }
+  .pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin: 2px 3px 2px 0; }
+  .pill.ok { color: var(--good); border-color: rgba(99, 230, 190, 0.35); }
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="side" aria-label="Contenido">
+  <a class="brand" href="#inicio">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c8cff"/><stop offset="1" stop-color="#ff6ad5"/></linearGradient></defs><rect x="4" y="4" width="56" height="56" rx="16" fill="#101531" stroke="url(#lg)" stroke-width="3"/><path d="M20 18v17a12 12 0 0 0 24 0V18" fill="none" stroke="url(#lg)" stroke-width="6" stroke-linecap="round"/><circle cx="32" cy="48" r="3" fill="#63e6be"/></svg>
+    <span><b>UltraGame</b><small>Documentación v1.0.0</small></span>
+  </a>
+  <input class="search" id="q" type="search" placeholder="Buscar en la documentación…" aria-label="Buscar en la documentación">
+  <details id="tocwrap" open><summary>Índice</summary>
+  <ol id="toc">
+    <li class="grp">Empezar</li>
+    <li><a href="#inicio">Qué es UltraGame</a></li>
+    <li><a href="#rapido">Inicio rápido</a></li>
+    <li><a href="#config">Configuración del juego</a></li>
+    <li><a href="#render">Renderizadores</a></li>
+    <li><a href="#escala">Escalado y móviles</a></li>
+    <li class="grp">Construir juegos</li>
+    <li><a href="#escenas">Escenas</a></li>
+    <li><a href="#objetos">Objetos de juego</a></li>
+    <li><a href="#graphics">Graphics (vectorial)</a></li>
+    <li><a href="#texto">Texto</a></li>
+    <li><a href="#carga">Carga de recursos</a></li>
+    <li><a href="#animacion">Animaciones</a></li>
+    <li><a href="#tweens">Tweens y tiempo</a></li>
+    <li><a href="#entrada">Entrada</a></li>
+    <li><a href="#fisica">Física Arcade</a></li>
+    <li><a href="#tiled">Tiled</a></li>
+    <li><a href="#camaras">Cámaras</a></li>
+    <li><a href="#particulas">Partículas</a></li>
+    <li><a href="#efectos">Efectos (35)</a></li>
+    <li><a href="#audio">Audio y música</a></li>
+    <li><a href="#ui">Interfaz</a></li>
+    <li class="grp">3D</li>
+    <li><a href="#d3">Primeros pasos en 3D</a></li>
+    <li><a href="#d3-objetos">Objetos, materiales y luces</a></li>
+    <li><a href="#d3-modelos">Blender, glTF/GLB y OBJ</a></li>
+    <li><a href="#d3-anim">Animación 3D</a></li>
+    <li><a href="#d3-fisica">Física 3D</a></li>
+    <li><a href="#d3-controles">Cámaras y controles 3D</a></li>
+    <li><a href="#d3-extras">Partículas, niveles y sonido 3D</a></li>
+    <li><a href="#d3-juegos">Juegos 3D de ejemplo</a></li>
+    <li class="grp">Editor</li>
+    <li><a href="#studio">UltraGame Studio</a></li>
+    <li class="grp">Calidad</li>
+    <li><a href="#rendimiento">Rendimiento</a></li>
+    <li><a href="#memoria">Memoria y fugas</a></li>
+    <li><a href="#seguridad">Seguridad y web3</a></li>
+    <li><a href="#depurar">Depuración y herramientas</a></li>
+    <li><a href="#pruebas">Pruebas</a></li>
+    <li><a href="#minijuegos">Minijuegos</a></li>
+    <li><a href="#limites">Limitaciones conocidas</a></li>
+  </ol>
+  </details>
+</nav>
+<main id="main">
+
+<section id="inicio">
+  <div class="hero">
+    <h1><span>UltraGame</span> — motor 2D y 3D para la web</h1>
+    <p>Un único archivo JavaScript sin dependencias con lo que usan los juegos 2D de verdad: renderizado por <b>WebGPU, WebGL2, WebGL y Canvas 2D</b> con respaldo automático, escenas al estilo Phaser, grafo de escena al estilo PixiJS, física Arcade, mapas de <b>Tiled</b>, audio con sintetizador, partículas aceleradas con <b>WebAssembly SIMD</b>, 35 efectos de post-proceso, interfaz táctil y herramientas de seguridad para juegos web3. Incluye <b>3D</b> (PBR, sombras, glTF/GLB de Blender, animación por huesos, física de personajes y vehículos) y <b>UltraGame Studio</b>, un editor de escritorio para crear juegos 2D y 3D con o sin código.</p>
+    <div class="cta"><a class="p" href="#rapido">Empezar</a><a href="studio.html">UltraGame Studio</a><a href="#d3">3D</a><a href="../minigames/index.html">8 minijuegos 2D</a><a href="../games3d/index.html">8 juegos 3D</a><a href="../examples/effects.html">Galería de efectos</a><a href="../tests/index.html">Pruebas</a><a href="../tests/bench.html">Benchmarks</a></div>
+    <div class="kpis">
+      <div class="kpi"><b>4</b><span>renderizadores con la misma salida</span></div>
+      <div class="kpi"><b>1,1 MB</b><span>sin comprimir, 2D + 3D en un archivo</span></div>
+      <div class="kpi"><b>0</b><span>dependencias, sin eval ni innerHTML</span></div>
+      <div class="kpi"><b>~290</b><span>pruebas en navegador + 83 en Node</span></div>
+      <div class="kpi"><b>3D</b><span>WebGPU · WebGL2 · WebGL, glTF/GLB</span></div>
+      <div class="kpi"><b>35</b><span>efectos GLSL + WGSL</span></div>
+      <div class="kpi"><b>~285 ns</b><span>por sprite en CPU (render)</span></div>
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card"><h4>Lo mejor de PixiJS</h4><p>Grafo de escena con contenedores, máscaras, filtros por objeto, <code>cacheAsTexture</code>, mallas, cuerdas, texto con estilos, lotes instanciados y alfa premultiplicado.</p></div>
+    <div class="card"><h4>Lo mejor de Phaser</h4><p>Escenas con <code>preload/create/update</code>, <code>this.add.*</code>, física Arcade con grupos y colisionadores, tweens encadenables, cámaras con efectos, Tiled y audio.</p></div>
+    <div class="card"><h4>Lo propio</h4><p>Cuatro backends verificados píxel a píxel, núcleo WASM SIMD opcional, sintetizador de efectos y música, grabador GIF, RNG determinista, hash de estado y API de seguridad.</p></div>
+  </div>
+</section>
+
+<section id="rapido">
+  <h2>Inicio rápido</h2>
+  <p>Copia <code>dist/ultragame.js</code> en tu proyecto (o usa <code>dist/ultragame.esm.js</code> con <code>import</code>) y crea un juego con una escena. El motor expone el espacio de nombres global <code>UG</code> (alias <code>UltraGame</code>).</p>
+<pre><code class="js">&lt;div id="juego"&gt;&lt;/div&gt;
+&lt;script src="ultragame.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+const Principal = {
+  key: 'Principal',
+  preload() {
+    this.load.image('estrella', 'img/estrella.png');   // o genera texturas por código:
+    this.textures.generate('bola', 32, 32, (c) =&gt; { c.fillStyle = '#ffd43b'; c.beginPath(); c.arc(16, 16, 15, 0, Math.PI * 2); c.fill(); });
+  },
+  create() {
+    this.jugador = this.physics.add.sprite(400, 300, 'bola');
+    this.jugador.body.setCollideWorldBounds(true).setBounce(0.6);
+    this.teclas = this.input.keyboard.createCursorKeys();
+    this.add.text(20, 20, '¡Hola, UltraGame!', { fontSize: 28, fill: 0xffffff, stroke: 0x000000, strokeThickness: 4 });
+    this.tweens.add({ targets: this.jugador, scale: 1.3, duration: 600, yoyo: true, repeat: -1, ease: 'sineInOut' });
+  },
+  update(tiempo, delta) {
+    const b = this.jugador.body, v = 260;
+    b.setVelocityX(this.teclas.left.isDown ? -v : this.teclas.right.isDown ? v : 0);
+    if (this.teclas.up.isDown &amp;&amp; b.onFloor()) b.setVelocityY(-520);
+  }
+};
+
+new UG.Game({
+  parent: 'juego', width: 800, height: 600, backgroundColor: 0x1b1035,
+  physics: { arcade: { gravity: { y: 1200 } } },
+  scenes: [Principal]
+});
+&lt;/script&gt;</code></pre>
+  <div class="note">Con módulos: <code>import UG from './ultragame.esm.js'</code>. En Node (pruebas, servidores de validación) <code>require('./dist/ultragame.js')</code> carga toda la lógica que no necesita navegador: matemáticas, física, Tiled, tweens, RNG, seguridad y GIF.</div>
+</section>
+
+<section id="config">
+  <h2>Configuración del juego</h2>
+  <p><code>new UG.Game(config)</code> acepta estas opciones (todas opcionales). El juego expone <code>game.ready</code> (promesa), <code>game.rendererType</code>, <code>game.loop</code>, <code>game.scene</code>, <code>game.textures</code>, <code>game.sound</code>, <code>game.scale</code> y <code>game.snapshot()</code>.</p>
+  <table>
+    <tr><th>Opción</th><th>Por defecto</th><th>Descripción</th></tr>
+    <tr><td><code>width</code>, <code>height</code></td><td>800 × 600</td><td>Tamaño lógico del juego (unidades del mundo).</td></tr>
+    <tr><td><code>parent</code> / <code>canvas</code></td><td>—</td><td>Elemento o id donde insertar el canvas, o un canvas propio.</td></tr>
+    <tr><td><code>renderer</code></td><td><code>'auto'</code></td><td><code>'webgpu' | 'webgl2' | 'webgl' | 'canvas'</code> o una lista en orden de preferencia. Si uno falla se usa el siguiente.</td></tr>
+    <tr><td><code>backgroundColor</code>, <code>transparent</code></td><td>0x000000, false</td><td>Color de fondo (número, <code>'#rrggbb'</code>, <code>'rgb()'</code>, <code>'hsl()'</code> o nombre CSS).</td></tr>
+    <tr><td><code>pixelArt</code>, <code>roundPixels</code>, <code>antialias</code></td><td>false, false, true</td><td>Pixel art: filtrado <em>nearest</em> y posiciones redondeadas. <code>antialias</code> activa MSAA.</td></tr>
+    <tr><td><code>resolution</code>, <code>maxResolution</code></td><td>'auto', 2</td><td>Densidad de píxeles del canvas; en 'auto' usa <code>devicePixelRatio</code> limitado a <code>maxResolution</code> (ahorra batería en móviles).</td></tr>
+    <tr><td><code>scale</code></td><td><code>{ mode: 'fit', autoCenter: true }</code></td><td>Ver <a href="#escala">Escalado</a>.</td></tr>
+    <tr><td><code>fps</code></td><td><code>{ target: 0, fixedStep: 0, maxDelta: 100 }</code></td><td>Limitar FPS, paso fijo para lógica determinista y delta máximo tras una pausa.</td></tr>
+    <tr><td><code>physics</code></td><td>null</td><td><code>{ arcade: { gravity: { y: 900 }, debug: false, fps: 60 } }</code></td></tr>
+    <tr><td><code>audio</code></td><td>{}</td><td><code>{ noAudio: true }</code> para desactivarlo; <code>maxInstances</code> por sonido.</td></tr>
+    <tr><td><code>scenes</code></td><td>[]</td><td>Objetos o clases de escena. La primera arranca automáticamente.</td></tr>
+    <tr><td><code>seed</code></td><td>aleatoria segura</td><td>Semilla del RNG global y de <code>scene.rng</code> (partidas reproducibles).</td></tr>
+    <tr><td><code>security</code></td><td>{}</td><td>Límites y orígenes permitidos; ver <a href="#seguridad">Seguridad</a>.</td></tr>
+    <tr><td><code>stats</code>, <code>banner</code>, <code>loaderUI</code></td><td>false, true, true</td><td>Panel de rendimiento, mensaje en consola y barra de carga por defecto.</td></tr>
+    <tr><td><code>cull</code>, <code>pauseOnHidden</code>, <code>autoStart</code></td><td>true, true, true</td><td>Descarta lo que está fuera de cámara, pausa al ocultar la pestaña y arranca el bucle solo.</td></tr>
+    <tr><td><code>powerPreference</code>, <code>preserveDrawingBuffer</code>, <code>maxTextures</code></td><td>'high-performance', false, 0</td><td>Opciones del contexto gráfico; <code>maxTextures</code> 0 = las que admita la GPU por lote.</td></tr>
+  </table>
+</section>
+
+<section id="render">
+  <h2>Renderizadores</h2>
+  <p>Los cuatro backends comparten la misma API y producen la misma imagen (la batería de pruebas compara píxeles en cada uno). El orden por defecto es <code>UG.defaultRendererOrder = ['webgl2', 'webgpu', 'webgl', 'canvas']</code>: WebGL2 es hoy el más estable en todos los navegadores; pide <code>renderer: 'webgpu'</code> para priorizar WebGPU.</p>
+  <table>
+    <tr><th>Backend</th><th>Técnica</th><th>Notas</th></tr>
+    <tr><td>WebGPU</td><td>Comandos diferidos, 3–4 <code>writeBuffer</code> por frame, uniformes con offsets dinámicos, quads instanciados.</td><td>Shaders WGSL. Textos y canvas dinámicos se suben por CPU (<code>writeTexture</code>) para evitar sincronizaciones.</td></tr>
+    <tr><td>WebGL2</td><td>VAO, anillo de 3 búferes, instancing, multi-textura por lote.</td><td>Recuperación automática tras pérdida de contexto.</td></tr>
+    <tr><td>WebGL 1</td><td>GLSL ES 1.00, <code>ANGLE_instanced_arrays</code> si existe; si no, quads indexados.</td><td>Máxima compatibilidad (móviles antiguos).</td></tr>
+    <tr><td>Canvas 2D</td><td>Transformaciones afines, caché de tintes (LRU), máscaras por composición, mallas por triángulo.</td><td>Los filtros usan su equivalente CSS (<code>ctx.filter</code>) cuando existe; <code>cacheAsTexture</code> guarda un canvas persistente.</td></tr>
+  </table>
+  <p>Todos usan alfa premultiplicado y los modos de mezcla <code>normal, add, multiply, screen, erase, lighten, darken, none</code>. Consulta capacidades con <code>UG.Capabilities.webgpu()</code>, <code>webgl2()</code>, <code>webgl()</code>, <code>canvas()</code>.</p>
+</section>
+
+<section id="escala">
+  <h2>Escalado y móviles</h2>
+  <p><code>scale.mode</code>: <code>'fit'</code> (encaja manteniendo proporción, con bandas), <code>'envelop'</code> (cubre recortando), <code>'fill'</code> (estira), <code>'resize'</code> (el tamaño lógico sigue al contenedor) o <code>'none'</code>. Con <code>autoCenter</code> se centra. <code>game.scale.toggleFullscreen()</code> alterna pantalla completa.</p>
+  <ul>
+    <li>Punteros unificados (ratón, táctil y lápiz) con multitáctil; <code>MG.isTouch</code> en los minijuegos muestra controles virtuales.</li>
+    <li><code>touch-action: none</code> y sin menú contextual en el canvas; la entrada no captura teclas mientras escribes en un <code>&lt;input&gt;</code>.</li>
+    <li>El audio se desbloquea con el primer gesto (política de los navegadores móviles) y los efectos lanzados antes se descartan en lugar de acumularse.</li>
+    <li>La resolución se limita con <code>maxResolution</code> para no renderizar a 3× en teléfonos de gama baja.</li>
+  </ul>
+</section>
+
+<section id="escenas">
+  <h2>Escenas</h2>
+  <p>Una escena es un objeto (o clase) con <code>key</code> y métodos opcionales <code>init(data)</code>, <code>preload()</code>, <code>create(data)</code>, <code>update(tiempo, delta)</code>. Dentro tienes: <code>this.add</code>, <code>this.make</code>, <code>this.load</code>, <code>this.textures</code>, <code>this.anims</code>, <code>this.tweens</code>, <code>this.time</code>, <code>this.input</code>, <code>this.physics</code>, <code>this.cameras</code>, <code>this.sound</code>, <code>this.scene</code>, <code>this.events</code>, <code>this.rng</code>, <code>this.world</code> (raíz) y <code>this.hud</code> (capa de interfaz que no se mueve con la cámara).</p>
+<pre><code class="js">const Menu = { key: 'Menu', create() { this.add.button(400, 300, { text: 'Jugar', onClick: () =&gt; this.scene.start('Juego', { nivel: 1 }) }); } };
+const Juego = {
+  key: 'Juego',
+  init(datos) { this.nivel = datos.nivel; },
+  create() {
+    this.add.hud.text(16, 16, 'Nivel ' + this.nivel);          // HUD: fijo en pantalla
+    this.events.once('shutdown', () =&gt; { /* limpieza propia */ });
+  }
+};
+new UG.Game({ scenes: [Menu, Juego] });</code></pre>
+  <p><b>Gestión:</b> <code>this.scene.start(clave, datos)</code>, <code>restart(datos)</code>, <code>launch</code> (en paralelo), <code>run</code>, <code>pause</code>/<code>resume</code>, <code>sleep</code>/<code>wake</code>, <code>stop</code>, <code>switch</code>, <code>transition</code>, <code>bringToTop</code>/<code>sendToBack</code>, <code>isActive</code>/<code>isPaused</code>/<code>isSleeping</code>. Las operaciones se aplican al final del frame para que nunca se rompa el bucle actual. Eventos de escena: <code>preupdate</code>, <code>update</code>, <code>postupdate</code>, <code>pause</code>, <code>resume</code>, <code>sleep</code>, <code>wake</code>, <code>shutdown</code>.</p>
+  <p><b>Fábricas</b> <code>this.add.*</code>: <code>sprite, image, animatedSprite, text, bitmapText, graphics, rectangle, roundRectangle, circle, ellipse, triangle, polygon, star, line, container, group, tileSprite / tilingSprite, nineSlice, mesh, rope, renderTexture, particles, particleContainer, zone, tilemap, tween, timeline, button, panel, progressBar, joystick, virtualButton, existing</code>. <code>this.make.*</code> crea sin añadir (acepta un objeto de configuración).</p>
+</section>
+
+<section id="objetos">
+  <h2>Objetos de juego</h2>
+  <p>Todo lo visible hereda de <code>Container</code>: posición, escala, rotación (<code>rotation</code> en radianes o <code>angle</code> en grados), sesgo, pivote, <code>alpha</code>, <code>tint</code>, <code>blendMode</code>, <code>visible</code>, <code>depth</code>/<code>zIndex</code>, <code>scrollFactor</code> y datos propios (<code>setData/getData</code>). Los métodos <code>set*</code> se encadenan.</p>
+<pre><code class="js">const nave = this.add.sprite(200, 300, 'nave')
+  .setOrigin(0.5, 0.8).setScale(2).setTint(0x74c0fc).setDepth(10)
+  .setInteractive({ cursor: 'pointer', draggable: true });
+nave.on('pointertap', () =&gt; nave.setFlipX(!nave.flipX));   // el volteo refleja dentro de su marco (como Phaser)
+
+const grupo = this.add.container(400, 300);                     // transforma, filtra o enmascara varios a la vez
+grupo.add(nave); grupo.setMask(new UG.Rectangle(-100, -100, 200, 200)); // un Rectangle = recorte rápido (scissor)
+grupo.filters = [new UG.GlowFilter({ color: 0x9dfcff })];
+grupo.cacheAsTexture = true; grupo.cacheResolution = 2;         // contenido estático: 1 textura, 1 draw call</code></pre>
+  <table>
+    <tr><th>Clase</th><th>Para qué</th></tr>
+    <tr><td><code>Sprite</code> / <code>Image</code></td><td>Imagen o fotograma; ruta rápida instanciada (40 bytes por sprite).</td></tr>
+    <tr><td><code>AnimatedSprite</code></td><td>Sprite con animación por fotogramas (también <code>sprite.play()</code>).</td></tr>
+    <tr><td><code>TilingSprite</code></td><td>Textura repetida con desplazamiento (<code>tilePositionX/Y</code>): fondos y parallax.</td></tr>
+    <tr><td><code>NineSlice</code></td><td>Paneles escalables sin deformar las esquinas.</td></tr>
+    <tr><td><code>Mesh</code>, <code>Rope</code></td><td>Mallas texturizadas libres (sin índices = abanico) y tiras a lo largo de puntos (estelas, cuerdas).</td></tr>
+    <tr><td><code>RenderTexture</code></td><td>Dibujar en una textura: <code>draw</code>, <code>stamp</code>, <code>erase</code>, <code>fill</code>, <code>clear</code> (luces, niebla, pintura).</td></tr>
+    <tr><td><code>Zone</code></td><td>Área invisible con cuerpo físico o interactiva.</td></tr>
+    <tr><td><code>Group</code></td><td>Colección lógica con <em>pool</em>: <code>get()</code>, <code>killAndHide()</code>, <code>countActive()</code>.</td></tr>
+  </table>
+  <p><b>Máscaras:</b> <code>obj.mask = otroObjeto</code> (alfa del objeto máscara), <code>obj.maskInvert = true</code>, o un <code>UG.Rectangle</code> / <code>setClip(x, y, w, h)</code> para recortes rectangulares con scissor.</p>
+</section>
+
+<section id="graphics">
+  <h2>Graphics (vectorial)</h2>
+  <p>Dibujo vectorial con API inmediata al estilo Phaser y de caminos al estilo Canvas. La teselación es propia: <b>uniones miter/round/bevel sin triángulos solapados</b> (las líneas semitransparentes no se «repintan»), trazos cerrados sin huecos en la unión, extremos butt/round/square, polígonos cóncavos con agujeros (earcut) y rellenos convexos en tira (sin grietas con MSAA).</p>
+<pre><code class="js">const g = this.add.graphics();
+g.fillGradientStyle(0x2b1055, 0x2b1055, 0xff8a5b, 0xffc371, 1).fillRect(0, 0, 800, 600);   // degradado por esquinas
+g.lineStyle(6, 0xffffff, 0.5).strokeRoundedRect(40, 40, 300, 160, 24);                       // alfa sin solapes
+g.fillStyle(0xffd43b).fillStar(600, 150, 5, 60, 26).lineStyle(4, 0xe67700).strokeStar(600, 150, 5, 60, 26);
+g.beginPath().moveTo(100, 400).bezierCurveTo(200, 300, 300, 500, 400, 400).lineTo(400, 480).closePath().fillPath().strokePath();
+g.fillStyle({ gradient: { type: 'radial', x: 600, y: 420, r: 80, stops: [[0, 0xffffff], [1, 0x7048e8, 0]] } }).fillCircle(600, 420, 80);</code></pre>
+  <p>Métodos: <code>fillStyle, lineStyle, fillGradientStyle, fillRect, fillRoundedRect, fillCircle, fillEllipse, fillTriangle, fillPoints, fillStar, strokeRect, strokeRoundedRect, strokeCircle, strokeEllipse, strokeTriangle, strokePoints, strokeStar, lineBetween, beginPath, moveTo, lineTo, arc, arcTo, quadraticCurveTo, bezierCurveTo, closePath, fillPath, strokePath, rect, roundRect, circle, ellipse, poly, star, regularPoly, cut</code> (agujeros), <code>clear, generateTexture</code>. También existen las formas-objeto <code>this.add.rectangle/circle/star…</code>.</p>
+</section>
+
+<section id="texto">
+  <h2>Texto</h2>
+  <p><code>Text</code> rasteriza con Canvas 2D (fuentes del sistema o web, relleno sólido o degradado, trazo, sombra, alineación, ajuste de línea, espaciado, fondo). Su canvas reserva capacidad en pasos de 32 px, así que un marcador que cambia de «9» a «10» reutiliza la misma textura de GPU. <code>BitmapText</code> usa una fuente en atlas (BMFont o generada) y no sube nada a la GPU al cambiar: es la opción para cientos de textos que cambian cada frame.</p>
+<pre><code class="js">const titulo = this.add.text(400, 80, 'UltraGame', {
+  fontFamily: 'system-ui', fontSize: 64, fontWeight: 900,
+  fill: [0xfff3bf, 0xff6ad5], stroke: 0x2b1055, strokeThickness: 8,
+  dropShadow: { offsetX: 0, offsetY: 4, blur: 8, color: '#000', alpha: 0.5 }
+}).setOrigin(0.5);
+titulo.text = 'Nuevo texto';                                   // se vuelve a dibujar solo si cambia
+this.add.bitmapText(20, 20, 'mi-fuente', 'PUNTOS 0');          // this.load.bitmapFont('mi-fuente', 'f.png', 'f.fnt')</code></pre>
+  <div class="note">El texto de usuarios (nombres, chat) debe pasar por <code>UG.Security.sanitizeText(texto, maxLargo)</code>: elimina caracteres de control y de reordenación bidi que se usan para suplantar nombres.</div>
+</section>
+
+<section id="carga">
+  <h2>Carga de recursos</h2>
+  <p><code>this.load.*</code> en <code>preload()</code> (o <code>this.load.start()</code> manual). Usa <code>fetch</code> con cancelación y tiempo límite (60 s), valida URLs, limita tamaños y puede verificar la integridad con SRI.</p>
+<pre><code class="js">preload() {
+  this.load.setPath('assets/');
+  this.load.image('fondo', 'fondo.png');
+  this.load.spritesheet('heroe', 'heroe.png', { frameWidth: 32, frameHeight: 32 });
+  this.load.atlas('ui', 'ui.png', 'ui.json');                        // formato TexturePacker (hash o array, trim, rotated)
+  this.load.audio('salto', ['salto.ogg', 'salto.mp3']);
+  this.load.json('datos', 'datos.json', { integrity: 'sha256-…' }); // falla si el hash no coincide
+  this.load.tilemapTiledJSON('nivel1', 'nivel1.tmj');                // tilesets externos (.tsj/.tsx) e imágenes se cargan solos
+  this.load.tilemapTMX('nivel2', 'nivel2.tmx');
+  this.load.bitmapFont('pixel', 'pixel.png', 'pixel.fnt');
+  this.load.font('Pixelify', 'pixelify.woff2');
+  this.load.sfx('moneda', { preset: 'coin', seed: 3 });              // sonido sintetizado: sin archivos
+  this.load.on('progress', (p) =&gt; console.log(Math.round(p * 100) + '%'));
+}</code></pre>
+  <p>Texturas por código: <code>this.textures.generate(clave, w, h, (ctx, w, h) =&gt; { … }, { frameWidth, frameHeight, scaleMode, resolution })</code> — con <code>frameWidth</code> se registra como spritesheet. También <code>addCanvas</code>, <code>createCanvas</code> (canvas editable con <code>refresh()</code>), <code>addSpriteSheet</code>, <code>fromDisplayObject</code>.</p>
+</section>
+
+<section id="animacion">
+  <h2>Animaciones</h2>
+<pre><code class="js">this.anims.create({ key: 'correr', frames: this.anims.generateFrameNumbers('heroe', { start: 2, end: 7 }), frameRate: 12, repeat: -1 });
+this.anims.create({ key: 'saltar', frames: this.anims.generateFrameNumbers('heroe', { frames: [8, 9] }), frameRate: 8 });
+heroe.play('correr', true);            // true = no reiniciar si ya suena
+heroe.play('saltar').chain('correr');  // encadenar
+heroe.on('animationcomplete', (anim) =&gt; { /* … */ });</code></pre>
+  <p>Opciones: <code>frameRate</code>, <code>duration</code>, <code>repeat</code>, <code>repeatDelay</code>, <code>yoyo</code>, <code>delay</code>, <code>showOnStart</code>, <code>hideOnComplete</code>; <code>playReverse</code>, <code>stop</code>, <code>pause</code>/<code>resume</code>, <code>setFrame</code>. Los tiles animados de Tiled se reproducen solos.</p>
+</section>
+
+<section id="tweens">
+  <h2>Tweens y tiempo</h2>
+<pre><code class="js">this.tweens.add({
+  targets: [a, b, c], x: '+=200', alpha: { from: 0, to: 1 }, angle: 360, tint: 0xff6ad5,
+  duration: 800, ease: 'backOut', yoyo: true, repeat: 2, hold: 200,
+  delay: this.tweens.stagger(80, { from: 'center' }),              // también rejillas: { grid: [8, 8], from: 'last' }
+  onComplete: () =&gt; console.log('hecho')
+});
+await this.tweens.add({ targets: puerta, y: 0, duration: 500 }).finished;  // promesas
+this.tweens.chain({ targets: cartel, tweens: [{ scale: 1, duration: 300 }, { alpha: 0, delay: 900, duration: 400 }] });
+this.tweens.addCounter({ from: 0, to: 100, duration: 1000, onUpdate: (tw) =&gt; marcador.setText(Math.round(tw.getValue())) });
+
+this.time.delayedCall(1500, () =&gt; enemigo.disparar());
+this.time.addEvent({ delay: 1000, repeat: 9, callback: () =&gt; cuentaAtras-- });
+await this.time.wait(300);
+this.time.timeScale = this.tweens.timeScale = 2;                     // cámara rápida</code></pre>
+  <p>31 curvas (<code>UG.Easing.names</code>), con nombres flexibles: <code>'quadOut'</code>, <code>'Quad.easeOut'</code>, <code>'easeOutQuad'</code>, <code>'Power2'</code>… Un tween se detiene solo si su objetivo se destruye (sin fugas ni errores).</p>
+</section>
+
+<section id="entrada">
+  <h2>Entrada</h2>
+<pre><code class="js">const k = this.input.keyboard.createCursorKeys();            // up, down, left, right, space, shift
+const w = this.input.keyboard.addKeys('W,A,S,D,J');
+if (k.left.isDown || w.A.isDown) mover(-1);
+if (w.J.justDown) atacar();                                   // solo el frame en que se pulsa
+this.input.keyboard.on('keydown-ESC', pausar);
+
+this.input.on('pointerdown', (p, objetos) =&gt; { if (!objetos.length) disparar(p.worldX, p.worldY); });
+boton.setInteractive({ cursor: 'pointer' }).on('pointertap', abrir);
+carta.setInteractive({ draggable: true }).on('drag', (p, x, y) =&gt; carta.setPosition(x, y));
+
+const joy = this.add.joystick({ x: 110, y: 480, radius: 60 });   // táctil: forceX/forceY, angle, force, left/right…
+const A = this.add.virtualButton({ x: 700, y: 480, label: 'A' }); // isDown, justDown
+const pad = this.input.gamepad;                                  // mandos estándar</code></pre>
+  <p>Eventos de objeto: <code>pointerdown, pointerup, pointertap, pointerover, pointerout, pointermove, dragstart, drag, dragend, drop</code>. Áreas de impacto con formas (<code>Rectangle, Circle, Polygon…</code>) y prueba exacta en mallas. <code>this.input.vibrate(ms)</code> en móviles compatibles.</p>
+</section>
+
+<section id="fisica">
+  <h2>Física Arcade</h2>
+  <p>Cuerpos AABB y círculos con gravedad, rebote, fricción de arrastre (plataformas móviles), masas, empuje, velocidad máxima, amortiguación, colisión continua contra tiles (sin atravesar paredes), plataformas de un sentido, <em>spatial hash</em> para miles de cuerpos y paso fijo determinista.</p>
+<pre><code class="js">// config: physics: { arcade: { gravity: { y: 900 }, debug: false } }
+const jugador = this.physics.add.sprite(100, 100, 'heroe');
+jugador.body.setSize(12, 20).setOffset(2, 4).setBounce(0.1).setMaxVelocity(300, 900);
+const balas = this.physics.add.group({ maxSize: 40, defaultKey: 'bala', allowGravity: false });
+const muros = this.physics.add.staticGroup();
+
+this.physics.add.collider(jugador, capaSuelo);                           // contra una capa de Tiled
+this.physics.add.collider(enemigos, capaSuelo, null, (e, tile) =&gt; e.tipo !== 'fantasma'); // processCallback
+this.physics.add.overlap(balas, enemigos, (b, e) =&gt; { balas.killAndHide(b); e.destroy(); });
+const impacto = this.physics.raycast(capaSuelo, x0, y0, x1, y1);          // DDA: { x, y, tileX, tileY, distance }
+this.physics.world.wrap(asteroides, 32);                                  // envolver al lado opuesto</code></pre>
+  <p>Cuerpo: <code>setVelocity(X/Y), setAcceleration, setDrag, setDamping, setBounce, setFriction, setMass, setImmovable, setPushable, setAllowGravity, setGravity, setCollideWorldBounds, setCircle, setSize, setOffset, reset, stop</code>; estado: <code>blocked, touching, onFloor(), onWall(), onCeiling(), speed, angle</code>. Mundo: <code>setBounds, setBoundsCollision, setGravity, setFPS, pause/resume, overlapRect, overlapCirc, closest, furthest, moveTo, accelerateTo, velocityFromAngle, wrap</code>. Tiles: <code>setCollision, setCollisionBetween, setCollisionByProperty, setCollisionByExclusion, setOneWayCollision</code>.</p>
+</section>
+
+<section id="tiled">
+  <h2>Tiled</h2>
+  <p>Compatible con los formatos del editor <a href="https://www.mapeditor.org/">Tiled</a>: <b>TMJ/JSON y TMX</b>, tilesets <b>embebidos o externos (TSJ/TSX)</b>, capas en <b>CSV, base64, base64+zlib y base64+gzip</b> (descompresor propio), <b>mapas infinitos</b> por bloques, <b>grupos</b> con desplazamiento/opacidad acumulados, <b>propiedades</b> tipadas (sin <em>prototype pollution</em>), <b>objetos</b> (rectángulos, puntos, elipses, polígonos, tiles), <b>tiles animados</b>, <b>volteos</b> H/V/diagonal, <code>tileoffset</code>, capas de imagen y orientaciones <b>ortogonal, isométrica, staggered y hexagonal</b>.</p>
+<pre><code class="js">preload() { this.load.tilemapTiledJSON('nivel', 'mapas/nivel.tmj'); }
+create() {
+  const mapa = this.add.tilemap('nivel');           // también acepta el objeto JSON directamente
+  mapa.createLayer('Fondo');
+  const suelo = mapa.createLayer('Suelo', 0, 0);     // (nombre, x, y) o (nombre, contenedor, x, y)
+  suelo.setCollisionByProperty({ collides: true });
+  mapa.createLayer('Plataformas').setOneWayCollision(true);
+  const monedas = mapa.createFromObjects('Objetos', { type: 'coin', key: 'moneda' });
+  const inicio = mapa.findObject('Objetos', (o) =&gt; o.name === 'jugador');
+  this.cameras.main.setBounds(0, 0, mapa.widthInPixels, mapa.heightInPixels);
+  suelo.cacheAsTexture = true;                       // capas estáticas grandes: 1 textura (invalidada por putTileAt)
+}</code></pre>
+  <p>Capa: <code>getTileAt, getTileAtWorldXY, putTileAt, removeTileAt, fill, replaceByIndex, forEachTile, filterTiles, findTile, getTilesWithin(WorldXY), worldToTileXY, tileToWorldXY</code> (también en isométrico). <b>Límites anti-DoS:</b> mapas de más de <code>Security.maxMapTiles</code> tiles o datos comprimidos que se expanden por encima del límite se rechazan.</p>
+  <p class="muted">Ejemplo completo: <a href="../minigames/pixel-knight/index.html">Pixel Knight</a> carga <code>assets/level1.tmj</code> con tileset externo y capa en base64+zlib (se puede abrir en Tiled).</p>
+</section>
+
+<section id="camaras">
+  <h2>Cámaras</h2>
+<pre><code class="js">const cam = this.cameras.main;
+cam.startFollow(jugador, true, 0.1, 0.1).setDeadzone(120, 80).setBounds(0, 0, 3200, 1200).setZoom(2);
+cam.shake(300, 0.01); cam.flash(150, 0xffffff); await cam.fadeOutAsync(600);
+cam.pan(1200, 400, 1000, 'sineInOut'); cam.zoomTo(1.5, 800); cam.rotateTo(0.2, true, 500);
+cam.setFilters([new UG.BloomFilter(), new UG.VignetteFilter()]);       // post-proceso de toda la vista
+
+const mini = this.cameras.add(620, 20, 160, 100).setZoom(0.1).setBackgroundColor(0x000000); // minimapa
+mini.ignore([capaDeLuz, particulas]);                                                     // no dibuja esos objetos</code></pre>
+  <p>Hasta 31 cámaras por escena, cada una con viewport, desplazamiento, zoom, rotación, alfa, filtros propios y efectos (<code>shake, flash, fadeIn/Out, pan, zoomTo, rotateTo</code>). Conversión de coordenadas: <code>getWorldPoint</code> y <code>worldToScreen</code>.</p>
+</section>
+
+<section id="particulas">
+  <h2>Partículas</h2>
+<pre><code class="js">const chispas = this.add.particles('chispa', {
+  speed: { min: 60, max: 260 }, angle: { min: 200, max: 340 }, lifespan: 800, gravityY: 400,
+  scale: { start: 1.2, end: 0 }, alpha: { start: 1, end: 0 }, color: [0xffffff, 0xffd43b, 0xff6b6b],
+  blendMode: 'add', frequency: -1, maxParticles: 3000
+});
+chispas.explode(40, x, y);                                    // ráfaga
+chispas.startFollow(nave, -20, 0).setFrequency(16, 2);        // estela continua
+chispas.setParticleTint([0x74c0fc, 0xffffff]);
+
+const nube = this.add.particleContainer();                    // hasta cientos de miles de sprites ligeros
+nube.addParticle(new UG.Particle(textura, x, y));</code></pre>
+  <p>Opciones: zonas de emisión (<code>emitZone: { source: rect|círculo|elipse, type: 'random'|'edge' }</code>), zonas de muerte, límites con rebote, rampas de color, rotación, estiramiento por velocidad, <code>onEmit/onDeath</code>. Con <code>UG.Wasm.init()</code> y <code>emitter.useWasm(true)</code> la integración corre en <b>WebAssembly SIMD</b> sobre memoria compartida con JS (sin copias): unas 4 veces más rápido que JS con 200 000 partículas en esta máquina (8,6 ms → 2,0 ms). Si no hay WASM SIMD, se usa JS automáticamente.</p>
+</section>
+
+<section id="efectos">
+  <h2>Efectos (35)</h2>
+  <p>Cada efecto es un filtro con su shader GLSL (WebGL/WebGL2) y WGSL (WebGPU); en Canvas 2D se usa el equivalente CSS cuando existe. Se aplican a un objeto (<code>obj.filters = [...]</code>) o a una cámara (<code>cam.setFilters([...])</code>), se encadenan y sus parámetros se animan con tweens. Las imágenes de abajo están generadas por el propio motor (<code>examples/effects.html?tools=1</code>); ábrelas en la <a href="../examples/effects.html">galería interactiva</a> para mover los parámetros en vivo.</p>
+  <div class="fxgrid" id="fxgrid"></div>
+  <h3>Crear un efecto propio</h3>
+<pre><code class="js">class Ondas extends UG.Filter {
+  constructor() { super(); this.fuerza = 4; }
+  get fuerza() { return this.uniforms[0]; } set fuerza(v) { this.uniforms[0] = v; }
+}
+Ondas.key = 'ondas';   // único
+// helpers: sampleTex(uv), texel(), pixelPos(coord), frameSize(), luma(rgb), rand(v2); tiempo = uGlobal.x / u.glob.x
+Ondas.glsl = 'vec4 filterMain(vec2 uv, vec2 coord){ vec2 d = vec2(sin(coord.y * 40.0 + uGlobal.x * 4.0), 0.0) * texel() * uP[0].x; return sampleTex(uv + d); }';
+Ondas.wgsl = 'fn filterMain(uv: vec2f, coord: vec2f) -> vec4f { let d = vec2f(sin(coord.y * 40.0 + u.glob.x * 4.0), 0.0) * texel() * u.p[0].x; return sampleTex(uv + d); }';
+this.cameras.main.setFilters([new Ondas()]);</code></pre>
+</section>
+
+<section id="audio">
+  <h2>Audio y música</h2>
+  <p>WebAudio con buses (<code>master</code>, <code>music</code>, <code>sfx</code>), desbloqueo automático al primer gesto, límite de instancias por sonido, fundidos, pausa/reanudación global y respaldo HTML5 Audio.</p>
+<pre><code class="js">this.sound.play('salto', { volume: 0.6, rate: 1.2, loop: false });
+this.sound.playSfx({ preset: 'laser', seed: 21 }, { volume: 0.3 });     // sintetizador: coin, pickup, laser, shoot,
+                                                                        // explosion, powerup, hit, hurt, jump, bounce, blip, select, click
+this.sound.addMusic('tema', { bpm: 120, tracks: [                        // secuenciador por pasos, sin archivos
+  { wave: 'square', volume: 0.05, notes: 'E5 - G5 E5 D5 - C5 -' },      // '-' prolonga, '.' silencio
+  { wave: 'triangle', volume: 0.25, notes: 'C3 C3 G3 G3 A2 A2 E3 E3' },
+  { drums: true, volume: 0.3, notes: 'k . h . s . h .' }                // k bombo, s caja, h charles
+]});
+this.sound.playMusic('tema', { volume: 0.3, fadeIn: 800 });
+this.sound.setBusVolume('sfx', 0.5); this.sound.toggleMute();</code></pre>
+  <p>Mientras el navegador mantiene el audio bloqueado (antes del primer toque) los efectos cortos se descartan en vez de acumularse, y la música queda pendiente hasta el desbloqueo.</p>
+</section>
+
+<section id="ui">
+  <h2>Interfaz</h2>
+  <p><code>this.add.button(x, y, { text, width, height, color, onClick })</code> (estados normal/hover/pulsado/desactivado, teclado y táctil), <code>panel(x, y, w, h, { title })</code>, <code>progressBar</code>, <code>joystick</code> y <code>virtualButton</code>. Todo se puede poner en el HUD (<code>this.add.hud.button(…)</code>) para que no se mueva con la cámara.</p>
+</section>
+
+<section id="d3">
+  <h2>3D: primeros pasos</h2>
+  <p>El 3D de UltraGame vive dentro de una <b>vista 3D</b> (<code>View3D</code>): un objeto 2D más de la escena que dibuja su mundo 3D en una textura. Eso significa que el HUD, los botones, los textos, las cámaras 2D y los <a href="#efectos">35 efectos</a> funcionan encima del 3D sin nada especial, y que un juego puede mezclar escenas 2D y 3D libremente.</p>
+  <ul>
+    <li>Backends: <b>WebGPU</b>, <b>WebGL2</b> y <b>WebGL</b> (con la misma imagen en los tres). El renderizador Canvas 2D no tiene 3D: la vista muestra un aviso.</li>
+    <li>Iluminación PBR metal/rugosidad (como el <i>Principled BSDF</i> de Blender), sombras del sol con filtrado suave, cielo procedural, niebla, tonemapping ACES, sombreado cartoon con contorno, instancias, animación por huesos y partículas en una sola llamada de dibujo.</li>
+    <li>Sin dependencias: glTF/GLB, OBJ, física, controles y exportación a GLB están en el mismo <code>ultragame.js</code>.</li>
+  </ul>
+<pre><code class="js">const Mundo = {
+  key: 'Mundo',
+  preload() { this.load.gltf('robot', 'modelos/robot.glb'); },     // exportado desde Blender
+  create() {
+    const v = this.add.view3d({ fov: 60, shadows: true });        // sin tamaño: ocupa toda la pantalla
+    v.add.sunlight({ shadowSize: 40 });                             // sol con sombras + luz de cielo/suelo
+    v.add.box(30, 1, 30, { color: 0x6a8a5a }).position.y = -0.5;    // suelo
+    const cubo = v.add.box(1, 1, 1, { color: 0x4c6ef5, metalness: 0.3, roughness: 0.4 });
+    cubo.position.set(-2, 1, 0);
+    const robot = v.add.model('robot');                             // instancia del glTF
+    robot.play('Walk');                                             // animación del archivo
+    v.orbitControls({ target: { x: 0, y: 1, z: 0 }, distance: 8 }); // ratón/táctil para mirar
+    v.on('update3d', (dt) =&gt; { cubo.rotation.y += dt; });
+    this.add.hud.text(20, 20, 'HUD 2D encima del 3D', { fontSize: 24, fill: 0xffffff });
+  }
+};
+new UG.Game({ width: 1280, height: 720, renderer: 'auto', scenes: [Mundo] });</code></pre>
+  <div class="note">Coordenadas: metros, <b>Y hacia arriba</b>, rotaciones en radianes. La cámara es <code>v.camera</code> (<code>PerspectiveCamera</code>); <code>v.scene3d</code> es la raíz del mundo. <code>v.screenToRay(x, y)</code>, <code>v.pick(x, y)</code> y <code>v.worldToScreen(punto)</code> conectan el 2D y el 3D (clics sobre objetos, barras de vida flotantes…).</div>
+</section>
+
+<section id="d3-objetos">
+  <h2>Objetos, materiales y luces 3D</h2>
+  <p><code>view.add</code> crea y añade objetos al mundo; todos devuelven un <code>Node3D</code> con <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>visible</code>, <code>castShadow</code>, <code>receiveShadow</code>, hijos (<code>add</code>) y <code>destroy()</code>.</p>
+  <table>
+    <tr><th>Método</th><th>Qué crea</th></tr>
+    <tr><td><code>box(w, h, d, mat)</code> · <code>cube(t, mat)</code></td><td>Caja</td></tr>
+    <tr><td><code>sphere(r, mat, seg)</code> · <code>plane(w, d, mat)</code> · <code>cylinder(rArr, rAb, h, mat, seg)</code> · <code>cone(r, h, mat)</code> · <code>capsule(r, largo, mat)</code> · <code>torus(R, r, mat)</code></td><td>Primitivas</td></tr>
+    <tr><td><code>extrude(puntos, alto, mat)</code></td><td>Polígono extruido (tejados, muros con forma)</td></tr>
+    <tr><td><code>terrain(w, d, segX, segZ, alturas, mat)</code></td><td>Terreno: <code>alturas</code> es una función <code>(x, z) =&gt; y</code> o un array</td></tr>
+    <tr><td><code>instanced(geo, mat, n)</code></td><td>Miles de copias en una sola llamada de dibujo (<code>setTransformAt</code>, <code>setColorAt</code>)</td></tr>
+    <tr><td><code>sprite(textura, w, h)</code></td><td>Imagen que siempre mira a la cámara</td></tr>
+    <tr><td><code>model(clave, { cloneMaterials })</code></td><td>Copia de un modelo glTF/GLB/OBJ cargado</td></tr>
+    <tr><td><code>group(...hijos)</code> · <code>mesh(geometría, mat)</code></td><td>Grupo vacío · malla con geometría propia (<code>UG.Geometry3D.*</code>)</td></tr>
+    <tr><td><code>sunlight(opc)</code> · <code>directionalLight</code> · <code>pointLight(color, intensidad, alcance)</code> · <code>spotLight</code> · <code>hemisphereLight</code> · <code>ambientLight</code></td><td>Luces (el sol con <code>enableShadows({ size, mapSize, follow })</code>)</td></tr>
+  </table>
+  <h3>Materiales</h3>
+  <p>El material se pasa como número de color, como objeto de opciones o como <code>Material3D</code> ya creado (<code>view.material({...})</code> para reutilizarlo en muchos objetos).</p>
+  <table>
+    <tr><th>Opción</th><th>Descripción</th></tr>
+    <tr><td><code>type</code></td><td><code>'standard'</code> (PBR, por defecto), <code>'basic'</code>/<code>'unlit'</code> (sin luz), <code>'toon'</code> (cartoon por bandas, con <code>outline</code> para el contorno)</td></tr>
+    <tr><td><code>color</code>, <code>opacity</code>, <code>transparent</code>, <code>alphaTest</code>, <code>side</code></td><td>Color base, transparencia y caras</td></tr>
+    <tr><td><code>metalness</code>, <code>roughness</code>, <code>emissive</code>, <code>emissiveIntensity</code></td><td>PBR y brillo propio (combina con el efecto Bloom)</td></tr>
+    <tr><td><code>map</code>, <code>normalMap</code>, <code>metalRoughMap</code>, <code>emissiveMap</code>, <code>aoMap</code></td><td>Texturas (clave de textura cargada o <code>Texture</code>); <code>uvScale</code> repite la textura</td></tr>
+    <tr><td><code>flatShading</code>, <code>vertexColors</code>, <code>fog</code>, <code>depthTest</code>, <code>depthWrite</code>, <code>blend</code></td><td>Estilo facetado, color por vértice y detalles de dibujo</td></tr>
+  </table>
+  <h3>Entorno</h3>
+<pre><code class="js">v.scene3d.setSky({ top: 0x2f6fd0, horizon: 0xbfdcf5, bottom: 0x6d6a60 }); // cielo degradado con sol
+v.scene3d.setFog('exp2', 0xbfdcf5, 0.02);   // o 'linear', color, cerca, lejos
+v.scene3d.exposure = 1.2;                   // tonemapping ACES
+const { sun } = v.add.sunlight({ direction: [-0.4, -1, -0.3], shadowSize: 60, follow: jugador });</code></pre>
+  <div class="note">Rendimiento: comparte materiales y geometrías, usa <code>instanced</code> para objetos repetidos (árboles, monedas, edificios) y limita las luces puntuales a unas pocas cerca de la cámara (el motor dibuja hasta 8 puntuales, 4 direccionales y 4 focos por fotograma, eligiendo las más cercanas).</div>
+</section>
+
+<section id="d3-modelos">
+  <h2>Modelos: Blender, glTF/GLB y OBJ</h2>
+  <p>El formato recomendado es <b>GLB</b> (glTF 2.0 binario): un solo archivo con mallas, materiales, texturas, esqueletos y animaciones.</p>
+  <h3>Exportar desde Blender</h3>
+  <ol>
+    <li>Modela en metros con <b>Z arriba</b> en Blender (el exportador lo convierte a Y arriba) y aplica la escala (<i>Ctrl+A › Escala</i>).</li>
+    <li>Usa materiales <i>Principled BSDF</i>: color base, metálico, rugosidad, normal y emisión se traducen directamente.</li>
+    <li>Animaciones: cada <i>Action</i> se exporta como un clip con su nombre (<code>Idle</code>, <code>Walk</code>, <code>Run</code>…). Para personajes, un único esqueleto (<i>Armature</i>) con pesos.</li>
+    <li><i>Archivo › Exportar › glTF 2.0</i> con formato <b>glTF Binary (.glb)</b>, «Aplicar modificadores» activado y, si hay animaciones, «Exportar animaciones».</li>
+    <li>Nombra los nodos que el juego deba encontrar (por ejemplo <code>wheel_FL</code> para las ruedas de un coche o <code>muzzle</code> para la boca de un arma): <code>modelo.getObjectByName('muzzle')</code>.</li>
+  </ol>
+<pre><code class="js">preload() {
+  this.load.gltf('heroe', 'modelos/heroe.glb');           // también this.load.glb(...)
+  this.load.obj('casa', 'modelos/casa.obj', 'modelos/casa.mtl');
+}
+create() {
+  const v = this.add.view3d();
+  const h = v.add.model('heroe', { cloneMaterials: true }); // materiales propios para teñirlo sin afectar a otras copias
+  h.play('Run', { fade: 0.2 });                             // loop: 'repeat' | 'once' | 'pingpong', speed, weight
+  const m = this.cache.models.get('heroe');
+  console.log(m.clipNames);                                 // ['Idle', 'Walk', 'Run', ...]
+}</code></pre>
+  <p>Extensiones glTF admitidas: <code>KHR_materials_unlit</code>, <code>KHR_texture_transform</code>, <code>KHR_materials_emissive_strength</code>, <code>KHR_mesh_quantization</code>, <code>KHR_lights_punctual</code>, <code>EXT_texture_webp</code>. Draco y meshopt no (el cargador lo indica con un error claro): exporta sin compresión de mallas.</p>
+  <div class="note good"><b>Seguridad de los archivos:</b> el cargador valida todo antes de usarlo: cabecera y bloques GLB, límites de cada accessor y bufferView, índices fuera de rango, ciclos o nodos con dos padres, profundidad máxima, valores NaN, tipos de <code>data:</code> URI y URLs externas. Un GLB malicioso o corrupto produce un error, nunca un cuelgue ni acceso fuera de memoria.</div>
+  <h3>Exportar a GLB desde el juego</h3>
+<pre><code class="js">const bytes = UG.GLTFExporter.exportGLB(v.scene3d, { name: 'mi-nivel' }); // Uint8Array
+// por ejemplo, para descargarlo: new Blob([bytes], { type: 'model/gltf-binary' })</code></pre>
+</section>
+
+<section id="d3-anim">
+  <h2>Animación 3D</h2>
+  <p>Cada instancia de un modelo tiene su propio <code>mixer</code> (<code>AnimationMixer3D</code>) y el atajo <code>modelo.play(nombre, opciones)</code>. Las transiciones se hacen con fundido (<code>fade</code>); con <code>exclusive: false</code> se mezclan capas (por ejemplo «Disparar» encima de «Andar»).</p>
+<pre><code class="js">const golpe = robot.play('Attack', { loop: 'once', fade: 0.1, speed: 1.3 });
+robot.mixer.on('finished', (accion) =&gt; { if (accion === golpe) robot.play('Idle', { fade: 0.2 }); });
+robot.mixer.on('loop', (accion) =&gt; { /* cada vuelta de un clip en bucle */ });
+// clips hechos a mano: claves [tiempo, ...valores]; rotationX/Y/Z en radianes (se interpolan bien aunque den vueltas)
+const girar = UG.AnimationClip3D.fromKeys('Girar', { puerta: { rotationY: [[0, 0], [1, Math.PI / 2]], position: [[0, 0, 0, 0], [1, 0, 0.1, 0]] } });</code></pre>
+</section>
+
+<section id="d3-fisica">
+  <h2>Física 3D</h2>
+  <p>Física determinista a 60 pasos por segundo pensada para juegos: colisionadores estáticos (cajas, esferas, <b>mallas exactas</b> con rejilla espacial), cuerpos dinámicos, <b>personajes</b> (cápsula con escalones, rampas, salto con margen y empuje), <b>vehículos</b> (suspensión por rayos, derrape, choques), zonas (<i>triggers</i>), rayos y línea de visión.</p>
+<pre><code class="js">const ph = v.enablePhysics({ gravity: -20 });
+ph.addGround(0);                                     // suelo infinito
+ph.addMesh(casa);                                    // colisión exacta con la malla (se puede entrar en la casa)
+ph.addBoxFromNode(caja);                             // caja envolvente de un objeto
+const pj = ph.addCharacter(jugador, { radius: 0.35, height: 1.8, stepHeight: 0.4 });
+pj.on('land', () =&gt; {}); pj.on('jump', () =&gt; {});
+pj.move(vx, vz); pj.jump();                          // cada fotograma
+const coche = ph.addVehicle(modeloCoche, { maxSpeed: 36, wheels: ['wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'].map((n) =&gt; modeloCoche.getObjectByName(n)) });
+coche.setInput(acelerar, girar, frenar, frenoDeMano);
+const bola = ph.addBody(esfera, { shape: 'sphere', radius: 0.5, mass: 1, restitution: 0.5 });
+const zona = ph.addTrigger({ center: new UG.Vec3(0, 1, 10), half: new UG.Vec3(2, 2, 2), onEnter: (quien) =&gt; {} });
+const hit = ph.raycast(origen, direccion, 50, { characters: true, ignore: pj }); // { point, normal, distance, character|body|collider }
+ph.lineOfSight(ojoEnemigo, ojoJugador);              // ¿hay pared en medio?
+ph.explode(centro, 6, 20);                           // empuja cuerpos y personajes</code></pre>
+  <div class="note">Los colisionadores de malla se calculan en coordenadas de mundo al crearlos: añádelos después de colocar el objeto. Para objetos que se mueven usa cuerpos, personajes o vehículos, no mallas estáticas.</div>
+</section>
+
+<section id="d3-controles">
+  <h2>Cámaras y controles 3D</h2>
+  <table>
+    <tr><th>Control</th><th>Uso</th></tr>
+    <tr><td><code>v.orbitControls({ target, distance, autoRotate })</code></td><td>Mirar alrededor de un punto (editores, menús, estrategia)</td></tr>
+    <tr><td><code>v.firstPersonControls({ character, speed, runSpeed, eyeHeight })</code></td><td>Primera persona: WASD, ratón con captura del puntero, Mayús correr, Espacio saltar, arrastre táctil y joystick virtual</td></tr>
+    <tr><td><code>v.thirdPersonControls({ target, character, distance, shoulder })</code></td><td>Tercera persona con cámara que no atraviesa paredes y modo apuntar (<code>aiming</code>)</td></tr>
+    <tr><td><code>v.followCamera({ target, distance, height })</code></td><td>Cámara de persecución para coches y naves</td></tr>
+    <tr><td><code>v.flyControls({ speed })</code></td><td>Vuelo libre (depuración, editores)</td></tr>
+  </table>
+  <p>Todos aceptan mando y pantallas táctiles, y <code>setExternal({ forward, strafe, run, jump })</code> para moverlos desde tu propia lógica (IA, pruebas automáticas, botones táctiles propios).</p>
+</section>
+
+<section id="d3-extras">
+  <h2>Partículas 3D, niveles y sonido 3D</h2>
+<pre><code class="js">const fuego = v.addParticles('fire');             // fire, smoke, explosion, sparks, dust, magic, blood, muzzle, rain, snow, coin, trail
+fuego.position.set(0, 0.2, 0);
+v.effect('explosion', punto, { count: 60 });      // ráfaga reutilizando un emisor por tipo (sin crear nada por disparo)
+
+// niveles desde texto (laberintos, FPS) o desde Tiled
+const nivel = UG.Level3D.fromGrid(v, [
+  '##########',
+  '#P...C...#',
+  '#..####..#',
+  '##########'
+], { '#': 'wall', '.': 'floor', C: 'crate', P: 'spawn:player' }, { cell: 2, wallHeight: 3 });
+nivel.spawns.player[0];                            // Vec3 de aparición; muros con colisión si hay física
+UG.Level3D.fromTiled(v, 'mapa', { cell: 2 });      // capas de tiles -> suelos/muros; capas de objetos -> entidades
+
+v.playSfx('coin', moneda.position);                // sonido posicional (se oye desde donde está)
+v.playSound('motor', coche, { loop: true, refDistance: 4 });</code></pre>
+  <p>El oyente del audio sigue a la cámara de la vista automáticamente.</p>
+</section>
+
+<section id="d3-juegos">
+  <h2>Juegos 3D de ejemplo</h2>
+  <p>Ocho juegos 3D completos con menú, récord, controles de teclado/ratón/táctil/mando y un modo <code>?auto=1</code> en el que un bot juega solo (se usa en las pruebas de humo):</p>
+  <div class="games" id="games3d"></div>
+  <p>Todos se abren desde <a href="../games3d/index.html">games3d/index.html</a>, donde también se elige el renderizador (WebGPU, WebGL2 o WebGL).</p>
+</section>
+
+<section id="studio">
+  <h2>UltraGame Studio (editor)</h2>
+  <p>Editor de escritorio para crear juegos 2D y 3D sin programar (objetos, comportamientos y hojas de eventos) o programando (scripts JavaScript con una API sencilla), con vista de edición en vivo, biblioteca de recursos, efectos, modo Jugar y exportación a HTML5.</p>
+  <div class="cta"><a class="p" href="studio.html">Guía completa del Studio</a></div>
+<pre><code class="sh"># Windows: doble clic en «UltraGame Studio.cmd»
+# macOS / Linux:
+./studio.sh
+# o con npm:
+npm run studio</code></pre>
+</section>
+
+<section id="rendimiento">
+  <h2>Rendimiento</h2>
+  <p>Resultados de <a href="../tests/bench.html">tests/bench.html</a> en un equipo modesto (NVIDIA GeForce GT 1030, Chrome 152, Windows 10), juego de 800×600 a resolución 1. «CPU» es preparar y enviar el frame; «Frame + GPU» espera a que la tarjeta termine. Los valores varían ±20 % entre ejecuciones; ejecuta la página en tu equipo para obtener los tuyos.</p>
+  <table>
+    <tr><th>Escenario</th><th>Backend</th><th>Cantidad</th><th class="n">CPU (ms)</th><th class="n">Frame + GPU (ms)</th><th class="n">≈ FPS</th><th class="n">Draw calls</th></tr>
+    <tr><td>Sprites en movimiento y rotación</td><td>WebGL2</td><td class="n">5 000</td><td class="n">2,6</td><td class="n">4,9</td><td class="n">205</td><td class="n">1</td></tr>
+    <tr><td></td><td>WebGL2</td><td class="n">20 000</td><td class="n">8,8</td><td class="n">14,4</td><td class="n">70</td><td class="n">2</td></tr>
+    <tr><td></td><td>WebGL2</td><td class="n">100 000</td><td class="n">41,8</td><td class="n">64,3</td><td class="n">16</td><td class="n">7</td></tr>
+    <tr><td></td><td>WebGPU</td><td class="n">20 000</td><td class="n">9,9</td><td class="n">14,6</td><td class="n">68</td><td class="n">2</td></tr>
+    <tr><td>ParticleContainer</td><td>WebGL2</td><td class="n">60 000</td><td class="n">10,1</td><td class="n">16,0</td><td class="n">62</td><td class="n">4</td></tr>
+    <tr><td></td><td>WebGL2</td><td class="n">200 000</td><td class="n">35,3</td><td class="n">51,7</td><td class="n">19</td><td class="n">13</td></tr>
+    <tr><td>Emisor de partículas</td><td>WebGL2</td><td class="n">50 000</td><td class="n">10,2</td><td class="n">14,5</td><td class="n">69</td><td class="n">4</td></tr>
+    <tr><td>Graphics redibujado cada frame</td><td>WebGL2</td><td class="n">1 000 formas</td><td class="n">4,9–9,6</td><td class="n">6,6–11,1</td><td class="n">90–150</td><td class="n">1</td></tr>
+    <tr><td>Textos que cambian cada frame</td><td>WebGL2</td><td class="n">200</td><td class="n">10,2</td><td class="n">12,4</td><td class="n">81</td><td class="n">13</td></tr>
+    <tr><td></td><td>WebGPU</td><td class="n">200</td><td class="n">17,0</td><td class="n">20,8</td><td class="n">48</td><td class="n">25</td></tr>
+  </table>
+  <h3>Consejos</h3>
+  <ul>
+    <li>Agrupa las imágenes en atlas: el lote instanciado admite varias texturas por draw call, pero menos cambios siempre es mejor.</li>
+    <li>Fondos, decorados y capas de tiles que no cambian: <code>cacheAsTexture = true</code> (y <code>cacheResolution</code> = zoom de la cámara si la usas ampliada).</li>
+    <li>Miles de elementos simples (lluvia, estrellas, balas visuales): <code>ParticleContainer</code> o un emisor con WASM.</li>
+    <li>Muchos textos que cambian cada frame: <code>BitmapText</code> (sin subidas a GPU).</li>
+    <li>Reutiliza objetos con <code>Group</code> (<code>get</code>/<code>killAndHide</code>) en vez de crear y destruir en cada disparo.</li>
+    <li>Los filtros cuestan pasadas a pantalla completa: aplícalos a la cámara una vez en lugar de a cien sprites.</li>
+  </ul>
+</section>
+
+<section id="memoria">
+  <h2>Memoria y fugas</h2>
+  <p>Todo recurso con memoria nativa se libera de forma explícita y comprobable: <code>destroy()</code> en objetos (recursivo en contenedores), texturas (<code>destroy(true)</code> libera la fuente y sus texturas de GPU en todos los renderizadores), escenas (al pararlas se destruyen tweens, temporizadores, cuerpos, colisionadores, cámaras, sonidos y listeners), y <code>game.destroy()</code> (incluye <code>loseContext()</code> en WebGL y <code>device.destroy()</code> en WebGPU). El grupo de destinos de render recicla texturas temporales y libera las que no se usan en 600 frames.</p>
+<pre><code class="js">console.table(UG.Debug.live);          // objetos vivos por tipo: DisplayObject, TextureSource, GPUTexture, Tween, PhysicsBody…
+const antes = UG.Debug.snapshot();
+this.scene.restart();                  // …juega un rato…
+console.log(UG.Debug.diff(antes, UG.Debug.snapshot()));   // lo que no volvió a su valor</code></pre>
+  <p>La batería de pruebas incluye pruebas de fugas por backend (crear y destruir juegos, escenas, texturas y filtros una y otra vez y comprobar que los contadores vuelven a la base), y los ocho minijuegos se han reiniciado repetidamente con contadores idénticos. En 3D también se cuentan <code>Node3D</code>, <code>Geometry3D</code>, <code>GPUBuffer3D</code>, <code>GPUTexture3D</code>, <code>GPUTarget3D</code>, <code>View3D</code>, <code>PhysicsWorld3D</code>, <code>Model3D</code> y <code>AnimationMixer3D</code>; la prueba de humo 3D juega los ocho juegos en los tres backends y exige que un ciclo GameOver → Play → GameOver deje todos los contadores igual.</p>
+</section>
+
+<section id="seguridad">
+  <h2>Seguridad y web3</h2>
+  <p>UltraGame reduce la superficie de ataque del lado del motor, pero <b>ningún código de cliente es seguro por sí solo</b>: en un juego web3 el cliente siempre puede ser modificado. Lo que sigue es lo que hace el motor y cómo usarlo bien.</p>
+  <h3>Lo que hace el motor</h3>
+  <ul>
+    <li><b>Sin ejecución dinámica:</b> el bundle no usa <code>eval</code>, <code>new Function</code>, <code>innerHTML</code> ni <code>document.write</code> (lo verifica el script de build y las pruebas), así que funciona con una CSP estricta.</li>
+    <li><b>Carga validada:</b> <code>Security.isSafeURL</code> bloquea <code>javascript:</code>, <code>vbscript:</code>, <code>data:</code> no-imagen y variantes ofuscadas; <code>Security.allowedOrigins</code> limita los dominios; tamaños máximos por archivo, tiempo límite y cancelación.</li>
+    <li><b>Integridad:</b> <code>{ integrity: 'sha256-…' }</code> en cualquier <code>this.load.*</code> comprueba el hash (SHA-256 propio, igual al de <code>crypto</code>).</li>
+    <li><b>Datos no confiables:</b> <code>safeMerge</code> y el parser de Tiled ignoran <code>__proto__</code>, <code>constructor</code> y <code>prototype</code>; propiedades en objetos sin prototipo.</li>
+    <li><b>Anti-DoS:</b> límites de tiles por mapa, de expansión en zlib/gzip (bombas zip), de tamaño de textura, de longitud de texto y de partículas.</li>
+    <li><b>Texto de usuario:</b> <code>sanitizeText</code> elimina controles y marcas bidi usadas para suplantar nombres.</li>
+    <li><b>Azar:</b> <code>Security.secureRandom()</code> (criptográfico) para lo que deba ser impredecible; <code>UG.RNG</code> (xoshiro128**) con semilla para lo que deba ser reproducible y verificable.</li>
+  </ul>
+  <h3>Recomendaciones para juegos web3</h3>
+  <ul>
+    <li>Nunca pongas claves privadas, frases semilla ni secretos de API en el juego. Firma con la billetera del usuario (su extensión o app), jamás desde el código del juego.</li>
+    <li>Lo que tiene valor (recompensas, NFTs, marcadores con premio) se decide en el servidor o en el contrato, no en el cliente.</li>
+    <li>Partidas verificables: usa una semilla que el servidor conozca, graba la entrada con <code>UG.InputLog</code> y el paso fijo (<code>fps.fixedStep</code>), y compara <code>UG.Debug.hashState(estado)</code> al final; el servidor puede re-simular la física y la lógica en Node con el mismo bundle.</li>
+    <li>Sirve el juego con una CSP como <code>default-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://tu-api</code> y con SRI en las etiquetas <code>&lt;script&gt;</code>.</li>
+    <li>Pide al usuario confirmar cada transacción fuera del bucle de juego, con importes claros.</li>
+  </ul>
+  <h3>UltraGame Studio</h3>
+  <ul>
+    <li>El servidor local del Studio solo escucha en <code>127.0.0.1</code>, rechaza cabeceras <code>Host</code> ajenas (DNS rebinding) y usa un token aleatorio por sesión que se cambia por una cookie <code>HttpOnly; SameSite=Strict</code>; la API exige además una cabecera propia y <code>Origin</code> del propio servidor en las escrituras (CSRF).</li>
+    <li>Las rutas de archivos están confinadas a la carpeta de proyectos, con lista blanca de extensiones, límites de tamaño, escritura atómica, copia <code>.bak</code> y papelera recuperable. Los archivos subidos se sirven con CSP <code>sandbox</code> y como descarga (un SVG con scripts no se ejecuta).</li>
+    <li>El editor usa una CSP estricta y nunca inserta HTML: los nombres de objetos, recursos o proyectos maliciosos se muestran como texto.</li>
+    <li>«Jugar» ejecuta el juego en un iframe <code>sandbox</code> sin <code>allow-same-origin</code>: los scripts del juego no pueden leer la sesión del editor ni tocar tus archivos.</li>
+    <li>Los proyectos importados (<code>.ugs.json</code>) se validan campo a campo con el esquema: tipos desconocidos, rutas con <code>..</code>, claves <code>__proto__</code>, ciclos de padres y valores fuera de rango se descartan.</li>
+  </ul>
+</section>
+
+<section id="depurar">
+  <h2>Depuración y herramientas</h2>
+  <ul>
+    <li><code>stats: true</code> (o <code>?stats=1</code> en los minijuegos): FPS, ms por frame, draw calls, quads, texturas y objetos culled.</li>
+    <li><code>physics: { arcade: { debug: true } }</code>: cuerpos, velocidades y colisiones dibujados.</li>
+    <li><code>game.snapshot()</code> → PNG; <code>new UG.Recorder(game).start({ fps: 15, scale: 0.5 })</code> → GIF (codificador propio con paleta por <em>median cut</em>).</li>
+    <li><code>UG.Debug.inspect(objeto)</code> (árbol), <code>UG.Debug.live</code>, <code>snapshot/diff</code>, <code>hashState</code>.</li>
+    <li><code>game.loop.stop()</code> + <code>game.loop.step(16)</code>: avanzar frame a frame desde la consola o en pruebas.</li>
+  </ul>
+</section>
+
+<section id="pruebas">
+  <h2>Pruebas</h2>
+  <table>
+    <tr><th>Página / comando</th><th>Qué cubre</th></tr>
+    <tr><td><a href="../tests/index.html">tests/index.html</a></td><td>~290 pruebas: núcleo, seguridad, tweens, física, Tiled, audio, GIF, WASM, render píxel a píxel en cada backend (incluido WebGL1 sin instancing), entrada, escenas, pérdida de contexto, fugas por backend y benchmarks. Parámetros: <code>?only=</code>, <code>?backend=</code>, <code>?bench=0</code>, <code>?leaks=0</code>.</td></tr>
+    <tr><td><code>node tests/node-tests.js</code></td><td>83 pruebas sin navegador (CI): matemáticas, RNG, SHA-256 contra <code>crypto</code>, Inflate contra <code>zlib</code>, Tiled, física 2D y 3D determinista, tweens, reloj, GIF, 3D (escena, geometría, shaders, animación, glTF/GLB con archivos maliciosos, OBJ, exportador, PNG, niveles) y Studio (esquema, runtime, ZIP y seguridad del servidor local).</td></tr>
+    <tr><td><a href="../tests/bench.html">tests/bench.html</a></td><td>Benchmarks aislados por backend.</td></tr>
+    <tr><td><a href="../tests/smoke.html">tests/smoke.html</a></td><td>Escena de humo con <code>?r=webgpu|webgl2|webgl|canvas</code>.</td></tr>
+    <tr><td><a href="../tests/capture-thumbs.html">tests/capture-thumbs.html</a></td><td>Juega un guion en cada minijuego y guarda su miniatura (servidor con <code>--allow-save</code>).</td></tr>
+    <tr><td><a href="../tests/3d-basic.html">tests/3d-basic.html</a> · <a href="../tests/3d-models.html">3d-models.html</a></td><td>Render 3D comprobado por píxeles en cada backend (<code>?r=webgpu|webgl2|webgl</code>) y carga de los 22 modelos GLB.</td></tr>
+    <tr><td><a href="../tests/capture-thumbs3d.html?smoke=1">tests/capture-thumbs3d.html?smoke=1</a></td><td>Los 8 juegos 3D jugados por su bot en WebGPU, WebGL2 y WebGL, con comprobación de errores y de fugas. <code>?thumbs=1</code> regenera las miniaturas.</td></tr>
+    <tr><td><a href="../tests/studio-runtime.html?auto=1">tests/studio-runtime.html</a></td><td>Runtime del Studio: proyectos 2D y 3D generados en código, comportamientos, eventos, scripts con errores aislados y fugas.</td></tr>
+  </table>
+<pre><code class="sh">node tools/build.js                           # genera dist/ (UMD + ESM + tipos)
+node tools/server.js --port 8080 --allow-save   # servidor local estático (solo 127.0.0.1)
+node tests/node-tests.js
+node tools/make-models.js                     # regenera los modelos GLB de ejemplo (assets3d/)
+npm run studio                                # abre UltraGame Studio</code></pre>
+</section>
+
+<section id="minijuegos">
+  <h2>Minijuegos</h2>
+  <p>Ocho juegos completos, cada uno probando el motor desde un ángulo distinto. Todos tienen menú, récord, pausa, silencio, pantalla completa y controles táctiles.</p>
+  <div class="games" id="games"></div>
+</section>
+
+<section id="limites">
+  <h2>Limitaciones conocidas</h2>
+  <ul>
+    <li><b>C++:</b> el núcleo acelerado no está compilado desde C++ (no había compilador disponible); es un módulo WebAssembly SIMD escrito a mano (<code>tools/wasm/</code>, 535 bytes) que comparte memoria con JS sin copias. Hoy acelera la integración de partículas; la física y el render siguen en JS optimizado.</li>
+    <li><b>Minificación:</b> el bundle se distribuye sin minificar (≈1,1 MB con el 3D; ≈300 KB con gzip). Puedes pasarlo por cualquier minificador estándar.</li>
+    <li><b>Canvas 2D:</b> los efectos sin equivalente CSS se omiten en ese backend; es el respaldo para navegadores sin GPU, no el modo recomendado.</li>
+    <li><b>Comparativas:</b> no se han medido PixiJS ni Phaser en este equipo; las cifras publicadas son solo de UltraGame. Para comparar, ejecuta escenas equivalentes de cada motor en el mismo navegador y máquina.</li>
+    <li><b>Seguridad:</b> el motor aplica defensas razonables, pero ninguna biblioteca puede garantizar la ausencia total de vulnerabilidades ni proteger valor que dependa del cliente (ver <a href="#seguridad">Seguridad y web3</a>).</li>
+    <li><b>Tipos TypeScript:</b> <code>dist/ultragame.d.ts</code> está escrito a mano y se comprueba contra las exportaciones reales del motor, pero no se ha compilado con <code>tsc</code> en este entorno.</li>
+    <li><b>Física 2D:</b> es Arcade (AABB/círculos). No incluye cuerpos rígidos con rotación ni uniones; para eso integra una biblioteca dedicada.</li>
+    <li><b>Física 3D:</b> pensada para juegos (personajes, vehículos, esferas y cajas alineadas, colisión exacta contra mallas estáticas). Los cuerpos dinámicos no rotan por choques (salvo el rodar visual de las esferas) y no hay uniones ni telas.</li>
+    <li><b>glTF:</b> sin compresión Draco/meshopt ni texturas KTX2; exporta desde Blender sin compresión de mallas. Las <i>morph targets</i> (formas clave / shape keys de Blender) no están soportadas: se usa la forma base y se avisa en la consola.</li>
+    <li><b>3D en Canvas:</b> el renderizador Canvas 2D no dibuja 3D (la vista 3D muestra un aviso); hace falta WebGL o WebGPU.</li>
+    <li><b>Studio:</b> es una aplicación web local que se abre en una ventana de Edge/Chrome (no se ha empaquetado con Electron para no descargar dependencias). El HTML exportado como carpeta necesita un servidor web o un hosting; la exportación «HTML único» funciona sin servidor.</li>
+  </ul>
+  <footer>UltraGame 1.0.0 · Licencia MIT · Esta documentación está escrita en HTML estático sin dependencias.</footer>
+</section>
+
+</main>
+</div>
+<script>
+(function () {
+  'use strict';
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  // ---------------------------------------------------------------- galería de efectos (imágenes generadas por el motor)
+  var FX = [['grayscale', 'Escala de grises', 'Color'], ['sepia', 'Sepia', 'Color'], ['invert', 'Negativo', 'Color'], ['hue', 'Rotar tono', 'Color'], ['adjust', 'Brillo · contraste · saturación', 'Color'], ['vintage', 'Preajustes de color', 'Color'], ['overlay', 'Superposición de color', 'Color'], ['gradmap', 'Mapa de degradado', 'Color'], ['posterize', 'Posterizar', 'Color'], ['threshold', 'Umbral', 'Color'], ['dither', 'Tramado', 'Color'],
+    ['blur', 'Desenfoque gaussiano', 'Luz'], ['tiltshift', 'Tilt-shift', 'Luz'], ['zoomblur', 'Desenfoque radial', 'Luz'], ['motionblur', 'Desenfoque de movimiento', 'Luz'], ['bloom', 'Bloom', 'Luz', 1], ['godrays', 'Rayos de luz', 'Luz', 1], ['glow', 'Resplandor', 'Objeto'], ['dropshadow', 'Sombra proyectada', 'Objeto'], ['outline', 'Contorno', 'Objeto'],
+    ['shockwave', 'Onda expansiva', 'Distorsión', 1], ['wave', 'Ondulación', 'Distorsión', 1], ['heathaze', 'Calima', 'Distorsión', 1], ['bulge', 'Abombar / pellizcar', 'Distorsión'], ['twist', 'Remolino', 'Distorsión'], ['reflection', 'Reflejo en agua', 'Distorsión', 1],
+    ['crt', 'Monitor CRT', 'Retro', 1], ['pixelate', 'Pixelar', 'Retro'], ['rgbsplit', 'Aberración cromática', 'Retro'], ['glitch', 'Glitch digital', 'Retro', 1], ['noise', 'Ruido / grano', 'Retro', 1], ['oldfilm', 'Película antigua', 'Retro', 1], ['vignette', 'Viñeta', 'Retro'], ['dotscreen', 'Trama de puntos', 'Retro'], ['emboss', 'Relieve / nitidez / bordes', 'Estilizado']];
+  var grid = document.getElementById('fxgrid');
+  FX.forEach(function (f) {
+    var fig = el('figure'), a = el('a'); a.href = '../examples/effects.html#' + f[0];
+    var img = new Image(); img.loading = 'lazy'; img.decoding = 'async'; img.alt = f[1]; img.src = 'media/fx-' + f[0] + (f[3] ? '.gif' : '.png');
+    a.appendChild(img); fig.appendChild(a);
+    var cap = el('figcaption'); cap.appendChild(el('span', '', f[1])); cap.appendChild(el('small', '', f[2] + (f[3] ? ' · animado' : ''))); fig.appendChild(cap);
+    grid.appendChild(fig);
+  });
+  // ---------------------------------------------------------------- minijuegos
+  var G = [['star-blaster', 'Star Blaster'], ['pixel-knight', 'Pixel Knight'], ['brick-breaker', 'Brick Breaker'], ['neon-asteroids', 'Neon Asteroids'], ['gem-match', 'Gem Match'], ['sky-hopper', 'Sky Hopper'], ['iso-defense', 'Iso Defense'], ['dungeon-lights', 'Dungeon Lights']];
+  var gg = document.getElementById('games');
+  G.forEach(function (g) { var a = el('a'); a.href = '../minigames/' + g[0] + '/index.html'; var img = new Image(); img.loading = 'lazy'; img.alt = g[1]; img.src = '../minigames/thumbs/' + g[0] + '.png'; a.appendChild(img); a.appendChild(el('span', '', g[1])); gg.appendChild(a); });
+  // ---------------------------------------------------------------- juegos 3D
+  var G3 = [['shooter', 'Operación Tormenta'], ['racing', 'Turbo Circuito'], ['platformer', 'Bandicrash'], ['city', 'Ciudad Libre'], ['marble', 'Laberinto Inclinado'], ['space', 'Galaxia 3D'], ['voxel', 'Bloques'], ['dungeon', 'Mazmorra']];
+  var g3 = document.getElementById('games3d');
+  if (g3) G3.forEach(function (g) { var a = el('a'); a.href = '../games3d/' + g[0] + '/index.html'; var img = new Image(); img.loading = 'lazy'; img.alt = g[1]; img.src = '../games3d/thumbs/' + g[0] + '.png'; a.appendChild(img); a.appendChild(el('span', '', g[1])); g3.appendChild(a); });
+  // ---------------------------------------------------------------- resaltado de código (tokens -> spans, sin innerHTML)
+  var KW = /^(const|let|var|function|return|if|else|for|while|new|class|extends|super|this|true|false|null|undefined|await|async|import|from|export|default|get|set|static|typeof)$/;
+  var RX = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*$)|('(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`)|(\b0x[0-9a-fA-F]+\b|\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)/gm;
+  Array.prototype.forEach.call(document.querySelectorAll('pre code'), function (code) {
+    var src = code.textContent, frag = document.createDocumentFragment(), last = 0, m, sh = code.className === 'sh';
+    RX.lastIndex = 0;
+    while ((m = RX.exec(src))) {
+      if (m.index > last) frag.appendChild(document.createTextNode(src.slice(last, m.index)));
+      var cls = null, t = m[0];
+      if (m[1] && (!sh ? m[1].charAt(0) !== '#' : true)) cls = 't-c';
+      else if (m[1]) { frag.appendChild(document.createTextNode(t)); last = RX.lastIndex; continue; }
+      else if (m[2]) cls = 't-s'; else if (m[3]) cls = 't-n';
+      else if (m[4]) cls = 't-f';
+      else if (m[5]) cls = KW.test(t) ? 't-k' : (t === 'UG' ? 't-u' : null);
+      if (cls) frag.appendChild(el('span', cls, t)); else frag.appendChild(document.createTextNode(t));
+      last = RX.lastIndex;
+    }
+    if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
+    code.textContent = ''; code.appendChild(frag);
+    var b = el('button', 'cp', 'Copiar'); b.type = 'button';
+    b.onclick = function () { var done = function () { b.textContent = 'Copiado'; setTimeout(function () { b.textContent = 'Copiar'; }, 1200); }; if (navigator.clipboard) navigator.clipboard.writeText(src).then(done, function () {}); };
+    code.parentNode.appendChild(b);
+  });
+  if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) document.getElementById('tocwrap').open = false;
+  // ---------------------------------------------------------------- índice activo y búsqueda
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a')), secs = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) { entries.forEach(function (e) { if (e.isIntersecting) { var i = secs.indexOf(e.target); links.forEach(function (l, k) { l.classList.toggle('on', k === i); }); } }); }, { rootMargin: '-10% 0px -80% 0px' });
+    secs.forEach(function (s) { if (s) io.observe(s); });
+  }
+  document.getElementById('q').addEventListener('input', function () {
+    var q = this.value.trim().toLowerCase(); if (q) document.getElementById('tocwrap').open = true;
+    secs.forEach(function (s, i) { if (!s) return; var hit = !q || s.textContent.toLowerCase().indexOf(q) >= 0; s.classList.toggle('hide', !hit); links[i].parentNode.classList.toggle('hide', !hit); });
+    Array.prototype.forEach.call(document.querySelectorAll('#toc .grp'), function (g) { g.classList.toggle('hide', !!q); });
+  });
+})();
+</script>
+</body>
+</html>

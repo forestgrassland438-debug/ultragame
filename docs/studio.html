@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070914">
+<meta name="description" content="Guía de UltraGame Studio: editor de juegos 2D y 3D con objetos, comportamientos sin código, hojas de eventos, scripts, efectos, recursos de Blender y exportación HTML5.">
+<title>Guía de UltraGame Studio</title>
+<style>
+  :root { --bg: #070914; --panel: #0e1224; --panel2: #141a33; --line: #232b4d; --text: #e7ebff; --muted: #9aa3c7; --accent: #6d83ff; --accent2: #3fd6b4; --good: #63e6be; --warn: #ffd43b;
+    --kw: #c792ea; --str: #c3e88d; --num: #f78c6c; --com: #697098; --fn: #82aaff; --ug: #3fd6b4; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15.5px/1.65 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  a { color: #a9d8ff; } a:hover { color: #fff; }
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1320px; margin: 0 auto; }
+  nav.side { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 22px 16px 30px; border-right: 1px solid var(--line); }
+  .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: var(--text); margin-bottom: 14px; }
+  .brand img { width: 38px; height: 38px; } .brand b { font-size: 18px; } .brand small { display: block; color: var(--muted); font-size: 12px; }
+  nav.side ol { list-style: none; margin: 0; padding: 0; }
+  nav.side li a { display: block; padding: 4px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; }
+  nav.side li a:hover { color: var(--text); background: rgba(109, 131, 255, 0.1); }
+  nav.side .grp { color: #6f7aa8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin: 14px 10px 4px; }
+  main { padding: 26px 34px 80px; min-width: 0; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } nav.side { position: relative; height: auto; border-right: 0; border-bottom: 1px solid var(--line); } main { padding: 18px 16px 60px; } }
+  .hero { padding: 24px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, rgba(63, 214, 180, 0.18), rgba(109, 131, 255, 0.14) 50%, rgba(14, 18, 36, 0.8)); }
+  .hero h1 { margin: 0 0 6px; font-size: 36px; line-height: 1.15; }
+  .hero p { margin: 0 0 12px; color: #c9d0f5; max-width: 860px; }
+  section { margin: 0 0 40px; }
+  h2 { font-size: 25px; margin: 0 0 10px; border-top: 1px solid var(--line); padding-top: 24px; }
+  h3 { font-size: 18px; margin: 20px 0 8px; }
+  p, li { color: #d5dbfb; }
+  code { font: 0.9em ui-monospace, "Cascadia Code", Consolas, monospace; background: rgba(109, 131, 255, 0.12); padding: 1px 5px; border-radius: 5px; color: #dfe4ff; }
+  pre { background: #0a0d1c; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow: auto; margin: 10px 0 16px; }
+  pre code { background: none; padding: 0; font-size: 13.2px; line-height: 1.6; color: #d6dcff; }
+  .t-k { color: var(--kw); } .t-s { color: var(--str); } .t-n { color: var(--num); } .t-c { color: var(--com); font-style: italic; } .t-f { color: var(--fn); } .t-u { color: var(--ug); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; background: var(--panel2); white-space: nowrap; }
+  td small { color: var(--muted); }
+  .note { border-left: 3px solid var(--accent); background: rgba(109, 131, 255, 0.08); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; }
+  .note.warn { border-color: var(--warn); background: rgba(255, 212, 59, 0.07); } .note.good { border-color: var(--good); background: rgba(99, 230, 190, 0.07); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 12px 0 18px; }
+  .card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .card h4 { margin: 0 0 4px; font-size: 15px; } .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  kbd { font: 12px ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--panel2); }
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="side" aria-label="Contenido">
+  <a class="brand" href="#inicio"><img src="../studio/icon.svg" alt=""><span><b>UltraGame Studio</b><small>Guía del editor</small></span></a>
+  <ol>
+    <li class="grp">Empezar</li>
+    <li><a href="#inicio">Qué es</a></li>
+    <li><a href="#abrir">Abrir el Studio</a></li>
+    <li><a href="#interfaz">La interfaz</a></li>
+    <li><a href="#proyectos">Proyectos y plantillas</a></li>
+    <li class="grp">Crear</li>
+    <li><a href="#escenas">Escenas 2D y 3D</a></li>
+    <li><a href="#objetos">Tipos de objeto</a></li>
+    <li><a href="#vista">Editar en la vista</a></li>
+    <li><a href="#comportamientos">Comportamientos</a></li>
+    <li><a href="#fisica">Física</a></li>
+    <li><a href="#eventos">Hojas de eventos</a></li>
+    <li><a href="#scripts">Scripts (código)</a></li>
+    <li><a href="#efectos">Efectos</a></li>
+    <li><a href="#recursos">Recursos y Blender</a></li>
+    <li class="grp">Probar y publicar</li>
+    <li><a href="#jugar">Jugar y depurar</a></li>
+    <li><a href="#exportar">Exportar y publicar</a></li>
+    <li><a href="#atajos">Atajos de teclado</a></li>
+    <li><a href="#seguridad">Seguridad</a></li>
+    <li><a href="#problemas">Solución de problemas</a></li>
+    <li><a href="#limites">Limitaciones</a></li>
+    <li class="grp">Más</li>
+    <li><a href="index.html">Documentación del motor</a></li>
+  </ol>
+</nav>
+<main>
+
+<section id="inicio">
+  <div class="hero">
+    <h1>UltraGame Studio</h1>
+    <p>Editor de escritorio para crear juegos <b>2D y 3D</b> con UltraGame. Puedes hacer un juego entero <b>sin programar</b> (objetos + comportamientos + hojas de eventos), <b>programando</b> (scripts JavaScript con una API sencilla) o mezclando ambas cosas. Incluye biblioteca de recursos, importación de modelos de Blender, efectos, prueba instantánea y exportación a HTML5.</p>
+  </div>
+  <div class="cards">
+    <div class="card"><h4>Sin código</h4><p>Comportamientos listos (jugador de plataformas, primera y tercera persona, vehículo, perseguir, coleccionable, peligro…) y eventos «cuando → hacer».</p></div>
+    <div class="card"><h4>Con código</h4><p>Scripts por objeto o por escena con <code>onStart</code>, <code>onUpdate</code>, <code>onCollide</code>… y acceso completo al motor.</p></div>
+    <div class="card"><h4>2D y 3D</h4><p>Escenas 2D (sprites, formas, texto, Tiled) y 3D (primitivas, modelos GLB, luces, terrenos, niveles por rejilla) en el mismo proyecto.</p></div>
+    <div class="card"><h4>Seguro</h4><p>Servidor solo local con sesión, juego en iframe aislado, proyectos validados y exportación con política de seguridad estricta.</p></div>
+  </div>
+</section>
+
+<section id="abrir">
+  <h2>Abrir el Studio</h2>
+  <p>Necesitas <a href="https://nodejs.org">Node.js</a> 18 o superior (no hace falta instalar nada más).</p>
+  <ul>
+    <li><b>Windows:</b> doble clic en <code>UltraGame Studio.cmd</code> (en la carpeta de UltraGame).</li>
+    <li><b>macOS / Linux:</b> <code>./studio.sh</code> desde un terminal.</li>
+    <li><b>Con npm:</b> <code>npm run studio</code>.</li>
+  </ul>
+  <p>Se abre una ventana de aplicación de Edge o Chrome (sin barras del navegador) y la consola muestra la carpeta de proyectos y un enlace privado. Deja la consola abierta mientras trabajas; ciérrala para salir.</p>
+<pre><code class="sh">node tools/studio-server.js [--port 5210] [--workspace C:\mis-juegos] [--no-open] [--browser ruta\a\chrome.exe]</code></pre>
+  <div class="note">Sin servidor (por ejemplo abriendo <code>studio/</code> desde <code>node tools/server.js</code>) el Studio funciona igual pero guarda los proyectos en el navegador (IndexedDB) en lugar de en disco, y la exportación a carpeta se sustituye por la descarga ZIP. La barra superior indica el modo: <b>💾 Disco</b> o <b>🌐 Navegador</b>.</div>
+</section>
+
+<section id="interfaz">
+  <h2>La interfaz</h2>
+  <table>
+    <tr><th>Zona</th><th>Para qué sirve</th></tr>
+    <tr><td>Barra superior</td><td>Menús (Archivo, Editar, Añadir, Escena, Ejecutar, Ayuda), <b>▶ Jugar</b> (desde la escena inicial), <b>▶ Esta escena</b>, <b>■ Detener</b>, renderizador de prueba y estado de guardado.</td></tr>
+    <tr><td>Escenas</td><td>Lista de escenas (★ = inicial). <b>＋2D</b> / <b>＋3D</b> crean escenas. Doble clic: renombrar; clic derecho: duplicar, hacer inicial, borrar.</td></tr>
+    <tr><td>Jerarquía</td><td>Objetos de la escena en árbol. Arrastra para reordenar o para meter un objeto dentro de otro (hijos que se mueven con su padre). Clic derecho: renombrar, duplicar, copiar/pegar, añadir hijo, convertir en plantilla, borrar. 👁 muestra u oculta.</td></tr>
+    <tr><td>Escena (centro)</td><td>La vista de edición: se dibuja con el propio motor, así que ves exactamente lo mismo que en el juego.</td></tr>
+    <tr><td>Eventos</td><td>La hoja de eventos de la escena actual (programación sin código).</td></tr>
+    <tr><td>Scripts</td><td>Editor de código con resaltado, números de línea, errores marcados y referencia de la API.</td></tr>
+    <tr><td>Inspector</td><td>Propiedades del objeto seleccionado (o de la escena y el proyecto si no hay selección, o del recurso pulsado en Recursos).</td></tr>
+    <tr><td>Recursos / Biblioteca / Consola</td><td>Tus archivos importados, los recursos incluidos con UltraGame y los mensajes del juego al probarlo.</td></tr>
+  </table>
+  <p>Todo se guarda solo (unos segundos después de cada cambio) y todo se puede deshacer con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
+</section>
+
+<section id="proyectos">
+  <h2>Proyectos y plantillas</h2>
+  <p>Al abrir el Studio aparece el gestor de proyectos: tus proyectos a la izquierda y, a la derecha, un nombre y una plantilla para crear uno nuevo.</p>
+  <table>
+    <tr><th>Plantilla</th><th>Qué trae</th></tr>
+    <tr><td>Vacío 2D / Vacío 3D</td><td>Punto de partida mínimo.</td></tr>
+    <tr><td>Plataformas 2D</td><td>Nivel con cámara que sigue, monedas, slimes que patrullan, pinchos, puerta de meta, vidas, pantalla de victoria y un script que anima al héroe al andar.</td></tr>
+    <tr><td>Naves 2D</td><td>Shooter espacial: disparo automático con Espacio, asteroides que aparecen solos, puntos, vidas y fin de partida (todo con eventos).</td></tr>
+    <tr><td>Aventura 3D</td><td>Isla con terreno, agua, casa, árboles, fogata, jugador en tercera persona con animaciones y 10 monedas que encontrar.</td></tr>
+    <tr><td>Shooter en primera persona</td><td>Laberinto por rejilla, robots que te persiguen y hacen daño, y un <b>script de escena</b> de ejemplo que dispara con un rayo desde la cámara.</td></tr>
+    <tr><td>Carreras 3D</td><td>Circuito con muros, coche con física, cámara de persecución y cuenta de 3 vueltas con puntos de control.</td></tr>
+  </table>
+  <p>Con el servidor, cada proyecto es una carpeta dentro de <code>projects/</code> (o la que indiques con <code>--workspace</code>): <code>project.json</code>, su copia <code>project.json.bak</code> y la carpeta <code>assets/</code>. Lo que borras va a <code>projects/.trash</code> (recuperable a mano).</p>
+  <p><b>Archivo › Descargar proyecto (.ugs.json)</b> guarda el proyecto con sus recursos en un solo archivo para compartirlo o hacer copia; <b>Importar proyecto</b> en el gestor lo recupera (se valida por completo antes de crearlo).</p>
+</section>
+
+<section id="escenas">
+  <h2>Escenas 2D y 3D</h2>
+  <p>Un proyecto tiene varias escenas (menú, niveles, créditos…). Cada una es 2D o 3D. Sin nada seleccionado, el Inspector muestra los ajustes de la escena:</p>
+  <ul>
+    <li><b>2D:</b> color de fondo y gravedad (px/s² hacia abajo).</li>
+    <li><b>3D:</b> cielo degradado, niebla, exposición, sol automático (color, intensidad, dirección, sombras), luz ambiente, gravedad y antialias.</li>
+    <li><b>Posproceso:</b> efectos de pantalla completos (ver <a href="#efectos">Efectos</a>).</li>
+    <li><b>Variables globales:</b> valores que comparten todas las escenas (puntos, vidas…). Úsalas en textos como <code>{puntos}</code>.</li>
+    <li><b>Script de escena</b> y los ajustes del <b>proyecto</b> (tamaño del juego, ajuste a la ventana, renderizador, pixel art).</li>
+  </ul>
+  <p>En las escenas 3D también puedes añadir objetos 2D: se dibujan como <b>HUD</b> encima de la vista 3D (marcadores, botones, barras de vida, la mira).</p>
+</section>
+
+<section id="objetos">
+  <h2>Tipos de objeto</h2>
+  <p>Menú <b>Añadir</b>, botón <b>＋ Añadir</b> de la jerarquía o tecla <kbd>A</kbd>. También puedes arrastrar un recurso a la vista (crea un sprite, un modelo o un mapa). Esta tabla se genera desde el propio editor:</p>
+  <div id="tbl-nodes"></div>
+  <p><b>Plantillas:</b> marca un objeto como plantilla (Inspector › Plantilla) para que no aparezca al empezar y úsalo con la acción «Crear copia» o <code>api.spawn('Nombre')</code> (balas, enemigos, efectos).</p>
+</section>
+
+<section id="vista">
+  <h2>Editar en la vista</h2>
+  <h3>2D</h3>
+  <ul>
+    <li><b>Rueda:</b> zoom hacia el cursor. <b>Botón derecho, central o Espacio + arrastrar:</b> desplazar.</li>
+    <li><b>Clic:</b> seleccionar (con <kbd>Ctrl</kbd> o <kbd>Mayús</kbd> suma a la selección). Arrastra en vacío para seleccionar con un rectángulo.</li>
+    <li><b>Mover (Q/W):</b> arrastra el objeto, o las flechas roja (X) y verde (Y) para mover en un solo eje. <b>Rotar (E):</b> arrastra el anillo. <b>Escalar (R):</b> esquinas (proporcional, <kbd>Mayús</kbd> libre) y lados (un eje).</li>
+    <li><b>Rejilla (G):</b> ajusta posiciones al paso indicado (16 px por defecto); mantén <kbd>Alt</kbd> para mover libre. <b>Flechas:</b> 1 px (<kbd>Mayús</kbd>: un paso de rejilla).</li>
+    <li>El rectángulo azul es la pantalla del juego (tamaño del proyecto). <b>F</b> centra en la selección y <b>H</b> encuadra la escena.</li>
+  </ul>
+  <h3>3D</h3>
+  <ul>
+    <li><b>Botón derecho + arrastrar:</b> orbitar (y con <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/<kbd>Q</kbd><kbd>E</kbd> vuelas, como en Unity). <b>Botón central:</b> desplazar. <b>Rueda:</b> acercar.</li>
+    <li><b>Gizmo:</b> flechas X (rojo), Y (verde) y Z (azul) para mover a lo largo del eje exacto; el cuadrado central mueve sobre el suelo. En Rotar son anillos y en Escalar cubos (el central escala todo).</li>
+    <li>Las luces, cámaras, grupos y emisores se muestran con un icono seleccionable; los objetos ocultos se ven translúcidos.</li>
+    <li>Suelta un modelo de Recursos o de la Biblioteca donde quieras: se coloca sobre lo que haya debajo del cursor.</li>
+  </ul>
+</section>
+
+<section id="comportamientos">
+  <h2>Comportamientos (sin código)</h2>
+  <p>Inspector › Comportamientos › <b>＋ Añadir comportamiento</b>. Se pueden combinar varios en el mismo objeto. Si un comportamiento necesita física (por ejemplo el jugador de plataformas o los jugadores 3D), el Studio la activa automáticamente.</p>
+  <div id="tbl-beh"></div>
+</section>
+
+<section id="fisica">
+  <h2>Física</h2>
+  <h3>2D</h3>
+  <ul>
+    <li><b>Dinámica:</b> cae con la gravedad y choca con los objetos estáticos (suelos, plataformas, mapas de Tiled con capas sólidas).</li>
+    <li><b>Estática:</b> no se mueve; es el suelo o el muro.</li>
+    <li><b>Cinemática:</b> se mueve por comportamientos o scripts sin gravedad y empuja a los dinámicos (plataformas móviles).</li>
+    <li>Opciones: rebote, rozamiento del aire, cuerpo circular, choca con los bordes, se puede empujar y «sólido para otros dinámicos».</li>
+  </ul>
+  <h3>3D</h3>
+  <ul>
+    <li><b>Estática (caja):</b> caja envolvente (rápida). <b>Estática exacta (malla):</b> la forma real del modelo (casas en las que se entra, rampas, terrenos).</li>
+    <li><b>Cuerpo dinámico:</b> esfera o caja con masa y rebote. <b>Personaje:</b> cápsula que sube escalones y rampas (la usan los jugadores 3D y la persecución). <b>Zona:</b> detecta contactos sin chocar (metas, puntos de control).</li>
+  </ul>
+  <div class="note">Los contactos para eventos, coleccionables y peligros se detectan por <b>etiquetas</b>, también entre objetos sin física.</div>
+</section>
+
+<section id="eventos">
+  <h2>Hojas de eventos</h2>
+  <p>Cada evento dice: <b>cuando</b> se cumplen <u>todas</u> sus condiciones, <b>hace</b> sus acciones en orden. Se evalúan de arriba abajo en cada fotograma.</p>
+  <ul>
+    <li><b>self</b> es el objeto de la condición (el que se toca o se pulsa) y <b>other</b> el otro objeto del contacto. En los campos «Objeto» puedes escribir <code>self</code>, <code>other</code>, <code>tag:enemigo</code>, <code>name:Jugador</code> o <code>all</code>.</li>
+    <li>Las condiciones de contacto se cumplen <b>al empezar a tocarse</b> (no mientras siguen tocándose).</li>
+    <li>«Comparar variable» y «Mientras una tecla…» se pueden negar (casilla <b>no</b>). «Solo una vez» ejecuta el evento la primera vez.</li>
+    <li>En los textos, <code>{nombre}</code> se sustituye por el valor de la variable (del objeto si la tiene propia, si no global).</li>
+  </ul>
+  <h3>Ejemplos</h3>
+  <table>
+    <tr><th>Cuando</th><th>Hacer</th></tr>
+    <tr><td>Mientras una tecla está pulsada: Espacio · Cada 0,15 s</td><td>Crear copia de «Bala» en name:Nave · Sonido laser</td></tr>
+    <tr><td>Cuando se tocan: tag:bala y tag:enemigo</td><td>Destruir other (explosión) · Destruir self · Sumar 10 a puntos</td></tr>
+    <tr><td>Comparar variable: vida ≤ 0</td><td>Ir a la escena «Fin»</td></tr>
+    <tr><td>Cuando no queda ninguno: tag:moneda</td><td>Texto flotante «¡Todas!» · Ir a la escena «Nivel 2»</td></tr>
+    <tr><td>Al empezar la escena</td><td>Cargar variable guardada: record · Poner variable puntos = 0</td></tr>
+  </table>
+  <h3>Condiciones</h3>
+  <div id="tbl-cond"></div>
+  <h3>Acciones</h3>
+  <div id="tbl-act"></div>
+</section>
+
+<section id="scripts">
+  <h2>Scripts (código)</h2>
+  <p>Un script es JavaScript normal. Asígnalo a uno o varios objetos (Inspector › Script) o escríbelo como <b>script de escena</b>. Cada objeto recibe su propia copia (sus variables no se mezclan). Dentro tienes:</p>
+  <ul>
+    <li><code>self</code>: el objeto del motor (un sprite, texto, forma… en 2D; un <code>Node3D</code> en 3D). Todo el motor está disponible: <code>self.x</code>, <code>self.body.setVelocity()</code>, <code>self.position</code>, <code>self.play('Walk')</code>… (ver la <a href="index.html">documentación del motor</a>).</li>
+    <li><code>api</code>: ayuda del Studio (tabla de abajo). <code>UG</code>: el motor completo.</li>
+    <li>Funciones que el Studio llama si existen: <code>onStart()</code>, <code>onUpdate(dt)</code>, <code>onCollide(other)</code>, <code>onClick(pointer)</code>, <code>onDestroy()</code>, <code>onMessage(nombre, datos)</code>. Las funciones del script de escena se pueden llamar desde eventos («Llamar a una función»).</li>
+  </ul>
+<pre><code class="js">// Script de un enemigo: persigue al jugador si lo ve y lanza bolas de fuego
+var recarga = 0;
+function onUpdate(dt) {
+  var jugador = api.find('tag:jugador');
+  if (!jugador) return;
+  var d = api.distance(self, jugador);
+  if (d &lt; 300) self.x += Math.sign(jugador.x - self.x) * 90 * dt;
+  recarga -= dt;
+  if (d &lt; 250 &amp;&amp; recarga &lt;= 0) {
+    recarga = 1.5;
+    var bola = api.spawn('BolaDeFuego', self.x, self.y);   // plantilla
+    bola.angle = Math.atan2(jugador.y - self.y, jugador.x - self.x) * 180 / Math.PI;
+    api.sfx('shoot', 0.4);
+  }
+}
+function onCollide(other) {
+  if (api.entityOf(other).tags.indexOf('espada') &gt;= 0) api.damage(self, 1);
+}</code></pre>
+<pre><code class="js">// Script de escena: récord guardado entre partidas
+function onStart() { api.set('record', api.load('record', 0)); }
+function guardarRecord() {                      // llamada desde un evento
+  if (api.get('puntos') &gt; api.get('record')) { api.set('record', api.get('puntos')); api.save('record', api.get('puntos')); }
+}</code></pre>
+  <h3>Referencia de <code>api</code></h3>
+  <table>
+    <tr><th>Función</th><th>Descripción</th></tr>
+    <tr><td><code>api.key(tecla)</code> · <code>api.pressed(tecla)</code> · <code>api.released(tecla)</code></td><td>Teclado: pulsada / recién pulsada / recién soltada (<code>'LEFT'</code>, <code>'SPACE'</code>, <code>'A'</code>, <code>'ONE'</code>…)</td></tr>
+    <tr><td><code>api.pointer</code></td><td>Ratón o dedo: <code>x</code>, <code>y</code>, <code>worldX</code>, <code>worldY</code>, <code>isDown</code></td></tr>
+    <tr><td><code>api.find(ref)</code> · <code>api.findAll(ref)</code> · <code>api.entityOf(obj)</code></td><td>Buscar objetos por <code>'name:X'</code>, <code>'tag:x'</code> o nombre; la entidad tiene <code>name</code>, <code>tags</code>, <code>vars</code>, <code>hp</code>, <code>ch</code> (personaje 3D), <code>body</code></td></tr>
+    <tr><td><code>api.spawn(plantilla, x, y, z)</code> · <code>api.destroy(obj, efecto)</code> · <code>api.damage(obj, n)</code></td><td>Crear copias, destruir (sin argumentos: este objeto), quitar vida</td></tr>
+    <tr><td><code>api.get(n)</code> · <code>api.set(n, v)</code> · <code>api.add(n, cantidad)</code> · <code>api.my</code> · <code>api.vars</code></td><td>Variables (propias del objeto primero, luego globales)</td></tr>
+    <tr><td><code>api.save(clave, valor)</code> · <code>api.load(clave, porDefecto)</code></td><td>Guardado entre partidas (JSON, máx. 256 KB por clave)</td></tr>
+    <tr><td><code>api.sfx(efecto, vol)</code> · <code>api.sound(recurso, vol)</code> · <code>api.music(recurso, vol)</code> · <code>api.stopMusic()</code></td><td>Sonido: efectos sintetizados (<code>coin</code>, <code>laser</code>, <code>explosion</code>, <code>jump</code>, <code>hit</code>, <code>hurt</code>, <code>powerup</code>…) o tus audios</td></tr>
+    <tr><td><code>api.effect(tipo, x, y, z)</code> · <code>api.shake(ms, fuerza)</code> · <code>api.flash(color, ms)</code> · <code>api.floatText(texto)</code></td><td>Partículas, temblor, destello, texto flotante</td></tr>
+    <tr><td><code>api.goto(escena)</code> · <code>api.restart()</code></td><td>Cambiar de escena (por nombre) o reiniciarla</td></tr>
+    <tr><td><code>api.after(seg, fn)</code> · <code>api.every(seg, fn)</code> · <code>api.tween(cfg)</code> · <code>api.time</code></td><td>Tiempo: temporizadores (se cancelan solos al cambiar de escena), animaciones de propiedades, segundos desde el inicio</td></tr>
+    <tr><td><code>api.emit(nombre, datos)</code></td><td>Envía un mensaje a todos los scripts (<code>onMessage</code>)</td></tr>
+    <tr><td><code>api.random(a, b)</code> · <code>api.chance(p)</code> · <code>api.distance(a, b)</code> · <code>api.text(plantilla)</code></td><td>Utilidades</td></tr>
+    <tr><td><code>api.camera</code> · <code>api.physics</code> · <code>api.view</code> · <code>api.scene</code> · <code>api.game</code> · <code>api.animKey</code></td><td>Cámara (2D o 3D), mundo físico, vista 3D, escena y juego del motor; clave de la animación de un sprite</td></tr>
+    <tr><td><code>api.log(...)</code> · <code>api.warn(...)</code></td><td>Escribir en la consola del Studio</td></tr>
+  </table>
+  <div class="note">Si una función de tu script lanza un error, la consola muestra el mensaje con el nombre del script y la <b>línea</b> (clic para ir a ella) y esa función se desactiva para no repetir el error; el resto del juego sigue. Un error de sintaxis solo desactiva ese script.</div>
+</section>
+
+<section id="efectos">
+  <h2>Efectos</h2>
+  <p>Los mismos efectos del motor: por objeto 2D (Inspector › Efectos visuales) o de pantalla completa para la escena (Inspector de la escena › Posproceso; en 3D se aplican a la imagen 3D). Se ven al pulsar Jugar.</p>
+  <div id="tbl-fx"></div>
+  <p>Partículas 2D: fuego, humo, chispas, magia, lluvia, nieve, confeti, burbujas, estrellas, explosión y estela; en 3D: fuego, humo, magia, chispas, lluvia, nieve, estela, polvo y explosión.</p>
+</section>
+
+<section id="recursos">
+  <h2>Recursos y Blender</h2>
+  <ul>
+    <li><b>Importar:</b> botón «⬆ Importar archivos», arrastrando archivos a la ventana o a la vista. Formatos: imágenes (PNG, JPG, WebP, GIF, SVG), audio (MP3, OGG, WAV, M4A), modelos (GLB, glTF, OBJ), mapas de Tiled (TMJ/JSON), fuentes (TTF, OTF, WOFF). Máximo 64 MB por archivo.</li>
+    <li><b>Hojas de sprites:</b> pulsa el recurso y pon el ancho y alto de fotograma en el Inspector; en el sprite escribe los fotogramas de la animación (<code>0-3</code> o <code>0,1,2</code>).</li>
+    <li><b>Biblioteca:</b> sprites 2D listos (héroe animado, enemigos, monedas, plataformas, naves, fondos…) y los 22 modelos 3D de UltraGame (personajes animados, coches, casas, árboles…). Un clic los añade al proyecto y a la escena.</li>
+    <li><b>Mapas de Tiled:</b> añade un objeto «Mapa de Tiled», elige el mapa y la imagen del tileset, e indica qué capas son sólidas.</li>
+  </ul>
+  <h3>Modelos de Blender</h3>
+  <ol>
+    <li>En Blender: <i>Archivo › Exportar › glTF 2.0</i>, formato <b>glTF Binary (.glb)</b>, con «Aplicar modificadores» y, si tiene animaciones, «Exportar animaciones». Materiales <i>Principled BSDF</i>.</li>
+    <li>Arrastra el <code>.glb</code> al Studio. El objeto «Modelo» muestra en «Animación al empezar» la lista de animaciones del archivo.</li>
+    <li>Para que un personaje se anime solo al andar con «Jugador en tercera persona», nombra sus animaciones <code>Idle</code>, <code>Walk</code>, <code>Run</code> y <code>Jump</code>.</li>
+    <li>Para un coche con «Vehículo», nombra las ruedas <code>wheel_FL</code>, <code>wheel_FR</code>, <code>wheel_RL</code> y <code>wheel_RR</code> (giran y se inclinan solas).</li>
+  </ol>
+  <div class="note warn">Un modelo que no se pudo cargar aparece como un cubo rosa y la consola explica el motivo (por ejemplo, compresión Draco no soportada).</div>
+</section>
+
+<section id="jugar">
+  <h2>Jugar y depurar</h2>
+  <ul>
+    <li><b>▶ Jugar</b> (<kbd>F5</kbd>) arranca desde la escena inicial; <b>▶ Esta escena</b> (<kbd>Mayús</kbd>+<kbd>F5</kbd>) desde la actual. <b>■ Detener</b> o <kbd>Esc</kbd> vuelve al editor.</li>
+    <li>El juego corre en la pestaña <b>🎮 Juego</b>; haz clic en él para darle el teclado. La <b>consola</b> muestra <code>api.log</code>, avisos y errores con enlace a la línea.</li>
+    <li>El selector de renderizador permite probar el juego en WebGPU, WebGL2, WebGL o Canvas (solo 2D).</li>
+  </ul>
+</section>
+
+<section id="exportar">
+  <h2>Exportar y publicar</h2>
+  <table>
+    <tr><th>Opción (menú Archivo)</th><th>Resultado</th></tr>
+    <tr><td>Exportar a carpeta (disco)</td><td><code>projects/tu-juego/export/</code> con <code>index.html</code>, el motor, el runtime, <code>project.js</code>, <code>scripts/</code>, <code>assets/</code> y un <code>LEEME.txt</code>. «Abrir la carpeta exportada» la muestra en el explorador.</td></tr>
+    <tr><td>Descargar ZIP (web)</td><td>Lo mismo en un ZIP, listo para subir a itch.io, GitHub Pages, Netlify o cualquier hosting estático.</td></tr>
+    <tr><td>Descargar HTML único</td><td>Un solo <code>.html</code> con todo dentro (motor, scripts y recursos). Se abre con doble clic, sin servidor, y se puede enviar tal cual.</td></tr>
+  </table>
+  <p>La exportación web incluye una política de seguridad de contenido (CSP) estricta: el juego no puede cargar scripts de otros sitios. Parámetro opcional: <code>index.html?r=webgpu|webgl2|webgl|canvas</code>.</p>
+  <div class="note">La carpeta/ZIP necesita servirse por HTTP (los navegadores bloquean la carga de recursos con <code>file://</code>). Para probarla en tu equipo: <code>node tools/server.js</code> en la carpeta de UltraGame y abre la ruta, o usa el HTML único.</div>
+</section>
+
+<section id="atajos">
+  <h2>Atajos de teclado</h2>
+  <table>
+    <tr><th>Tecla</th><th>Acción</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Guardar ahora</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Deshacer / rehacer</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> / <kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Copiar / pegar / duplicar</td></tr>
+    <tr><td><kbd>Supr</kbd> · <kbd>F2</kbd> · <kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Borrar · renombrar · seleccionar todo</td></tr>
+    <tr><td><kbd>A</kbd></td><td>Añadir objeto</td></tr>
+    <tr><td><kbd>Q</kbd>/<kbd>W</kbd> · <kbd>E</kbd> · <kbd>R</kbd></td><td>Mover · rotar · escalar</td></tr>
+    <tr><td><kbd>G</kbd> · <kbd>F</kbd> · <kbd>H</kbd></td><td>Rejilla · centrar en la selección · ver toda la escena</td></tr>
+    <tr><td>Flechas</td><td>Mover la selección (<kbd>Mayús</kbd>: más)</td></tr>
+    <tr><td><kbd>F5</kbd> · <kbd>Mayús</kbd>+<kbd>F5</kbd> · <kbd>Esc</kbd></td><td>Jugar · jugar esta escena · detener</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Proyectos</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd> · <kbd>Tab</kbd></td><td>En el código: comentar líneas · sangría</td></tr>
+  </table>
+</section>
+
+<section id="seguridad">
+  <h2>Seguridad</h2>
+  <ul>
+    <li>El servidor del Studio solo acepta conexiones de tu propio equipo (<code>127.0.0.1</code>), exige la sesión de la ventana que abrió (cookie <code>HttpOnly</code> y <code>SameSite=Strict</code>, sustituida en cada arranque) y rechaza peticiones de otras webs (cabecera propia, <code>Origin</code> y <code>Host</code> comprobados). Ninguna página que visites puede leer ni escribir tus proyectos.</li>
+    <li>Solo lee y escribe dentro de la carpeta de proyectos, con nombres validados, lista blanca de extensiones y límites de tamaño. Los archivos subidos nunca se ejecutan en el editor.</li>
+    <li>El juego de «Jugar» corre aislado (iframe <code>sandbox</code>): tus scripts no pueden acceder al editor ni a tus archivos.</li>
+    <li>Los proyectos que abras o importes se validan campo a campo; un archivo manipulado no puede inyectar HTML ni código en el editor.</li>
+    <li>Tus scripts son código tuyo que se ejecuta en el juego exportado: no pongas en ellos contraseñas, claves privadas ni secretos (ver <a href="index.html#seguridad">Seguridad y web3</a>).</li>
+  </ul>
+</section>
+
+<section id="problemas">
+  <h2>Solución de problemas</h2>
+  <table>
+    <tr><th>Problema</th><th>Solución</th></tr>
+    <tr><td>«No se encuentra Node.js»</td><td>Instala Node.js 18 o superior desde nodejs.org y vuelve a abrir el lanzador.</td></tr>
+    <tr><td>El puerto está ocupado</td><td>El servidor elige otro libre automáticamente; usa el enlace que muestra la consola, o <code>--port 5300</code>.</td></tr>
+    <tr><td>«Sesión no válida»</td><td>El enlace es de una sesión anterior: cierra la ventana y abre el Studio otra vez con el lanzador.</td></tr>
+    <tr><td>«El reproductor no responde» al jugar</td><td>Algunos navegadores integrados o extensiones bloquean los iframes aislados. Abre el Studio en Edge o Chrome (lo hace el lanzador) o prueba con «Descargar HTML único».</td></tr>
+    <tr><td>El juego no recibe las teclas</td><td>Haz clic dentro del área de juego para darle el foco.</td></tr>
+    <tr><td>Un modelo aparece como cubo rosa</td><td>No se pudo cargar: mira la consola (formato no soportado, archivo dañado…) y vuelve a exportarlo como GLB sin compresión Draco.</td></tr>
+    <tr><td>La carpeta exportada no funciona con doble clic</td><td>Es normal (restricciones de <code>file://</code>): súbela a un hosting, sírvela con un servidor local o usa la exportación HTML único.</td></tr>
+    <tr><td>Quiero recuperar algo borrado</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> en el editor; si cerraste, los archivos borrados están en <code>projects/.trash</code> y la versión anterior del proyecto en <code>project.json.bak</code>.</td></tr>
+  </table>
+</section>
+
+<section id="limites">
+  <h2>Limitaciones</h2>
+  <ul>
+    <li>El Studio es una aplicación web local en una ventana de Edge/Chrome, no un ejecutable empaquetado (Electron no se ha incluido para no descargar dependencias).</li>
+    <li>La edición es de una escena a la vez; no hay edición colaborativa en tiempo real.</li>
+    <li>El editor de código es propio y ligero: resaltado, sangría, comentarios y errores con línea, sin autocompletado.</li>
+    <li>Las <i>morph targets</i> de glTF y la compresión Draco/meshopt no están soportadas (ver la documentación del motor).</li>
+  </ul>
+  <footer>UltraGame Studio 1.0 · Esta guía genera sus tablas desde <code>studio/shared/schema.js</code>, el mismo esquema que usa el editor.</footer>
+</section>
+
+</main>
+</div>
+<script src="../studio/shared/schema.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.UGStudio && UGStudio.schema;
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  function table(host, head, rows) {
+    var t = el('table'), tr = el('tr'); head.forEach(function (h) { tr.appendChild(el('th', '', h)); }); t.appendChild(tr);
+    rows.forEach(function (r) { var row = el('tr'); r.forEach(function (c) { var td = el('td'); if (Array.isArray(c)) { td.appendChild(document.createTextNode(c[0])); if (c[1]) { td.appendChild(el('br')); td.appendChild(el('small', '', c[1])); } } else td.textContent = c; row.appendChild(td); }); t.appendChild(row); });
+    document.getElementById(host).appendChild(t);
+  }
+  var names = function (params) { return params.map(function (p) { return p.label; }).join(' · ') || '—'; };
+  if (S) {
+    table('tbl-nodes', ['Objeto', 'Tipo', 'Propiedades'], Object.keys(S.NODE_TYPES).map(function (k) { var T = S.NODE_TYPES[k]; return [T.icon + ' ' + T.label, T.kind === '3d' ? '3D' : '2D (y HUD en 3D)', names(T.props)]; }));
+    table('tbl-beh', ['Comportamiento', 'Para', 'Parámetros'], Object.keys(S.BEHAVIORS).map(function (k) { var B = S.BEHAVIORS[k]; return [[B.icon + ' ' + B.label, B.desc || ''], B.kind === 'both' ? '2D y 3D' : B.kind.toUpperCase(), names(B.params)]; }));
+    table('tbl-cond', ['Condición', 'Parámetros'], Object.keys(S.CONDITIONS).map(function (k) { var C = S.CONDITIONS[k]; return [C.icon + ' ' + C.label, names(C.params)]; }));
+    table('tbl-act', ['Acción', 'Parámetros'], Object.keys(S.ACTIONS).map(function (k) { var A = S.ACTIONS[k]; return [A.icon + ' ' + A.label, names(A.params)]; }));
+    table('tbl-fx', ['Efecto', 'Parámetros'], Object.keys(S.EFFECTS).map(function (k) { var E = S.EFFECTS[k]; return [E.label, names(E.params)]; }));
+  }
+  // resaltado de código (tokens -> spans, sin innerHTML)
+  var KW = /^(const|let|var|function|return|if|else|for|while|new|this|true|false|null|undefined|typeof)$/;
+  var RX = /(\/\/[^\n]*|#[^\n]*$)|('(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)/gm;
+  Array.prototype.forEach.call(document.querySelectorAll('pre code'), function (code) {
+    var src = code.textContent, frag = document.createDocumentFragment(), last = 0, m, sh = code.className === 'sh';
+    RX.lastIndex = 0;
+    while ((m = RX.exec(src))) {
+      if (m.index > last) frag.appendChild(document.createTextNode(src.slice(last, m.index)));
+      var cls = null, t = m[0];
+      if (m[1]) cls = (sh || m[1].charAt(0) !== '#') ? 't-c' : null;
+      else if (m[2]) cls = 't-s'; else if (m[3]) cls = 't-n'; else if (m[4]) cls = 't-f';
+      else if (m[5]) cls = KW.test(t) ? 't-k' : (t === 'api' || t === 'self' || t === 'UG' ? 't-u' : null);
+      if (cls) frag.appendChild(el('span', cls, t)); else frag.appendChild(document.createTextNode(t));
+      last = RX.lastIndex;
+    }
+    if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
+    code.textContent = ''; code.appendChild(frag);
+  });
+})();
+</script>
+</body>
+</html>
