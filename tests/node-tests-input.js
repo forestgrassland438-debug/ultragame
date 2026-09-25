@@ -26,11 +26,21 @@ class Target {
   setPointerCapture() {}
 }
 
+/** Canvas 2D mínimo para objetos que dibujan texto (botones de la UI): mide y dibuja sin hacer nada */
+class FakeCanvas {
+  constructor(w, h) { this.width = w || 1; this.height = h || 1; }
+  getContext() {
+    const noop = () => {};
+    return new Proxy({ canvas: this, measureText: (t) => ({ width: String(t).length * 10, actualBoundingBoxAscent: 16, actualBoundingBoxDescent: 4, fontBoundingBoxAscent: 16, fontBoundingBoxDescent: 4 }),
+      createLinearGradient: () => ({ addColorStop: noop }), getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(Math.max(1, w * h * 4)), width: w, height: h }) },
+    { get: (o, k) => (k in o ? o[k] : noop), set: (o, k, v) => { o[k] = v; return true; } });
+  }
+}
 function fixture(config, pointerEvents = true) {
   const window = new Target(), document = new Target(), canvas = new Target();
   if (pointerEvents) window.PointerEvent = function () {};
   document.hidden = false; document.pointerLockElement = null;
-  const sandbox = { window, document, console, performance, setTimeout, clearTimeout, URL, TextEncoder, TextDecoder };
+  const sandbox = { window, document, console, performance, setTimeout, clearTimeout, URL, TextEncoder, TextDecoder, crypto: globalThis.crypto, OffscreenCanvas: FakeCanvas };
   vm.createContext(sandbox); engine.runInContext(sandbox);
   const UG = sandbox.UG;
   const game = { width: 600, height: 400, canvas, isVisibleOnPage: () => true };

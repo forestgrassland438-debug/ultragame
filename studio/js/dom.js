@@ -71,27 +71,45 @@ export function showMenu(items, anchor, onClose) {
 }
 
 /* ---------------------------------------------------------------- diálogos */
+/* Pila de diálogos: uno nuevo (p. ej. «¿Borrar?» dentro de «Proyectos») oculta el anterior y, al cerrarse, lo vuelve
+ * a mostrar. Solo el de arriba atiende al teclado y al clic fuera: un Intro o Escape nunca llega a uno oculto. */
+const dialogStack = [];
 /** Diálogo modal. build(body, close) rellena el cuerpo; buttons: [{label, kind, value, action}] -> promesa con el valor */
 export function dialog(title, build, buttons, wide) {
   return new Promise((resolve) => {
     const ov = document.getElementById('overlay');
-    clear(ov); ov.hidden = false;
+    ov.hidden = false;
+    dialogStack.forEach((d) => { d.el.hidden = true; });
     const body = h('div.dbody'), foot = h('div.dfoot');
     const dlg = h('div.dialog' + (wide ? '.wide' : ''), { role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, h('h2', title), body, foot);
     ov.appendChild(dlg);
-    let done = false;
-    const close = (v) => { if (done) return; done = true; ov.hidden = true; clear(ov); document.removeEventListener('keydown', onKey, true); resolve(v); };
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && def) { e.preventDefault(); def.click(); } };
+    let done = false, def = null;
+    const entry = { el: dlg, close: null };
+    const close = (v) => {
+      if (done) return; done = true;
+      dlg.remove();
+      const i = dialogStack.indexOf(entry); if (i >= 0) dialogStack.splice(i, 1);
+      document.removeEventListener('keydown', onKey, true);
+      if (dialogStack.length) dialogStack[dialogStack.length - 1].el.hidden = false; else { ov.hidden = true; clear(ov); }
+      resolve(v);
+    };
+    entry.close = close;
+    const top = () => dialogStack[dialogStack.length - 1] === entry;
+    const onKey = (e) => { if (!top()) return; if (e.key === 'Escape') { e.preventDefault(); close(null); } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && def && !def.disabled) { e.preventDefault(); def.click(); } };
     document.addEventListener('keydown', onKey, true);
-    ov.onpointerdown = (e) => { if (e.target === ov) close(null); };
+    dialogStack.push(entry);
+    ov.onpointerdown = (e) => { if (e.target === ov && dialogStack.length) dialogStack[dialogStack.length - 1].close(null); };
     if (build) build(body, close);
-    let def = null;
     (buttons || [{ label: 'Cerrar', value: null }]).forEach((b) => {
       const el = h('button.btn' + (b.kind ? '.' + b.kind : ''), { type: 'button' }, b.label);
-      el.addEventListener('click', async () => { if (b.action) { const r = await b.action(); if (r === false) return; close(r === undefined ? b.value : r); } else close(b.value); });
+      el.addEventListener('click', async () => {
+        if (done) return;
+        if (b.action) { el.disabled = true; let r; try { r = await b.action(); } finally { el.disabled = false; } if (r === false) return; close(r === undefined ? b.value : r); }
+        else close(b.value);
+      });
       foot.appendChild(el); if (b.kind === 'primary' || b.kind === 'danger') def = el;
     });
-    const first = body.querySelector('input, select, textarea, button'); if (first) setTimeout(() => first.focus(), 30);
+    const first = body.querySelector('input, select, textarea, button'); if (first) setTimeout(() => { if (!done) first.focus(); }, 30);
   });
 }
 export function prompt(title, label, value, opts) {
@@ -112,6 +130,7 @@ export function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 10
 export function downloadBlob(blob, name) {
   const a = h('a', { href: URL.createObjectURL(blob), download: name });
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  // el navegador lee el Blob al empezar la descarga: con exportaciones grandes 4 s podían no bastar
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 export function safeFileName(s, ext) { const b = String(s || 'juego').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'juego'; return ext ? b + ext : b; }

@@ -20,13 +20,19 @@ export class Editor extends EventTarget {
   async open(id) {
     const raw = await this.store.load(id);
     const p = S.cleanProject(raw); // entrada no confiable: se valida siempre
+    if (this.store.releaseAll) this.store.releaseAll(); // URLs de objeto del proyecto anterior (IndexedDB): no se quedan en memoria
     this.projectId = id; this.project = p; this.undoStack = []; this.redoStack = []; this.undoBytes = 0; this.dirty = false; this.selection = []; this.assetVersion = Object.create(null);
     this.sceneId = p.startScene || (p.scenes[0] && p.scenes[0].id) || null;
     if (!p.scenes.length) { const sc = S.createScene('2d', 'Escena 1'); p.scenes.push(sc); p.startScene = sc.id; this.sceneId = sc.id; }
     try { localStorage.setItem('ugs-last-project', this.store.kind + ':' + id); } catch (e) { /* modo privado */ }
     this.emit('project'); this.emit('scene'); this.emit('selection');
   }
-  close() { this.project = null; this.projectId = null; this.sceneId = null; this.selection = []; this.emit('project'); this.emit('scene'); this.emit('selection'); }
+  close() {
+    this.autosave.cancel();
+    this.project = null; this.projectId = null; this.sceneId = null; this.selection = []; this.undoStack = []; this.redoStack = []; this.undoBytes = 0; this.dirty = false;
+    if (this.store.releaseAll) this.store.releaseAll();
+    this.emit('project'); this.emit('scene'); this.emit('selection'); this.emit('savestate');
+  }
   async save() {
     if (!this.project || this.saving) { if (this.saving) this.autosave(); return; }
     this.saving = true; this.emit('savestate');

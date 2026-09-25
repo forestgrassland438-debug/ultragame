@@ -53,6 +53,7 @@ const PREF_KEY = 'ugs-device-prefs';
 export class Player {
   constructor(app) {
     this.app = app; this.frames = []; this.cache = new Map(); this.onMsg = null; this.playing = false; this.project = null;
+    this.token = 0; // cada Jugar/Detener lo incrementa: una carga asíncrona antigua no puede arrancar después
     this.host = document.getElementById('game-host');
     this.prefs = { device: 'fill', landscape: null, zoom: 'fit', bezel: true, safe: true, compare: false, compareIds: ['iphone-15', 'pixel-8', 'ipad-air', 'fhd'], customW: 400, customH: 800 };
     try { Object.assign(this.prefs, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* modo privado */ }
@@ -69,12 +70,13 @@ export class Player {
     project.scenes.forEach((sc) => { if (sc.script && sc.script.trim()) out.push({ id: '__scene_' + sc.id, name: 'script de escena · ' + sc.name, source: RT.wrapScript('__scene_' + sc.id, sc.script) }); });
     return out;
   }
-  async files(project) {
-    const ed = this.app.editor, out = [];
+  /** Bytes de los recursos (caché por proyecto, archivo y versión: dos proyectos con el mismo nombre de archivo no se mezclan) */
+  async files(project, projectId) {
+    const ed = this.app.editor, out = [], pid = projectId === undefined ? ed.projectId : projectId;
     for (const a of project.assets) {
-      const key = a.file + '|' + (ed.assetVersion[a.id] || 0);
+      const key = pid + '|' + a.file + '|' + (ed.assetVersion[a.id] || 0);
       let data = this.cache.get(key);
-      if (!data) { try { data = await ed.store.assetData(ed.projectId, a.file); this.cache.set(key, data); } catch (e) { this.app.console.log('warn', 'No se pudo leer ' + a.file + ': ' + e.message, 'Jugar'); continue; } }
+      if (!data) { try { data = await ed.store.assetData(pid, a.file); this.cache.set(key, data); } catch (e) { this.app.console.log('warn', 'No se pudo leer ' + a.file + ': ' + e.message, 'Jugar'); continue; } }
       out.push({ id: a.id, file: a.file, data: data.slice(0) }); // copia: el original se queda en la caché
     }
     return out;
@@ -84,14 +86,20 @@ export class Player {
     opts = opts || {};
     this.stop(true);
     this.app.code.commit.flush();
-    const project = this.project = JSON.parse(JSON.stringify(ed.project));
-    this.run = { project, files: await this.files(project), scripts: this.scripts(project), startScene: currentScene ? ed.sceneId : null };
+    // todo se fija ANTES de la lectura asíncrona de recursos: cambiar de escena o de proyecto mientras tanto no afecta
+    const token = ++this.token, projectId = ed.projectId, startScene = currentScene ? ed.sceneId : null, sceneName = currentScene && ed.scene ? ed.scene.name : '';
+    const project = JSON.parse(JSON.stringify(ed.project)), scripts = this.scripts(project);
+    const files = await this.files(project, projectId);
+    // mientras se leían: Detener, otro Jugar más reciente o cambio de proyecto -> esta partida ya no arranca
+    if (token !== this.token || ed.projectId !== projectId || !ed.project) return;
+    this.project = project;
+    this.run = { project, files, scripts, startScene };
     this.app.console.clear();
     this.app.code.errors.clear();
-    this.app.console.log('ok', '▶ Jugando «' + project.name + '»' + (currentScene ? ' desde la escena «' + ed.scene.name + '»' : ''), 'Studio');
+    this.app.console.log('ok', '▶ Jugando «' + project.name + '»' + (sceneName ? ' desde la escena «' + sceneName + '»' : ''), 'Studio');
     const be = this.app.backend && this.app.backend.devInfo();
-    if (project.backend.enabled && be) this.app.console.log('info', '🌐 Backend local: ' + be.url, 'Studio');
-    if (project.web3.enabled) this.app.console.log('info', '⛓ Web3 ' + (project.web3.mode === 'mock' ? 'simulado' : 'con cartera real (cada firma o transacción pasa por una confirmación)'), 'Studio');
+    if (project.backend && project.backend.enabled && be) this.app.console.log('info', '🌐 Backend local: ' + be.url, 'Studio');
+    if (project.web3 && project.web3.enabled) this.app.console.log('info', '⛓ Web3 ' + (project.web3.mode === 'mock' ? 'simulado' : 'con cartera real (cada firma o transacción pasa por una confirmación)'), 'Studio');
     if (opts.device) { this.prefs.device = opts.device; this.prefs.compare = false; }
     if (opts.compare) this.prefs.compare = true;
     this.onMsg = (e) => this.message(e);
@@ -108,10 +116,13 @@ export class Player {
     const m = e.data; if (!m || typeof m !== 'object') return;
     const primary = fr === this.frames[0];
     if (m.type === 'ready') {
+      if (fr.ready || !this.run) return; // un «ready» repetido no reinicia la partida
       fr.ready = true;
-      const P = this.run.project;
-      fr.el.contentWindow.postMessage({ type: 'run', project: P, files: primary ? this.run.files : this.run.files.map((f) => ({ id: f.id, file: f.file, data: f.data.slice(0) })), scripts: this.run.scripts, renderer: this.app.rendererChoice(), startScene: this.run.startScene,
-        web3: P.web3.enabled && P.web3.mode === 'wallet' && primary ? 'studio' : '', backend: P.backend.enabled ? (this.app.backend && this.app.backend.devInfo()) : null }, '*');
+      const P = this.run.project, web3 = P.web3 || {}, backend = P.backend || {};
+      // los ArrayBuffer se transfieren al iframe: cada dispositivo recibe su propia copia
+      const files = this.run.files.map((f) => ({ id: f.id, file: f.file, data: f.data.slice(0) }));
+      fr.el.contentWindow.postMessage({ type: 'run', project: P, files, scripts: this.run.scripts, renderer: this.app.rendererChoice(), startScene: this.run.startScene,
+        web3: web3.enabled && web3.mode === 'wallet' && primary ? 'studio' : '', backend: backend.enabled ? (this.app.backend && this.app.backend.devInfo()) : null }, '*', files.map((f) => f.data));
       if (primary && this.app.web3) this.app.web3.hostProxy.attach(fr.el.contentWindow, P);
     }
     else if (m.type === 'log') { if (primary || m.level === 'error') this.onLog(String(m.level), (primary ? '' : '[' + fr.dev.name + '] ') + String(m.text), String(m.source || '')); }
@@ -242,6 +253,7 @@ export class Player {
     if (id) { const prev = this.app.code.errors.get(id) || []; if (!prev.includes(line)) this.app.code.setErrors(id, prev.concat([line])); }
   }
   stop(silent) {
+    this.token++; // cancela cualquier Jugar que aún esté leyendo recursos
     clearTimeout(this.watch);
     if (this.ro) this.ro.disconnect();
     if (this.onMsg) { window.removeEventListener('message', this.onMsg); this.onMsg = null; }

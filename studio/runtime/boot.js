@@ -24,7 +24,7 @@
     try {
       var p = window.UGS_PROJECT;
       if (!p) { fail('Falta project.js: vuelve a exportar el juego desde UltraGame Studio.'); return; }
-      if (!window.UGStudio || !window.UGStudio.runtime || !window.UG) { fail('Faltan archivos del juego (ultragame.js, schema.js o runtime.js): vuelve a exportarlo desde UltraGame Studio.'); return; }
+      if (typeof UGStudio === 'undefined' || !UGStudio.runtime) { fail('Faltan archivos del juego (ultragame.js, schema.js o runtime.js): vuelve a exportarlo desde UltraGame Studio.'); return; }
       var embedded = embeddedAssets();
       var q = new URLSearchParams(location.search), r = q.get('r');
       window.ugsGame = UGStudio.runtime.start(p, {
