@@ -1322,6 +1322,25 @@
     var byName = this.entities.filter(function (e) { return e.alive && e.name === nm; });
     return byName.length ? byName : (this.byTag[nm] || []).filter(alive);
   };
+  /** Rejilla de navegación 3D (A*) para rodear obstáculos: se crea una vez por escena a partir de los colisionadores
+   * estáticos, a la altura del suelo bajo quien la pide. null si no hace falta (sin obstáculos) o no sirve (terreno). */
+  SceneRT.prototype.navGrid = function (ent) {
+    if (this._nav !== undefined) return this._nav;
+    this._nav = null;
+    var w = this.world3; if (!w || !UG.NavGrid3D || !this.def) return null;
+    if (this.def.nodes.some(function (n) { return n.type === 'terrain'; })) return null; // relieve: una rejilla plana no sirve
+    var x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, walls = 0;
+    w.statics.forEach(function (c) {
+      if (!c.enabled || !c.min || !c.max || c.max.x - c.min.x > 1000 || c.max.z - c.min.z > 1000) return; // el suelo infinito no cuenta
+      x0 = Math.min(x0, c.min.x); z0 = Math.min(z0, c.min.z); x1 = Math.max(x1, c.max.x); z1 = Math.max(z1, c.max.z); walls++;
+    });
+    if (!walls) return null;
+    var a = this.posOf(ent), hit = w.raycast(new V3(a.x, a.y + 0.5, a.z), new V3(0, -1, 0), 60), y = hit ? hit.point.y : 0;
+    x0 = Math.min(x0, a.x) - 6; z0 = Math.min(z0, a.z) - 6; x1 = Math.max(x1, a.x) + 6; z1 = Math.max(z1, a.z) + 6;
+    var side = Math.max(x1 - x0, z1 - z0), cell = Math.max(0.75, side / 160);
+    try { this._nav = UG.NavGrid3D.fromPhysics(w, { area: [x0, z0, x1, z1], cell: cell, radius: 0.4, height: 1.7, y: y }); } catch (e) { this._nav = null; }
+    return this._nav;
+  };
   SceneRT.prototype.posOf = function (ent) {
     if (!ent || !ent.obj) return { x: 0, y: 0, z: 0 };
     var o = ent.obj;
@@ -1779,7 +1798,7 @@
     this.alive = false;
     this.def.events.forEach(function (ev) { ev._st = null; });
     this.entities.forEach(function (e) { e.behaviors.forEach(function (b) { if (b.destroy) { try { b.destroy(); } catch (x) { /* ignorar */ } } }); e.behaviors = []; e.script = null; e.obj = null; });
-    this.entities = []; this.byTag = Object.create(null); this.dyn = []; this.watch = []; this.sceneScript = null; this.view = null; this.world3 = null;
+    this.entities = []; this.byTag = Object.create(null); this.dyn = []; this.watch = []; this.sceneScript = null; this.view = null; this.world3 = null; this._nav = undefined;
   };
 
   /* =============================================================== comportamientos */
@@ -1889,7 +1908,7 @@
     return { destroy: function () { if (cam._follow === ent.obj) cam.stopFollow && cam.stopFollow(); } };
   };
   BEHAVIORS.chase = function (rt, ent, p) {
-    var o = ent.obj;
+    var o = ent.obj, path = { pts: null, i: 0, t: 0 };
     return { update: function (dt) {
       var tgt = nearestTagged(rt, ent, p.target, p.range);
       if (!ent.is3d) {
@@ -1903,6 +1922,17 @@
       if (!tgt) { if (ent.ch) ent.ch.move(0, 0); return; }
       var a = rt.posOf(ent), b = rt.posOf(tgt), x = b.x - a.x, z = b.z - a.z, l = Math.hypot(x, z);
       if (l < 0.8) { if (ent.ch) ent.ch.move(0, 0); return; }
+      // rodear obstáculos: si la línea recta está bloqueada, seguir una ruta A* (se recalcula cada 0,6 s)
+      var nav = p.avoid !== false ? rt.navGrid(ent) : null;
+      if (nav && !nav.lineFree(a.x, a.z, b.x, b.z)) {
+        if ((path.t -= dt) <= 0 || !path.pts) { path.t = 0.6; path.pts = nav.findPath(a, b); path.i = path.pts && path.pts.length > 1 ? 1 : 0; }
+        var P = path.pts;
+        if (P && path.i < P.length) {
+          while (path.i < P.length - 1 && Math.hypot(P[path.i].x - a.x, P[path.i].z - a.z) < 0.6) path.i++;
+          var wx = P[path.i].x - a.x, wz = P[path.i].z - a.z, wl = Math.hypot(wx, wz);
+          if (wl > 0.05) { x = wx; z = wz; l = wl; }
+        }
+      } else path.pts = null;
       o.rotation.y = Math.atan2(x, z);
       if (ent.ch) ent.ch.move(x / l * sp, z / l * sp); else if (ent.body) { ent.body.velocity.x = x / l * sp; ent.body.velocity.z = z / l * sp; } else { o.position.x += x / l * sp * dt; o.position.z += z / l * sp * dt; }
       if (o.play && !ent._walk) { ent._walk = true; o.play('Walk', { fade: 0.2 }); }

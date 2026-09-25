@@ -218,10 +218,27 @@ async function check3D() {
       shapes: shapesOk, debug: { on: dbgOn, off: dbgOff }, capsule: { y: cap.obj.position.y, bottom: bb(cap), onGround: cap.ch.onGround }, sunk: { bottom: bb(sunk) }, box: { bottom: bb(bx) }, ball: { bottom: bb(ball) } };
   });
 }
+/** «Perseguir» en 3D con una pared en medio: con «Rodear obstáculos» llega al objetivo; sin ella se queda contra la pared */
+async function checkChase3D(avoid) {
+  var sc = S.createScene('3d', 'Persecucion');
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Suelo', position: [0, -0.5, 0], props: { sizeX: 40, sizeY: 1, sizeZ: 40 }, physics: { type: 'static' } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Muro', position: [0, 1.5, 0], props: { sizeX: 1, sizeY: 3, sizeZ: 12 }, physics: { type: 'static' } }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Enemigo', position: [-5, 0.9, 0], props: { shape: 'capsule', sizeX: 0.7, sizeY: 1.8 }, physics: { type: 'character', radius: 0.35, height: 1.8 },
+    behaviors: [B('chase', { target: 'jugador', speed: 4, range: 0, avoid: avoid })] }));
+  sc.nodes.push(N('mesh3d', '3d', { name: 'Jugador', position: [5, 0.9, 0], tags: ['jugador'], props: { sizeX: 0.6, sizeY: 1.8, sizeZ: 0.6 } }));
+  var p = S.createProject('Perseguir'); p.settings.width = 640; p.settings.height = 360; p.scenes.push(sc); p.startScene = sc.id;
+  return run(p, 'webgl2', async function (r, g) {
+    await steps(g, 60 * 12);
+    var e = ent(r, 'Enemigo'), a = r.posOf(e), d = Math.hypot(a.x - 5, a.z);
+    return { ok: avoid ? d < 1.6 : d > 4, distancia: +d.toFixed(2), enemigo: { x: +a.x.toFixed(2), z: +a.z.toFixed(2) }, rejilla: !!r._nav };
+  });
+}
 async function check() {
   var out = {}, pass = 0, fail = 0, before = UG.Debug.snapshot();
   for (var k of Object.keys(CASES)) { out[k] = await CASES[k](); if (out[k].ok) pass++; else fail++; }
   out.d3 = await check3D(); if (out.d3.ok) pass++; else fail++;
+  out.chase3d = await checkChase3D(true); if (out.chase3d.ok) pass++; else fail++;
+  out.chase3dRecto = await checkChase3D(false); if (out.chase3dRecto.ok) pass++; else fail++;
   await new Promise(function (r) { setTimeout(r, 50); });
   out.leak = UG.Debug.diff(before, UG.Debug.snapshot());
   out.summary = { pass: pass, fail: fail };

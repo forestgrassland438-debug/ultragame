@@ -293,9 +293,10 @@
     cameraFollow: { kind: '2d', label: 'La cámara me sigue', icon: '🎥', params: [
       { key: 'lerp', label: 'Suavidad (0..1)', type: 'number', def: 0.12, min: 0.01, max: 1, step: 0.01 }, { key: 'zoom', label: 'Zoom', type: 'number', def: 1, min: 0.05, max: 20, step: 0.05 },
       { key: 'bounds', label: 'Limitar a este tamaño de mundo (ancho×alto, vacío = sin límite)', type: 'text', def: '' }] },
-    chase: { kind: 'both', label: 'Perseguir', icon: '👾', desc: 'Va hacia el objeto con la etiqueta indicada cuando está cerca.', params: [
+    chase: { kind: 'both', label: 'Perseguir', icon: '👾', desc: 'Va hacia el objeto con la etiqueta indicada cuando está cerca. En 3D rodea paredes y obstáculos buscando un camino (A*).', params: [
       { key: 'target', label: 'Etiqueta del objetivo', type: 'tag', def: 'jugador' }, { key: 'speed', label: 'Velocidad', type: 'number', def: 120, step: 5 },
-      { key: 'range', label: 'Distancia de detección', type: 'number', def: 400, min: 0, step: 10 }] },
+      { key: 'range', label: 'Distancia de detección', type: 'number', def: 400, min: 0, step: 10 },
+      { key: 'avoid', label: 'Rodear paredes y obstáculos (3D)', type: 'bool', def: true }] },
     patrol: { kind: 'both', label: 'Patrullar', icon: '↔️', params: [
       { key: 'axis', label: 'Eje', type: 'select', def: 'x', options: [['x', 'Horizontal (X)'], ['y', 'Vertical (Y en 2D)'], ['z', 'Profundidad (Z en 3D)']] },
       { key: 'distance', label: 'Distancia', type: 'number', def: 160, min: 0, step: 5 }, { key: 'speed', label: 'Velocidad', type: 'number', def: 80, min: 0, step: 5 }] },
