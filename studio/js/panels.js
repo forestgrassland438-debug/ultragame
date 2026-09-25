@@ -7,6 +7,7 @@ import { DEFAULT_SCRIPT } from './editor.js';
 
 const S = window.UGStudio.schema;
 const TYPE_ICON = { image: '🖼️', audio: '🔊', model: '🗿', tilemap: '🗺️', font: '🔤', data: '📄' };
+const ASSET_TYPE_LABEL = { image: 'imagen', audio: 'sonido', model: 'modelo 3D', tilemap: 'mapa', font: 'fuente', data: 'datos' };
 
 /* =================================================================== escenas */
 export class ScenesPanel {
@@ -184,9 +185,16 @@ export class Inspector {
   tagsEditor(n) {
     const ed = this.app.editor;
     const chips = h('div.chips', n.tags.map((t) => h('span.chip', '#' + t, h('button', { type: 'button', title: 'Quitar', on: { click: () => ed.setField(n.id, 'tags', n.tags.filter((x) => x !== t), 'Quitar etiqueta') } }, '✕'))));
-    const inp = h('input', { type: 'text', placeholder: 'nueva etiqueta + Intro (ej. jugador, enemigo)', maxlength: 32, spellcheck: 'false' });
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const v = inp.value.trim().replace(/\s+/g, '-'); if (/^[A-Za-z0-9_\u00c0-\u024f-]{1,32}$/.test(v) && !n.tags.includes(v) && n.tags.length < 16) ed.setField(n.id, 'tags', n.tags.concat([v]), 'Añadir etiqueta'); else if (v) toast('Etiqueta no válida (letras, números, - y _)', 'warn'); } });
-    return [chips, h('div.field.wide', inp), h('div.help', 'Las etiquetas agrupan objetos: «Perseguir», «Coleccionable» o los eventos de colisión usan tag:nombre.')];
+    const inp = h('input', { type: 'text', placeholder: 'nueva etiqueta (ej. jugador)', maxlength: 32, spellcheck: 'false' });
+    const addIt = () => {
+      const v = inp.value.trim().replace(/\s+/g, '-'); if (!v) return;
+      if (!/^[A-Za-z0-9_\u00c0-\u024f-]{1,32}$/.test(v)) { toast('Etiqueta no válida (letras, números, - y _)', 'warn'); return; }
+      if (n.tags.includes(v)) { toast('Ya tiene la etiqueta #' + v, 'warn'); inp.value = ''; return; }
+      if (n.tags.length >= 16) { toast('Máximo 16 etiquetas por objeto', 'warn'); return; }
+      ed.setField(n.id, 'tags', n.tags.concat([v]), 'Añadir etiqueta');
+    };
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); addIt(); } });
+    return [chips, h('div.field.wide', h('div.row-actions', inp, h('button.btn.small', { type: 'button', on: { click: addIt } }, 'Añadir'))), h('div.help', 'Las etiquetas agrupan objetos: «Perseguir», «Coleccionable» o los eventos de colisión usan tag:nombre.')];
   }
   varsEditor(vars, commit) {
     const rows = Object.keys(vars).map((k) => {
@@ -315,7 +323,7 @@ export class AssetsPanel {
     if (!ed.project.assets.length) { this.el.appendChild(h('div.drop-note', 'Arrastra aquí imágenes, sonidos, modelos GLB/glTF/OBJ (Blender: Archivo › Exportar › glTF 2.0 .glb) o mapas de Tiled. También puedes usar la pestaña Biblioteca.')); return; }
     for (const a of ed.project.assets) {
       const th = h('div.th', TYPE_ICON[a.type] || '📄');
-      const card = h('div.asset', { draggable: true, title: a.name + ' (' + a.file + ')', class: this.app.inspector.assetSel === a.id ? 'on' : null }, th, h('div.nm', a.name), h('div.tp', a.type + (a.frameWidth ? ' · hoja ' + a.frameWidth + 'px' : '')),
+      const card = h('div.asset', { draggable: true, title: a.name + ' (' + a.file + ')', class: this.app.inspector.assetSel === a.id ? 'on' : null }, th, h('div.nm', a.name), h('div.tp', (ASSET_TYPE_LABEL[a.type] || a.type) + (a.frameWidth ? ' · hoja ' + a.frameWidth + 'px' : '')),
         h('button.icon.del', { type: 'button', title: 'Borrar', on: { click: (e) => { e.stopPropagation(); this.app.deleteAsset(a); } } }, '✕'));
       card.ondragstart = (e) => { e.dataTransfer.setData('application/x-ugs-asset', a.id); e.dataTransfer.effectAllowed = 'copy'; };
       card.onclick = () => { this.app.inspector.assetSel = a.id; this.app.inspector.render(); this.el.querySelectorAll('.asset.on').forEach((x) => x.classList.remove('on')); card.classList.add('on'); };

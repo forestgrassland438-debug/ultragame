@@ -62,7 +62,8 @@ export function showMenu(items, anchor, onClose) {
   let hi = -1;
   const away = (e) => { if (!el.contains(e.target) && !(anchor instanceof Element && anchor.contains(e.target))) closeMenu(); };
   const key = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    // el Esc solo cierra el menú: no debe llegar al Studio (deseleccionaría o detendría la partida)
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeMenu(); }
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const en = btns.filter((b) => !b.disabled); if (!en.length) return; hi = (hi + (e.key === 'ArrowDown' ? 1 : -1) + en.length) % en.length; en.forEach((b, i) => b.classList.toggle('hl', i === hi)); en[hi].focus(); }
   };
   document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', key, true);

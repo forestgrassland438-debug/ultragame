@@ -1,7 +1,7 @@
 /* UltraGame Studio · pestaña Código: scripts de objetos, script de escena, plugins globales (puente JS), rutas del
  * backend, contratos Solidity y archivos generados (proyecto, servidor, index.html) en un mismo editor.
  * Resaltado propio (sin librerías), números de línea, errores marcados y referencia de la API con fragmentos. */
-import { h, clear, prompt, confirm, debounce, toast } from './dom.js';
+import { h, clear, prompt, confirm, debounce, toast, downloadBlob } from './dom.js';
 import { DEFAULT_SCRIPT, DEFAULT_SCENE_SCRIPT } from './editor.js';
 import { CodeEditor, highlight } from './codeeditor.js';
 
@@ -132,12 +132,18 @@ export class CodePanel {
   source(id) {
     const ed = this.app.editor;
     if (!id || !ed.project) return null;
-    if (id === '__scene') return ed.scene ? { id, name: 'Script de escena · ' + ed.scene.name, lang: 'js', get: () => ed.scene.script, set: (v) => ed.edit('Editar script de escena', () => { ed.scene.script = v; }, 'scripts'), kind: 'scene' } : null;
+    if (id === '__scene') return ed.scene ? { id, name: 'Script de escena · ' + ed.scene.name, lang: 'js', get: () => ed.scene.script, set: (v) => ed.edit('Editar script de escena', () => { ed.scene.script = v; }, 'scripts'), kind: 'scene', download: () => this.downloadText(() => ed.scene.script, 'escena_' + ed.scene.name) } : null;
     const s = ed.project.scripts.find((x) => x.id === id);
-    if (s) return { id, name: s.name, lang: 'js', script: s, get: () => s.code, set: (v) => ed.edit('Editar script', (p) => { const x = p.scripts.find((y) => y.id === id); if (x) x.code = v; }, 'scripts'), kind: 'script' };
+    if (s) return { id, name: s.name, lang: 'js', script: s, get: () => s.code, set: (v) => ed.edit('Editar script', (p) => { const x = p.scripts.find((y) => y.id === id); if (x) x.code = v; }, 'scripts'), kind: 'script', download: () => this.downloadText(() => { const x = ed.project.scripts.find((y) => y.id === id); return x ? x.code : ''; }, s.name) };
     return this.sources().find((x) => x.id === id) || null;
   }
   exists(id) { return !!this.source(id); }
+  /** Descarga el texto de un script como .js (nombre de archivo sin caracteres problemáticos) */
+  downloadText(getText, name) {
+    this.commit.flush(); const text = getText();
+    const file = (String(name || 'script').replace(/[^\w\-. áéíóúñÁÉÍÓÚÑ]+/g, '_').trim() || 'script').slice(0, 60);
+    downloadBlob(new Blob([text || ''], { type: 'text/javascript' }), /\.js$/i.test(file) ? file : file + '.js');
+  }
   renderSoon() { clearTimeout(this._t); this._t = setTimeout(() => this.render(), 30); }
   open(id, line) {
     const ed = this.app.editor;

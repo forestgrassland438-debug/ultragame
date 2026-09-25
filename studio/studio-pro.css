@@ -13,6 +13,12 @@
 :root[data-theme="light"] .tk-kw { color: #8a3ab9; } :root[data-theme="light"] .tk-str { color: #2f7d32; } :root[data-theme="light"] .tk-num { color: #c2410c; }
 :root[data-theme="light"] .tk-fn { color: #2757d6; } :root[data-theme="light"] .tk-api { color: #0f7f6a; }
 :root[data-theme="light"] .btn.stop, :root[data-theme="light"] .btn.danger { background: #fde8ea; border-color: #f0a8b2; color: #9b1c2c; }
+:root[data-theme="light"] .menu button.hl, :root[data-theme="light"] .paint-tools button.on { background: #dbe2ff; }
+:root[data-theme="light"] .chip { background: #e3e8ff; border-color: #b8c3f0; color: var(--text); }
+:root[data-theme="light"] .console .ln { border-bottom-color: #e6eaf4; }
+:root[data-theme="light"] .console .ln.link:hover { background: #e8ecfb; }
+:root[data-theme="light"] .editor .gutter { color: #9aa3bf; border-right-color: var(--line); }
+:root[data-theme="light"] .tk-com { color: #7b86a3; }
 .app { position: relative; }
 /* cada zona en su celda: si un panel se oculta o se desacopla, el centro no cambia de columna */
 .main > #panel-left { grid-column: 1; grid-row: 1; }
@@ -102,7 +108,7 @@ input[type=range] { accent-color: var(--accent); }
   .paint.side-open .paint-side { transform: none; }
   .paint-side-toggle { display: inline-block !important; }
   .paint-opts { overflow-x: auto; flex-wrap: nowrap !important; }
-  .game-bar .bridge-name, .game-bar .bridge-data { display: none; }
+  .game-bar .bridge-group { display: none !important; }
   .be-route .help { display: none; }
 }
 @media (pointer: coarse) {
@@ -158,13 +164,15 @@ details.sub > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .code-list li.grp { cursor: default; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--dim); padding: 8px 8px 2px; background: none !important; }
 .editor.ro textarea { caret-color: transparent; }
 .code-find { position: absolute; top: 6px; right: 14px; z-index: 5; width: 240px; background: var(--bg2); border: 1px solid var(--accent); border-radius: 7px; padding: 5px 8px; box-shadow: var(--shadow); }
-.code-bar .chip { font-size: 11px; }
+.code-bar .chip { font-size: 11px; } .code-bar label.chk, .code-bar .btn { white-space: nowrap; }
 
 /* ---------- modo Jugar: dispositivos */
 .game-host { display: flex; flex-direction: column; }
 .game-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 8px; background: var(--bg2); border-bottom: 1px solid var(--line); }
 .game-bar select { max-width: 260px; }
 .game-bar .grow { flex: 1; }
+.game-bar .bridge-group { display: inline-flex; align-items: center; gap: 6px; }
+.game-bar .bridge-group input { width: 110px; }
 .game-bar .btn.on { border-color: var(--accent2); color: var(--accent2); }
 .game-bar input { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
 .game-bar .bridge-name { width: 100px; }

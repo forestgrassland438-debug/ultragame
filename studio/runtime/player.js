@@ -130,5 +130,11 @@
     else if (msg.type === 'setVar' && game && game.ugs && typeof msg.name === 'string') game.ugs.setVar(msg.name.slice(0, 40), msg.value);
   });
   window.addEventListener('pointerdown', function () { window.focus(); });
+  // atajos del Studio con el foco dentro del juego: F5 / Mayús+F5 (reiniciar; sin esto el navegador recargaba toda la
+  // pestaña) y Esc para detener, salvo que el juego use Esc (el motor marca con preventDefault las teclas capturadas)
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'F5') { e.preventDefault(); post({ type: 'hotkey', key: 'F5', shift: !!e.shiftKey }); return; }
+    if (e.key === 'Escape' && !e.repeat) setTimeout(function () { if (!e.defaultPrevented) post({ type: 'hotkey', key: 'Escape' }); }, 0);
+  });
   post({ type: 'ready' });
 })();

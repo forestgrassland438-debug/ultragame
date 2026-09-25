@@ -140,6 +140,10 @@ export class Player {
     else if (m.type === 'log') { if (primary || m.level === 'error') this.onLog(String(m.level), (primary ? '' : '[' + fr.dev.name + '] ') + String(m.text), String(m.source || '')); }
     else if (m.type === 'started') { if (primary) this.app.console.log('ok', 'Renderizador: ' + String(m.renderer), 'Studio'); }
     else if (m.type === 'vars') { if (primary) this.renderVars(m); }
+    else if (m.type === 'hotkey') {
+      if (m.key === 'Escape') setTimeout(() => this.stop(), 0);
+      else if (m.key === 'F5' && this.app.play) setTimeout(() => this.app.play(!!m.shift), 0);
+    }
     else if (m.type === 'failed') { if (primary) toast('El juego no pudo arrancar: mira la consola', 'error'); }
     else if (m.type === 'bridge-out') {
       let d = ''; try { d = JSON.stringify(m.data); } catch (x) { d = String(m.data); }
@@ -231,7 +235,7 @@ export class Player {
     const bData = h('input.bridge-data', { type: 'text', placeholder: 'datos (JSON o texto)', spellcheck: 'false', 'aria-label': 'Datos del mensaje del puente', on: { keydown: (e) => { e.stopPropagation(); if (e.key === 'Enter') send(); } } });
     const send = () => { let d = bData.value.trim(); try { d = d === '' ? null : JSON.parse(d); } catch (e) { /* texto */ } this.sendBridge(bName.value.trim() || 'mensaje', d); };
     return h('div.game-bar', sel, rot, zoom, chk('bezel', 'Marco', 'Dibujar el marco del dispositivo'), chk('safe', 'Zona segura', 'Mostrar muesca, isla y barras del sistema'), dbg, vars, cmp,
-      h('span.grow'), h('span.help', '🔌'), bName, bData, h('button.btn.small', { type: 'button', title: 'Enviar el mensaje al juego (como la página que lo contiene)', on: { click: send } }, 'Enviar'),
+      h('span.grow'), h('span.bridge-group', { title: 'Puente: envía un mensaje al juego como lo haría la página que lo contiene (onBridge)' }, h('span.help', '🔌'), bName, bData, h('button.btn.small', { type: 'button', title: 'Enviar el mensaje al juego (como la página que lo contiene)', on: { click: send } }, 'Enviar')),
       h('button.btn.small', { type: 'button', title: 'Reiniciar la partida', on: { click: () => this.restart() } }, '↻'));
   }
   restart() { if (!this.playing) return; this.buildStage(); }
