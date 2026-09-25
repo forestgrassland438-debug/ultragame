@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070914">
+<title>Juegos 3D · UltraGame</title>
+<style>
+  :root {
+    --bg: #070914; --panel: #0e1224; --panel2: #141a33; --line: #232b4d; --text: #e7ebff; --muted: #9aa3c7;
+    --accent: #7c8cff; --accent2: #63e6be; --good: #63e6be; --warn: #ffd43b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  body { min-height: 100vh; background:
+    radial-gradient(900px 500px at 10% -10%, rgba(99, 230, 190, 0.18), transparent 60%),
+    radial-gradient(700px 420px at 95% 0%, rgba(124, 140, 255, 0.2), transparent 60%), var(--bg); }
+  a { color: inherit; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 60px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 14px; text-decoration: none; }
+  .brand svg { width: 52px; height: 52px; flex: none; }
+  .brand h1 { margin: 0; font-size: 28px; letter-spacing: 0.5px; }
+  .brand h1 span { background: linear-gradient(90deg, var(--accent2), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+  nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  nav a { text-decoration: none; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 13.5px; background: rgba(255, 255, 255, 0.02); }
+  nav a:hover, nav a:focus-visible { color: var(--text); border-color: var(--accent); outline: none; }
+  .bar { margin: 26px 0 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  .caps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip.on { color: var(--good); border-color: rgba(99, 230, 190, 0.35); }
+  .chip.off { color: #ff8787; border-color: rgba(255, 135, 135, 0.3); text-decoration: line-through; }
+  .seg { display: inline-flex; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 9px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: linear-gradient(135deg, #0ca678, #3b4bd8); color: #fff; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); }
+  .seg-label { color: var(--muted); font-size: 13px; margin-right: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(262px, 1fr)); gap: 18px; }
+  .card { position: relative; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; text-decoration: none; transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+  .card:hover, .card:focus-visible { transform: translateY(-3px); border-color: var(--c, var(--accent)); box-shadow: 0 14px 40px -18px var(--c, var(--accent)); outline: none; }
+  .thumb { position: relative; aspect-ratio: 16 / 9; background: #000; overflow: hidden; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+  .card:hover .thumb img { transform: scale(1.04); }
+  .thumb .n { position: absolute; left: 10px; top: 10px; font: 700 12px/1 ui-monospace, Consolas, monospace; padding: 5px 7px; border-radius: 7px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+  .thumb .o { position: absolute; right: 10px; top: 10px; font-size: 11.5px; padding: 4px 8px; border-radius: 7px; background: rgba(0, 0, 0, 0.55); color: #dfe4ff; }
+  .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .title h2 { margin: 0; font-size: 19px; }
+  .genre { color: var(--c, var(--accent)); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .desc { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+  .tags span { font-size: 11.5px; color: #c9d0f5; padding: 3px 7px; border-radius: 6px; background: rgba(124, 140, 255, 0.1); border: 1px solid rgba(124, 140, 255, 0.18); }
+  .foot { margin-top: auto; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .play { font-weight: 700; padding: 6px 12px; border-radius: 9px; background: var(--c, var(--accent)); color: #0b0e1a; }
+  .best { color: var(--warn); }
+  .note { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+  footer { margin-top: 34px; color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 18px; }
+  @media (max-width: 560px) { .brand h1 { font-size: 23px; } .wrap { padding-top: 18px; } }
+  @media (prefers-reduced-motion: reduce) { .card, .thumb img { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="../docs/index.html" aria-label="Documentación de UltraGame">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#63e6be"/><stop offset="1" stop-color="#7c8cff"/></linearGradient></defs>
+        <rect x="4" y="4" width="56" height="56" rx="16" fill="#101531" stroke="url(#lg)" stroke-width="3"/>
+        <path d="M32 14 L50 24 L50 42 L32 52 L14 42 L14 24 Z M14 24 L32 34 L50 24 M32 34 L32 52" fill="none" stroke="url(#lg)" stroke-width="4" stroke-linejoin="round"/>
+      </svg>
+      <div><h1><span>UltraGame</span> · Juegos 3D</h1><p>8 juegos 3D completos que ponen a prueba el motor: física, animación, luces, partículas y modelos glTF</p></div>
+    </a>
+    <nav aria-label="Enlaces">
+      <a href="../docs/index.html">Documentación</a>
+      <a href="../minigames/index.html">Minijuegos 2D</a>
+      <a href="../tests/index.html">Pruebas</a>
+    </nav>
+  </header>
+
+  <div class="bar">
+    <div class="caps" id="caps" aria-label="Capacidades de este navegador"></div>
+    <div><span class="seg-label" id="seg-label">Renderizador:</span><div class="seg" role="group" aria-labelledby="seg-label" id="seg"></div></div>
+  </div>
+  <p class="note" id="note"></p>
+
+  <main class="grid" id="grid"></main>
+
+  <footer>
+    <span>Teclado + ratón, mando o pantalla táctil · los récords se guardan solo en este navegador · añade <code>?auto=1</code> a un juego para verlo jugar solo.</span>
+    <span id="ver"></span>
+  </footer>
+</div>
+<script src="../dist/ultragame.js"></script>
+<script>
+(function () {
+  'use strict';
+  var GAMES = [
+    { id: 'shooter', best: 'shooter3d', name: 'Operación Tormenta', genre: 'Shooter 1ª/3ª persona', color: '#ff8787', desc: 'Pueblo con casas en las que se entra, robots con IA, rifle, granadas y 5 oleadas. V cambia de vista.', tags: ['FPS + TPS', 'colisión por triángulos', 'IA con línea de visión', 'retroceso y trazadoras', 'radar'] },
+    { id: 'racing', best: 'racing3d', name: 'Turbo Circuito', genre: 'Carreras', color: '#ffd43b', desc: 'Circuito por spline, 3 rivales con IA, 3 vueltas, turbos y derrapes.', tags: ['Vehicle3D (suspensión por rayos)', 'spline cerrada', 'cámara de persecución', 'minimapa'] },
+    { id: 'platformer', best: 'crash3d', name: 'Bandicrash', genre: 'Plataformas (tipo Crash)', color: '#ff922b', desc: 'Pasillo selvático, giro que rompe cajas, TNT, frutas y plataformas móviles.', tags: ['CharacterController3D', 'InstancedMesh (frutas)', 'animaciones glTF', 'checkpoints'] },
+    { id: 'city', best: 'city3d', name: 'Ciudad Libre', genre: 'Mundo abierto (tipo GTA)', color: '#69db7c', desc: 'Tráfico con carriles, peatones, robo de coches, policía, misiones y ciclo día/noche.', tags: ['a pie y en coche', 'luces que siguen al jugador', 'ventanas emisivas', 'IA de tráfico'] },
+    { id: 'marble', best: 'marble3d', name: 'Laberinto Inclinado', genre: 'Puzle de física', color: '#74c0fc', desc: 'Inclina el tablero para llevar la canica a la meta evitando los agujeros.', tags: ['gravedad inclinada', 'sensor del móvil', '3 niveles', 'sombras'] },
+    { id: 'space', best: 'space3d', name: 'Galaxia 3D', genre: 'Shooter espacial', color: '#b197fc', desc: 'Sobre raíles: asteroides, cazas con patrones, potenciadores y jefe final.', tags: ['BloomFilter sobre 3D', 'asteroides instanciados', 'estelas de partículas', 'pools'] },
+    { id: 'voxel', best: 'voxel3d', name: 'Bloques', genre: 'Sandbox de vóxeles', color: '#8ce99a', desc: 'Terreno por ruido, rompe y pon bloques, guarda y carga tu mundo.', tags: ['chunks con caras visibles', 'rayo DDA', 'MeshCollider por chunk', 'guardado validado'] },
+    { id: 'dungeon', best: 'dungeon3d', name: 'Mazmorra', genre: 'RPG de acción', color: '#e599f7', desc: 'Plantas generadas, antorchas, esqueletos, cofres, niveles de experiencia y un jefe.', tags: ['Level3D.fromGrid', '8 luces dinámicas', 'espada (Attack)', 'niebla de guerra'] }
+  ];
+  // 3D necesita GPU: sin Canvas (el 2D sí funciona en Canvas, pero una View3D no se dibujaría)
+  var RENDERERS = [['auto', 'Auto'], ['webgpu', 'WebGPU'], ['webgl2', 'WebGL2'], ['webgl', 'WebGL']];
+  var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* modo privado */ } } };
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  var saved = store.get('ug-3d-renderer'), current = RENDERERS.some(function (r) { return r[0] === saved; }) ? saved : 'auto';
+
+  var caps = document.getElementById('caps'), C = UG.Capabilities;
+  var hasGPU = C.webgpu(), hasGL2 = C.webgl2(), hasGL = C.webgl();
+  [['WebGPU', hasGPU], ['WebGL2', hasGL2], ['WebGL', hasGL], ['Táctil', ('ontouchstart' in window) || navigator.maxTouchPoints > 0], ['Mando', typeof navigator.getGamepads === 'function']].forEach(function (c) {
+    caps.appendChild(el('span', 'chip ' + (c[1] ? 'on' : 'off'), c[0]));
+  });
+  document.getElementById('note').textContent = !hasGL && !hasGPU
+    ? 'Este navegador no tiene WebGL ni WebGPU: los juegos 3D no pueden dibujarse aquí.'
+    : 'Auto elige el mejor backend disponible (WebGPU → WebGL2 → WebGL). Todos los juegos se ven igual en los tres.';
+  document.getElementById('ver').textContent = 'UltraGame ' + UG.VERSION;
+
+  var grid = document.getElementById('grid'), links = [];
+  GAMES.forEach(function (g, i) {
+    var a = el('a', 'card'); a.style.setProperty('--c', g.color);
+    var th = el('div', 'thumb'), img = new Image(); img.alt = 'Captura de ' + g.name; img.loading = 'lazy'; img.decoding = 'async'; img.src = 'thumbs/' + g.id + '.png';
+    img.onerror = function () { img.remove(); th.style.background = 'linear-gradient(135deg,' + g.color + '44, #000)'; };
+    th.appendChild(img); th.appendChild(el('span', 'n', String(i + 1).padStart(2, '0'))); th.appendChild(el('span', 'o', '3D'));
+    var body = el('div', 'body'), title = el('div', 'title');
+    title.appendChild(el('h2', '', g.name)); title.appendChild(el('span', 'genre', g.genre));
+    body.appendChild(title); body.appendChild(el('p', 'desc', g.desc));
+    var tags = el('div', 'tags'); g.tags.forEach(function (t) { tags.appendChild(el('span', '', t)); }); body.appendChild(tags);
+    var foot = el('div', 'foot'), best = +(store.get('ug-mg-' + g.best) || 0);
+    foot.appendChild(el('span', best ? 'best' : '', best ? '★ Récord ' + best : 'Sin récord todavía'));
+    foot.appendChild(el('span', 'play', 'Jugar ▶'));
+    body.appendChild(foot);
+    a.appendChild(th); a.appendChild(body);
+    grid.appendChild(a); links.push([a, g.id]);
+  });
+  function applyRenderer() {
+    links.forEach(function (l) { l[0].href = l[1] + '/index.html' + (current === 'auto' ? '' : '?r=' + current); });
+    Array.prototype.forEach.call(document.querySelectorAll('#seg button'), function (b) { b.setAttribute('aria-pressed', b.dataset.r === current ? 'true' : 'false'); });
+  }
+  var seg = document.getElementById('seg');
+  RENDERERS.forEach(function (r) {
+    var b = el('button', '', r[1]); b.type = 'button'; b.dataset.r = r[0];
+    var ok = r[0] === 'auto' || (r[0] === 'webgpu' ? hasGPU : r[0] === 'webgl2' ? hasGL2 : hasGL);
+    if (!ok) { b.disabled = true; b.title = 'No disponible en este navegador'; b.style.opacity = '0.45'; }
+    b.onclick = function () { current = r[0]; store.set('ug-3d-renderer', current); applyRenderer(); };
+    seg.appendChild(b);
+  });
+  applyRenderer();
+})();
+</script>
+</body>
+</html>
