@@ -70,11 +70,18 @@ async function gather(app) {
 }
 const README = (name) => [
   name + ' — hecho con UltraGame Studio', '',
-  'Para jugar: sube esta carpeta a cualquier hosting de páginas estáticas (itch.io, GitHub Pages, Netlify…) o',
-  'ábrela con un servidor local (por ejemplo: node tools/server.js en la carpeta de UltraGame, o "npx serve").',
-  'Si abres index.html con doble clic, el navegador bloquea la carga de recursos: para eso usa la exportación',
-  '"HTML único" del Studio.', '',
+  'Para jugar: abre index.html con doble clic, o sube esta carpeta a cualquier hosting de páginas estáticas',
+  '(itch.io, GitHub Pages, Netlify…) o a un servidor local (por ejemplo: "npx serve").',
+  'Con doble clic el juego usa assets-inline.js (los recursos embebidos), porque los navegadores no dejan leer',
+  'imágenes ni modelos sueltos desde el disco. En un servidor web se usan los archivos de assets/ y assets-inline.js',
+  'no se descarga: si publicas en la web puedes borrarlo para ocupar menos.', '',
   'Parámetros: index.html?r=webgpu | webgl2 | webgl | canvas fuerza un renderizador.', ''].join('\n');
+/** Recursos como data: URI (id -> URL), para abrir el juego sin servidor */
+function inlineAssets(g) {
+  const out = {};
+  g.assets.forEach((x) => { const ext = (/\.([a-z0-9]+)$/i.exec(x.a.file) || [])[1] || ''; out[x.a.id] = 'data:' + (MIME[ext.toLowerCase()] || 'application/octet-stream') + ';base64,' + b64(x.data); });
+  return out;
+}
 
 /** Archivos de la exportación web */
 export async function buildWebFiles(app) {
@@ -88,6 +95,8 @@ export async function buildWebFiles(app) {
   add('project.js', 'window.UGS_PROJECT = ' + JSON.stringify(g.project) + ';\n');
   g.scripts.forEach((s) => add('scripts/' + s.id + '.js', s.source));
   g.assets.forEach((x) => { if (!paths.has(x.a.file)) add(x.a.file, x.data); });
+  // doble clic (file://): boot.js carga esto solo cuando no hay servidor
+  if (g.assets.length) add('assets-inline.js', 'window.UGS_ASSETS = ' + JSON.stringify(inlineAssets(g)) + ';\n');
   // backend (servidor Node) y contratos: se incluyen para publicarlos aparte
   const BK = window.UGStudio.backend, SOL = window.UGStudio.solidity;
   if (BK && g.project.backend.enabled && g.project.backend.routes.length) BK.files(g.project).forEach((f) => add('backend/' + f.path, f.text));
@@ -100,13 +109,17 @@ export async function buildWebFiles(app) {
 }
 /** Un solo HTML con todo dentro (se abre con doble clic) */
 export async function buildSingleHTML(app) {
-  const g = await gather(app), embedded = {};
-  g.assets.forEach((x) => { const ext = (/\.([a-z0-9]+)$/i.exec(x.a.file) || [])[1] || ''; embedded[x.a.id] = 'data:' + (MIME[ext.toLowerCase()] || 'application/octet-stream') + ';base64,' + b64(x.data); });
+  const g = await gather(app), embedded = inlineAssets(g);
   // data: conserva exactamente el código: escapar </script o <!-- alteraba
   // plantillas String.raw, comentarios HTML válidos y literales del proyecto.
   const sc = (src) => '<script src="data:text/javascript;charset=utf-8;base64,' + b64(enc.encode(src)) + '"></script>';
+  // los recursos van en un bloque JSON que no se ejecuta (sin volver a codificarlos en base64): solo contiene
+  // ids [A-Za-z0-9_-] y data: URI en base64, así que no puede aparecer «</script»
+  const assetsJSON = JSON.stringify(embedded);
+  if (/<\/?script/i.test(assetsJSON)) throw new Error('Recursos no válidos para el HTML único');
   const html = '<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">\n<title>' + escHTML(g.project.name) + '</title>\n<style>' + STYLE + '</style>\n</head>\n<body>\n<div id="game"></div>\n' +
-    [g.engine, g.schema, g.runtime, 'window.UGS_PROJECT = ' + JSON.stringify(g.project) + ';\nwindow.UGS_ASSETS = ' + JSON.stringify(embedded) + ';'].map(sc).join('\n') + '\n' +
+    '<script type="application/json" id="ugs-assets">' + assetsJSON + '</script>\n' +
+    [g.engine, g.schema, g.runtime, 'window.UGS_PROJECT = ' + JSON.stringify(g.project) + ';'].map(sc).join('\n') + '\n' +
     g.scripts.map((s) => sc(s.source)).join('\n') + '\n' + sc(g.boot) + '\n</body>\n</html>\n';
   return new Blob([html], { type: 'text/html' });
 }

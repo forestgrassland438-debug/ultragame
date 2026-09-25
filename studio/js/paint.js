@@ -43,13 +43,16 @@ export class PaintPanel {
   constructor(app, host) {
     this.app = app; this.host = host; this.doc = null; this.tool = 'brush'; this.visible = false;
     this.primary = '#1b1e2b'; this.secondary = '#ffffff'; this.alpha = 1; this.recent = [];
-    this.o = { size: 12, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: true, symX: false, symY: false,
+    this.o = { size: 12, pxSize: 1, pxRound: false, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: true, symX: false, symY: false,
       ditherLevel: 8, ditherTransparent: false, shadeAmt: 8, shapeFill: false, strokeW: 2, gradType: 'linear', font: 'system-ui', fontSize: 32, bold: false, textAA: true, selMode: 'new', strength: 0.5 };
     this.view = { z: 1, x: 0, y: 0 }; this.show = { grid: false, pixelGrid: true, tile: false, onion: false, gridSize: 16 }; this.palette = PALETTES.pico8.list.slice(); this.paletteKey = 'pico8';
     this.dirtyView = true; this.playing = false; this.edges = null; this.ant = 0;
     try { const s = JSON.parse(localStorage.getItem('ugs-paint') || '{}'); Object.assign(this.o, s.o || {}); if (s.primary) this.primary = s.primary; if (s.secondary) this.secondary = s.secondary; if (Array.isArray(s.recent)) this.recent = s.recent.slice(0, 16); } catch (e) { /* modo privado */ }
     app.editor.on('project', () => { this.doc = null; if (this.visible) this.render(); });
     document.addEventListener('keydown', (e) => this.onKey(e));
+    document.addEventListener('keyup', (e) => { if (e.key === ' ') this.space = false; });
+    // al cambiar de ventana no llega el keyup: sin esto, Espacio quedaba pulsado y el lápiz solo desplazaba la vista
+    window.addEventListener('blur', () => { this.space = false; if (this.stroke) this.endStroke(); });
     document.addEventListener('paste', (e) => this.onPaste(e));
   }
   savePrefs() { try { localStorage.setItem('ugs-paint', JSON.stringify({ o: this.o, primary: this.primary, secondary: this.secondary, recent: this.recent })); } catch (e) { /* modo privado */ } }
@@ -75,7 +78,6 @@ export class PaintPanel {
   setDoc(doc) {
     this.stopAnim(); this.doc = doc; doc.dirty = false; this.edges = null;
     if (doc.mode === 'pixel' && TOOLS[this.tool].modes === 'photo') this.tool = 'pencil';
-    if (doc.mode === 'pixel' && this.o.size > 8) this.o.size = 1;
     if (doc.mode === 'photo' && TOOLS[this.tool].modes === 'pixel') this.tool = 'brush';
     this.render(); requestAnimationFrame(() => this.fit());
   }
@@ -173,28 +175,55 @@ export class PaintPanel {
     };
     this.raf = requestAnimationFrame(tick);
   }
+  /** Tamaño visible del área de dibujo (en px CSS) */
+  viewSize() { const host = this.canvas && this.canvas.parentElement; return host ? { W: Math.floor(host.clientWidth), H: Math.floor(host.clientHeight) } : { W: 0, H: 0 }; }
+  /**
+   * En pixel art la vista se alinea a píxeles físicos de la pantalla (también con escalado 125 %, 150 %…):
+   * cada píxel de la imagen ocupa un número entero de píxeles de pantalla, sin bordes borrosos ni tamaños desiguales.
+   */
+  snapView() {
+    if (!this.pixel) return;
+    const v = this.view, dpr = window.devicePixelRatio || 1;
+    if (v.z * dpr >= 1) v.z = Math.max(1, Math.round(v.z * dpr)) / dpr;
+    v.x = Math.round(v.x * dpr) / dpr; v.y = Math.round(v.y * dpr) / dpr;
+  }
   fit() {
     const d = this.doc, c = this.canvas; if (!d || !c) return;
-    const W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
+    const { W, H } = this.viewSize(); if (!W || !H) return;
+    const dpr = window.devicePixelRatio || 1;
     let z = Math.min((W - 40) / d.w, (H - 40) / d.h);
-    if (this.pixel) z = Math.max(1, Math.floor(z)); else z = z >= 1 ? Math.min(8, Math.floor(z)) : z;
+    if (this.pixel) z = z * dpr >= 1 ? Math.max(1, Math.floor(z * dpr)) / dpr : z; else z = z >= 1 ? Math.min(8, Math.floor(z)) : z;
     this.view.z = Math.max(0.01, Math.min(64, z)); this.view.x = Math.round((W - d.w * this.view.z) / 2); this.view.y = Math.round((H - d.h * this.view.z) / 2);
-    this.dirtyView = true; this.renderStatus();
+    this.snapView(); this.dirtyView = true; this.renderStatus();
   }
   zoomAt(k, sx, sy) {
     const v = this.view, z0 = v.z; let z = Math.max(0.02, Math.min(80, z0 * k));
-    if (this.pixel && z >= 1) z = k > 1 ? Math.ceil(z) : Math.floor(z) || 1;
-    if (sx === undefined) { sx = this.canvas.clientWidth / 2; sy = this.canvas.clientHeight / 2; }
+    if (this.pixel) {
+      // pasos enteros de píxeles de pantalla: siempre avanza al menos uno
+      const dpr = window.devicePixelRatio || 1, zd0 = Math.round(z0 * dpr), zd = z * dpr;
+      if (zd >= 1) z = Math.max(1, Math.min(80 * dpr, k > 1 ? Math.max(Math.ceil(zd), zd0 + 1) : Math.min(Math.floor(zd), zd0 - 1))) / dpr;
+    }
+    if (sx === undefined) { const vs = this.viewSize(); sx = vs.W / 2; sy = vs.H / 2; }
     v.x = sx - (sx - v.x) * z / z0; v.y = sy - (sy - v.y) * z / z0; v.z = z;
-    this.dirtyView = true; this.renderStatus();
+    this.snapView(); this.dirtyView = true; this.renderStatus();
   }
-  zoomTo(z) { this.zoomAt(z / this.view.z); }
+  /** Zoom exacto (1:1, pellizco) manteniendo quieto el punto (sx, sy) */
+  zoomTo(z, sx, sy) {
+    const v = this.view, z0 = v.z; z = Math.max(0.02, Math.min(80, z));
+    if (sx === undefined) { const vs = this.viewSize(); sx = vs.W / 2; sy = vs.H / 2; }
+    v.z = z; this.snapView(); z = v.z;
+    v.x = sx - (sx - v.x) * z / z0; v.y = sy - (sy - v.y) * z / z0;
+    this.snapView(); this.dirtyView = true; this.renderStatus();
+  }
   toDoc(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left - this.view.x) / this.view.z, y: (e.clientY - r.top - this.view.y) / this.view.z, sx: e.clientX - r.left, sy: e.clientY - r.top }; }
   draw() {
     const c = this.canvas, d = this.doc; if (!c) return;
-    const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+    const dpr = window.devicePixelRatio || 1, { W, H } = this.viewSize(); if (!W || !H) return;
+    // tamaño CSS entero y mapa de bits exacto: si no, el navegador reescala el lienzo y el pixel art se ve borroso
+    if (c._cssW !== W || c._cssH !== H) { c.style.width = W + 'px'; c.style.height = H + 'px'; c._cssW = W; c._cssH = H; }
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const snap = (u) => Math.round(u * dpr) / dpr + 0.5 / dpr; // línea de 1 px físico centrada en un píxel de pantalla
     g.fillStyle = getComputedStyle(c).getPropertyValue('--paint-bg') || '#1a1d29'; g.fillRect(0, 0, W, H);
     if (!d) return;
     const v = this.view, dw = d.w * v.z, dh = d.h * v.z;
@@ -210,9 +239,10 @@ export class PaintPanel {
     }
     g.drawImage(this.playing ? d.composite(d.frames[this.animFrame || 0]) : comp, v.x, v.y, dw, dh);
     // rejillas
-    if (this.pixel && this.show.pixelGrid && v.z >= 6) { g.strokeStyle = 'rgba(0,0,0,0.13)'; g.lineWidth = 1; g.beginPath(); for (let x = 0; x <= d.w; x++) { const X = Math.round(v.x + x * v.z) + 0.5; g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y++) { const Y = Math.round(v.y + y * v.z) + 0.5; g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
-    if (this.show.grid && this.show.gridSize * v.z >= 4) { const s = this.show.gridSize; g.strokeStyle = 'rgba(80,120,255,0.45)'; g.beginPath(); for (let x = 0; x <= d.w; x += s) { const X = Math.round(v.x + x * v.z) + 0.5; g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y += s) { const Y = Math.round(v.y + y * v.z) + 0.5; g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
-    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(Math.round(v.x) - 0.5, Math.round(v.y) - 0.5, Math.round(dw) + 1, Math.round(dh) + 1);
+    g.lineWidth = 1 / dpr;
+    if (this.pixel && this.show.pixelGrid && v.z * dpr >= 6) { g.strokeStyle = 'rgba(0,0,0,0.16)'; g.beginPath(); for (let x = 0; x <= d.w; x++) { const X = snap(v.x + x * v.z); g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y++) { const Y = snap(v.y + y * v.z); g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
+    if (this.show.grid && this.show.gridSize * v.z >= 4) { const s = this.show.gridSize; g.strokeStyle = 'rgba(80,120,255,0.55)'; g.beginPath(); for (let x = 0; x <= d.w; x += s) { const X = snap(v.x + x * v.z); g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y += s) { const Y = snap(v.y + y * v.z); g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
+    g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(Math.round(v.x) - 0.5, Math.round(v.y) - 0.5, Math.round(dw) + 1, Math.round(dh) + 1);
     // simetría
     if (this.pixel && (this.o.symX || this.o.symY)) { g.strokeStyle = 'rgba(255,80,200,0.8)'; g.setLineDash([4, 4]); g.beginPath(); if (this.o.symX) { g.moveTo(v.x + dw / 2, v.y); g.lineTo(v.x + dw / 2, v.y + dh); } if (this.o.symY) { g.moveTo(v.x, v.y + dh / 2); g.lineTo(v.x + dw, v.y + dh / 2); } g.stroke(); g.setLineDash([]); }
     // selección
@@ -227,7 +257,17 @@ export class PaintPanel {
     if (this.hoverPt && ['brush', 'eraser', 'clone', 'smudge', 'blurBrush', 'dodge', 'pencil', 'dither', 'shade'].includes(this.tool)) {
       const s = this.brushSize(), p = this.hoverPt;
       g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1;
-      if (this.pixel || this.tool === 'pencil') { const x0 = Math.floor(p.x - (s - 1) / 2), y0 = Math.floor(p.y - (s - 1) / 2); g.strokeRect(v.x + x0 * v.z + 0.5, v.y + y0 * v.z + 0.5, s * v.z - 1, s * v.z - 1); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeRect(v.x + x0 * v.z - 0.5, v.y + y0 * v.z - 0.5, s * v.z + 1, s * v.z + 1); }
+      if (this.pixel || this.tool === 'pencil') {
+        const [x0, y0] = this.tipOrigin(Math.floor(p.x), Math.floor(p.y), s), boxes = [[x0, y0]];
+        if (this.pixel && this.o.symX) boxes.push([d.w - s - x0, y0]); if (this.pixel && this.o.symY) boxes.push([x0, d.h - s - y0]); if (this.pixel && this.o.symX && this.o.symY) boxes.push([d.w - s - x0, d.h - s - y0]);
+        boxes.forEach(([bx, by], i) => {
+          const X = Math.round((v.x + bx * v.z) * dpr) / dpr, Y = Math.round((v.y + by * v.z) * dpr) / dpr, S = Math.round(s * v.z * dpr) / dpr;
+          g.globalAlpha = i ? 0.5 : 1; g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.65)'; g.strokeRect(X - 0.5, Y - 0.5, S + 1, S + 1); g.strokeStyle = 'rgba(255,255,255,0.95)'; g.strokeRect(X + 0.5, Y + 0.5, Math.max(0, S - 1), Math.max(0, S - 1));
+          // vista previa del color en el píxel (lápiz y tramado)
+          if (i === 0 && (this.tool === 'pencil' || this.tool === 'dither') && s * v.z >= 3) { g.globalAlpha = 0.45 * this.alpha; g.fillStyle = this.primary; if (this.pixel && this.o.pxRound && s > 2) { const tip = this.tipOffsets(s); for (let k = 0; k < tip.length; k += 2) g.fillRect(X + tip[k] * v.z, Y + tip[k + 1] * v.z, v.z, v.z); } else g.fillRect(X + 1, Y + 1, Math.max(0, S - 2), Math.max(0, S - 2)); }
+          g.globalAlpha = 1;
+        });
+      }
       else { g.beginPath(); g.arc(v.x + p.x * v.z, v.y + p.y * v.z, Math.max(1.5, s / 2 * v.z), 0, Math.PI * 2); g.stroke(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(v.x + p.x * v.z, v.y + p.y * v.z, Math.max(1.5, s / 2 * v.z) + 1, 0, Math.PI * 2); g.stroke(); }
     }
     if (this.cloneSrc && this.tool === 'clone') { const p = this.cloneSrc; g.strokeStyle = '#ff6'; g.beginPath(); g.moveTo(v.x + p.x * v.z - 6, v.y + p.y * v.z); g.lineTo(v.x + p.x * v.z + 6, v.y + p.y * v.z); g.moveTo(v.x + p.x * v.z, v.y + p.y * v.z - 6); g.lineTo(v.x + p.x * v.z, v.y + p.y * v.z + 6); g.stroke(); }
@@ -235,7 +275,9 @@ export class PaintPanel {
   }
 
   /* ================================================================ herramientas */
-  brushSize() { return Math.max(1, Math.round(this.pixel && this.tool !== 'eraser' && this.o.size > 64 ? 1 : this.o.size)); }
+  /** Tamaño de la punta: en pixel art tiene el suyo (por defecto 1 px), independiente del pincel de foto */
+  brushSize() { return Math.max(1, Math.round(this.pixel ? this.o.pxSize : this.o.size)) || 1; }
+  sizeKey() { return this.pixel ? 'pxSize' : 'size'; }
   colorWithAlpha(hex, a) { const [r, g, b] = hexToRgb(hex); return 'rgba(' + r + ',' + g + ',' + b + ',' + (a === undefined ? this.alpha : a) + ')'; }
   pushRecent(c) { this.recent = [c].concat(this.recent.filter((x) => x !== c)).slice(0, 16); this.savePrefs(); this.renderColors(); }
   locked() { if (this.doc.curLayer.locked) { toast('La capa está bloqueada 🔒', 'warn'); return true; } if (!this.doc.curLayer.visible) { toast('La capa está oculta', 'warn'); return true; } return false; }
@@ -279,7 +321,7 @@ export class PaintPanel {
       let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; if (!evs || !evs.length) evs = [e];
       evs.forEach((ev) => this.strokeTo(this.toDoc(ev), ev)); this.dirtyView = true; return;
     }
-    if (dr.kind === 'pan') { this.view.x = dr.vx + p.sx - dr.sx; this.view.y = dr.vy + p.sy - dr.sy; this.dirtyView = true; return; }
+    if (dr.kind === 'pan') { this.view.x = dr.vx + p.sx - dr.sx; this.view.y = dr.vy + p.sy - dr.sy; this.snapView(); this.dirtyView = true; return; }
     if (dr.kind === 'pick') { this.pick(p, dr.right); return; }
     if (dr.kind === 'moving') { this.moveTo(p, e.shiftKey); return; }
     dr.p1 = p; if (dr.kind === 'lasso') dr.pts.push(p);
@@ -399,12 +441,26 @@ export class PaintPanel {
     }
     g.putImageData(out, x, y);
   }
+  /** Posiciones de la punta (cuadrada o redonda) respecto a su esquina: se calcula una vez por trazo */
+  tipOffsets(s) {
+    // círculo de píxeles: 3 → cruz, 4 → sin esquinas, 5+ → círculo (como en los editores de pixel art)
+    const out = [], round = this.pixel && this.o.pxRound && s > 2, r = s / 2, lim = r * r - 0.25;
+    for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) { if (round && (i + 0.5 - r) ** 2 + (j + 0.5 - r) ** 2 >= lim) continue; out.push(i, j); }
+    return out;
+  }
+  /** Esquina superior izquierda de la punta para el píxel (cx, cy): la misma cuenta para pintar y para el cursor */
+  tipOrigin(cx, cy, s) { return [cx - Math.floor((s - 1) / 2), cy - Math.floor((s - 1) / 2)]; }
   /** Lápiz, borrador, tramado y sombreado en modo píxel (con simetría y píxel perfecto) */
   pixelStroke(p, first) {
     const st = this.stroke, d = this.doc, g = ctx2d(d.cel), t = st.tool, s = this.brushSize(), sel = d.selection ? ctx2d(d.selection) : null;
     const selData = sel ? (st.selData || (st.selData = sel.getImageData(0, 0, d.w, d.h).data)) : null;
     const baseData = st.baseData || (st.baseData = ctx2d(st.base).getImageData(0, 0, d.w, d.h).data);
-    const [pr, pg, pb] = hexToRgb(st.color), [sr, sg, sb] = hexToRgb(this.secondary);
+    if (!st.px) {
+      // valores fijos durante todo el trazo (color, alfa y forma de la punta)
+      const [pr, pg, pb] = hexToRgb(st.color), [sr, sg, sb] = hexToRgb(this.secondary), a = Math.max(0, Math.min(1, this.alpha * this.o.opacity));
+      st.px = { pr, pg, pb, sr, sg, sb, a, fill: 'rgba(' + pr + ',' + pg + ',' + pb + ',' + a + ')', fill2: 'rgba(' + sr + ',' + sg + ',' + sb + ',' + a + ')', tip: this.tipOffsets(s), square: !(this.o.pxRound && s > 2) };
+    }
+    const P = st.px;
     const plot1 = (x, y) => {
       if (x < 0 || y < 0 || x >= d.w || y >= d.h) return;
       if (selData && selData[(y * d.w + x) * 4 + 3] < 128) return;
@@ -412,25 +468,22 @@ export class PaintPanel {
       const bi = key * 4;
       if (d.curLayer.alphaLock && baseData[bi + 3] === 0) return;
       if (t === 'eraser') { g.clearRect(x, y, 1, 1); return; }
-      let col;
-      if (t === 'dither') { const on = bayer(x, y) < this.o.ditherLevel / 16; if (!on && this.o.ditherTransparent) { return; } col = on ? [pr, pg, pb] : [sr, sg, sb]; }
-      else if (t === 'shade') { if (!baseData[bi + 3]) return; col = this.shadeColor(baseData[bi], baseData[bi + 1], baseData[bi + 2], st.alt); }
-      else col = [pr, pg, pb];
-      if (t === 'shade') { g.clearRect(x, y, 1, 1); g.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + baseData[bi + 3] / 255 + ')'; }
-      else g.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + this.alpha * this.o.opacity + ')';
-      g.fillRect(x, y, 1, 1);
+      if (t === 'dither') { const on = bayer(x, y) < this.o.ditherLevel / 16; if (!on && this.o.ditherTransparent) return; g.fillStyle = on ? P.fill : P.fill2; g.fillRect(x, y, 1, 1); return; }
+      if (t === 'shade') { if (!baseData[bi + 3]) return; const col = this.shadeColor(baseData[bi], baseData[bi + 1], baseData[bi + 2], st.alt); g.clearRect(x, y, 1, 1); g.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + baseData[bi + 3] / 255 + ')'; g.fillRect(x, y, 1, 1); return; }
+      g.fillStyle = P.fill; g.fillRect(x, y, 1, 1);
     };
-    // bloque entero de una vez (lápiz/borrador grandes sin selección ni bloqueo): mucho más rápido que píxel a píxel
-    const fast = (t === 'pencil' || t === 'eraser') && s > 1 && !selData && !d.curLayer.alphaLock;
+    // bloque entero de una vez (punta cuadrada opaca sin selección ni bloqueo): mucho más rápido que píxel a píxel.
+    // Con color semitransparente se pinta píxel a píxel para no acumular alfa donde se solapan los sellos.
+    const fast = (t === 'pencil' || t === 'eraser') && s > 1 && P.square && !selData && !d.curLayer.alphaLock && (t === 'eraser' || P.a >= 1);
     const plotBrush = (cx, cy) => {
-      const x0 = Math.floor(cx - (s - 1) / 2), y0 = Math.floor(cy - (s - 1) / 2);
+      const [x0, y0] = this.tipOrigin(cx, cy, s);
       const pts = [[x0, y0]];
       if (this.o.symX) pts.push([d.w - s - x0, y0]);
       if (this.o.symY) pts.push([x0, d.h - s - y0]);
       if (this.o.symX && this.o.symY) pts.push([d.w - s - x0, d.h - s - y0]);
       pts.forEach(([ax, ay]) => {
-        if (fast) { if (t === 'eraser') g.clearRect(ax, ay, s, s); else { g.fillStyle = 'rgba(' + pr + ',' + pg + ',' + pb + ',' + this.alpha * this.o.opacity + ')'; g.fillRect(ax, ay, s, s); } return; }
-        for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) plot1(ax + i, ay + j);
+        if (fast) { if (t === 'eraser') g.clearRect(ax, ay, s, s); else { g.fillStyle = P.fill; g.fillRect(ax, ay, s, s); } return; }
+        for (let k = 0; k < P.tip.length; k += 2) plot1(ax + P.tip[k], ay + P.tip[k + 1]);
       });
     };
     const cur = { x: Math.floor(p.x), y: Math.floor(p.y) };
@@ -444,11 +497,12 @@ export class PaintPanel {
         if (Math.abs(A.x - x) === 1 && Math.abs(A.y - y) === 1 && ((B.x === A.x && B.y === y) || (B.y === A.y && B.x === x))) {
           const keys = [[B.x, B.y]];
           if (this.o.symX) keys.push([d.w - 1 - B.x, B.y]); if (this.o.symY) keys.push([B.x, d.h - 1 - B.y]); if (this.o.symX && this.o.symY) keys.push([d.w - 1 - B.x, d.h - 1 - B.y]);
-          keys.forEach(([kx, ky]) => { const k = ky * d.w + kx, bi = k * 4; st.plotted.delete(k); g.clearRect(kx, ky, 1, 1); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi], baseData[bi + 1], baseData[bi + 2], baseData[bi + 3]]), 1, 1), kx, ky); });
+          keys.forEach(([kx, ky]) => { if (kx < 0 || ky < 0 || kx >= d.w || ky >= d.h) return; const k = ky * d.w + kx, bi = k * 4; st.plotted.delete(k); g.clearRect(kx, ky, 1, 1); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi], baseData[bi + 1], baseData[bi + 2], baseData[bi + 3]]), 1, 1), kx, ky); });
           st.pts.pop();
         }
       }
       plotBrush(x, y); st.pts.push({ x, y });
+      if (st.pts.length > 4) st.pts.splice(0, st.pts.length - 4); // solo hacen falta los últimos
     });
     st.lastPx = cur;
   }
@@ -710,7 +764,7 @@ export class PaintPanel {
   onKey(e) {
     if (!this.visible || !this.doc || isTyping(e) || document.getElementById('overlay').hidden === false) return;
     const k = e.key, ctrl = e.ctrlKey || e.metaKey, kl = k.toLowerCase();
-    if (k === ' ') { this.space = true; const up = (ev) => { if (ev.key === ' ') { this.space = false; document.removeEventListener('keyup', up); } }; document.addEventListener('keyup', up); e.preventDefault(); return; }
+    if (k === ' ') { this.space = true; e.preventDefault(); return; }
     let handled = true;
     if (ctrl && kl === 'z') { if (e.shiftKey) this.redo(); else this.undo(); }
     else if (ctrl && kl === 'y') this.redo();
@@ -725,8 +779,8 @@ export class PaintPanel {
     else if (k === 'Delete' || k === 'Backspace') this.clearSel();
     else if (k === 'Enter' && this.cropRect) this.applyCrop();
     else if (k === 'Escape') { this.cropRect = null; this.preview = null; this.drag = null; this.deselect(); this.renderOpts(); }
-    else if (k === '[') { this.o.size = Math.max(1, Math.round(this.o.size / 1.25)); this.renderOpts(); this.dirtyView = true; }
-    else if (k === ']') { this.o.size = Math.min(500, Math.max(this.o.size + 1, Math.round(this.o.size * 1.25))); this.renderOpts(); this.dirtyView = true; }
+    else if (k === '[') { const sk = this.sizeKey(); this.o[sk] = Math.max(1, this.pixel ? this.o[sk] - 1 : Math.round(this.o[sk] / 1.25)); this.savePrefs(); this.renderOpts(); this.dirtyView = true; }
+    else if (k === ']') { const sk = this.sizeKey(); this.o[sk] = this.pixel ? Math.min(64, this.o[sk] + 1) : Math.min(500, Math.max(this.o[sk] + 1, Math.round(this.o[sk] * 1.25))); this.savePrefs(); this.renderOpts(); this.dirtyView = true; }
     else if (k === '+' || k === '=') this.zoomAt(this.pixel ? 2 : 1.25);
     else if (k === '-') this.zoomAt(this.pixel ? 0.5 : 0.8);
     else if (k === '0') this.fit();
@@ -760,7 +814,7 @@ export class PaintPanel {
     this.dirtyView = true;
     if (this.ro) this.ro.disconnect();
     this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { this.dirtyView = true; }) : null;
-    if (this.ro) this.ro.observe(this.canvas);
+    if (this.ro) this.ro.observe(this.canvas.parentElement);
   }
   emptyState(ed) {
     const imgs = ed.project ? ed.project.assets.filter((a) => a.type === 'image') : [];
@@ -776,18 +830,18 @@ export class PaintPanel {
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
       c.focus();
-      if (e.pointerType === 'touch') { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { if (this.stroke) { this.doc.undoStep(); this.doc.redo = []; this.stroke = null; this.changed(); } this.drag = null; this.preview = null; const a = Array.from(pts.values()); pinch = { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 }; return; } if (pts.size > 2) return; }
+      if (e.pointerType === 'touch') { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { if (this.stroke) { this.doc.undoStep(); this.doc.redo = []; this.stroke = null; this.changed(); } this.drag = null; this.preview = null; const a = Array.from(pts.values()); pinch = { d0: Math.max(1, Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y)), z0: this.view.z, cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 }; return; } if (pts.size > 2) return; }
       this.onDown(e);
     });
     c.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'touch' && pts.has(e.pointerId)) { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && pts.size >= 2) { const a = Array.from(pts.values()), d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx = (a[0].x + a[1].x) / 2, cy = (a[0].y + a[1].y) / 2, r = c.getBoundingClientRect(); this.view.x += cx - pinch.cx; this.view.y += cy - pinch.cy; this.zoomAt(d / pinch.d, cx - r.left, cy - r.top); pinch = { d, cx, cy }; return; } }
+      if (e.pointerType === 'touch' && pts.has(e.pointerId)) { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && pts.size >= 2) { const a = Array.from(pts.values()), d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx = (a[0].x + a[1].x) / 2, cy = (a[0].y + a[1].y) / 2, r = c.getBoundingClientRect(); this.view.x += cx - pinch.cx; this.view.y += cy - pinch.cy; this.zoomTo(pinch.z0 * d / pinch.d0, cx - r.left, cy - r.top); pinch.cx = cx; pinch.cy = cy; return; } }
       if (pinch) return;
       this.onMove(e);
     });
     const up = (e) => { if (e.pointerType === 'touch') { pts.delete(e.pointerId); if (pinch) { if (pts.size < 2) pinch = null; return; } } this.onUp(e); };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
     c.addEventListener('pointerleave', () => { this.hoverPt = null; this.dirtyView = true; });
-    c.addEventListener('wheel', (e) => { e.preventDefault(); if (!this.doc) return; const r = c.getBoundingClientRect(); if (e.ctrlKey || e.altKey || !e.shiftKey) this.zoomAt(Math.exp(-e.deltaY * (this.pixel ? 0.004 : 0.0018)), e.clientX - r.left, e.clientY - r.top); else { this.view.x -= e.deltaY; this.dirtyView = true; } }, { passive: false });
+    c.addEventListener('wheel', (e) => { e.preventDefault(); if (!this.doc) return; const r = c.getBoundingClientRect(); if (e.ctrlKey || e.altKey || !e.shiftKey) this.zoomAt(Math.exp(-e.deltaY * (this.pixel ? 0.004 : 0.0018)), e.clientX - r.left, e.clientY - r.top); else { this.view.x -= e.deltaY; this.snapView(); this.dirtyView = true; } }, { passive: false });
     c.addEventListener('dblclick', () => { if (this.cropRect) this.applyCrop(); });
   }
   renderBar() {
@@ -839,7 +893,6 @@ export class PaintPanel {
     if (this.doc.mode === mode) return;
     this.doc.mode = mode;
     if (!this.toolOk(this.tool)) this.tool = mode === 'pixel' ? 'pencil' : 'brush';
-    if (mode === 'pixel' && this.o.size > 8) this.o.size = 1;
     this.render(); this.fit();
   }
   renderTools() {
@@ -854,7 +907,8 @@ export class PaintPanel {
     const pct = (v) => Math.round(v * 100) + '%';
     el.appendChild(h('b', TOOLS[t].icon + ' ' + TOOLS[t].label.replace(/ \(.*/, '')));
     if (['brush', 'eraser', 'clone', 'smudge', 'blurBrush', 'dodge'].includes(t) && !this.pixel) el.appendChild(num('size', 'Tamaño', 1, 500));
-    if (['pencil', 'eraser', 'dither', 'shade'].includes(t) && (this.pixel || t === 'pencil')) el.appendChild(num('size', 'Tamaño', 1, this.pixel ? 16 : 100));
+    if (this.pixel && ['pencil', 'eraser', 'dither', 'shade'].includes(t)) { el.appendChild(num('pxSize', 'Tamaño', 1, 64)); if (this.o.pxSize > 1) el.appendChild(chk('pxRound', 'Punta redonda', 'Punta circular en lugar de cuadrada')); }
+    else if (t === 'pencil') el.appendChild(num('size', 'Tamaño', 1, 100));
     if (['brush', 'eraser', 'clone'].includes(t) && !this.pixel) { el.appendChild(num('hardness', 'Dureza', 0, 1, 0.05, pct)); el.appendChild(num('flow', 'Flujo', 0.02, 1, 0.02, pct)); el.appendChild(num('spacing', 'Espaciado', 0.02, 1, 0.02, pct)); el.appendChild(chk('pressure', 'Presión del lápiz', 'Tabletas y lápices: la presión cambia el tamaño')); }
     if (['brush', 'eraser', 'pencil', 'clone', 'bucket', 'dither', 'rect', 'ellipse', 'line', 'gradient'].includes(t)) el.appendChild(num('opacity', 'Opacidad', 0.02, 1, 0.02, pct));
     if (['smudge', 'blurBrush', 'dodge'].includes(t)) el.appendChild(num('strength', 'Fuerza', 0.05, 1, 0.05, pct));
