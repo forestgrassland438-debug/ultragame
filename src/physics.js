@@ -803,8 +803,9 @@ class ArcadePhysics {
     this.world = new ArcadeWorld(scene, config);
     var self = this, w = this.world;
     var mk = function (x, y, key, frame, isStatic) {
-      var s = new Sprite(x, y, key !== undefined ? key : '__WHITE', frame);
-      s.scene = scene; scene.world.addChild(s);
+      // la clave se resuelve con las texturas de ESTA escena (sin escena se usaría las del primer juego de la página)
+      var s = new Sprite(x, y, scene.textures.get(key !== undefined ? key : '__WHITE', frame));
+      s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s);
       w.enable(s, isStatic);
       return s;
     };

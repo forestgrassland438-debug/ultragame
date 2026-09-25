@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Climas 2D y 3D · UltraGame</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px system-ui, sans-serif; }
+  h1 { font-size: 15px; margin: 10px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 360px); gap: 10px; padding: 0 14px 14px; }
+  .cell b { display: block; margin: 4px 0; }
+  .cell > div { width: 360px; height: 220px; background: #000; }
+  pre { padding: 0 14px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Climas: lluvia, tormenta, nieve y niebla en 2D y en 3D (?auto=1 los avanza y mide la orientación de las gotas)</h1>
+<div class="grid" id="grid"></div>
+<pre id="out"></pre>
+<script src="../dist/ultragame.js"></script>
+<script>
+'use strict';
+/* Prueba visual de los climas. En 2D además se mide la forma de cada gota dibujada: una gota de lluvia debe ser más
+ * alta que ancha (cae casi en vertical), nunca una raya horizontal. */
+var CASES = [
+  { id: 'r2', label: '2D · lluvia', d: 2, kind: 'rain' }, { id: 's2', label: '2D · tormenta', d: 2, kind: 'storm' }, { id: 'n2', label: '2D · nieve', d: 2, kind: 'snow' }, { id: 'f2', label: '2D · niebla', d: 2, kind: 'fog' },
+  { id: 'r3', label: '3D · lluvia', d: 3, kind: 'rain' }, { id: 's3', label: '3D · tormenta', d: 3, kind: 'storm' }, { id: 'n3', label: '3D · nieve', d: 3, kind: 'snow' }, { id: 'f3', label: '3D · niebla', d: 3, kind: 'fog' }
+];
+var grid = document.getElementById('grid'), games = {};
+async function make(c, renderer) {
+  var cell = document.createElement('div'); cell.className = 'cell'; cell.innerHTML = '';
+  var b = document.createElement('b'); b.textContent = c.label; var host = document.createElement('div'); host.id = 'g-' + c.id; cell.appendChild(b); cell.appendChild(host); grid.appendChild(cell);
+  var scene = c.d === 2 ? {
+    key: 'w', create: function () {
+      this.add.skyGradient(0x2b3350, 0x5c6b8a);
+      this.add.rectangle(180, 205, 360, 30, 0x2f3b2f);
+      this.weather2d(c.kind, { intensity: 1 });
+    }
+  } : {
+    key: 'w', create: function () {
+      var v = this.add.view3d(0, 0, 360, 220, { background: 0x8fa3bf });
+      v.camera.position.set(0, 3, 12); v.camera.lookAt(new UG.Vec3(0, 2, 0));
+      v.add.ambientLight(0xffffff, 0.5); v.add.directionalLight(0xffffff, 1.2).position.set(5, 10, 5);
+      v.add.plane(60, 60, { color: 0x3c6e47 });
+      v.add.box(2, 2, 2, { color: 0xb35c44 }).position.set(-2, 1, 0);
+      v.add.sphere(1, { color: 0x4dabf7 }).position.set(2, 1, 0);
+      // sin niebla propia: el clima debe añadirla él (como en una escena nueva del Studio)
+      v.weather(c.kind);
+      this.view = v;
+    }
+  };
+  // ?r= elige el renderizador de los casos 2D (también canvas); los 3D necesitan WebGL/WebGPU
+  var g = new UG.Game({ parent: host, width: 360, height: 220, renderer: c.d === 3 && renderer === 'canvas' ? 'webgl2' : (renderer || 'webgl2'), banner: false, audio: { noAudio: true }, scenes: [scene] });
+  await g.ready; games[c.id] = g; return g;
+}
+/** Forma de las gotas: por cada píxel claro sobre el cielo, cuánto se extiende en x y en y (en el propio fotograma) */
+function dropShape(g) {
+  var cv = g.canvas, w = cv.width, h = cv.height, tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+  var x2 = tmp.getContext('2d'); x2.drawImage(cv, 0, 0); var d = x2.getImageData(0, 0, w, Math.floor(h * 0.8)).data;
+  var bright = function (i) { return d[i] + d[i + 1] + d[i + 2] > 450; };
+  // longitud media de los tramos claros consecutivos en horizontal y en vertical
+  var hx = 0, nx = 0, vy = 0, ny = 0, W = w, H = Math.floor(h * 0.8), x, y, run;
+  for (y = 0; y < H; y++) { run = 0; for (x = 0; x < W; x++) { if (bright((y * W + x) * 4)) run++; else if (run) { hx += run; nx++; run = 0; } } }
+  for (x = 0; x < W; x++) { run = 0; for (y = 0; y < H; y++) { if (bright((y * W + x) * 4)) run++; else if (run) { vy += run; ny++; run = 0; } } }
+  return { horizontal: nx ? +(hx / nx).toFixed(2) : 0, vertical: ny ? +(vy / ny).toFixed(2) : 0, samples: nx + ny };
+}
+async function check() {
+  var out = {}, r = /r=(\w+)/.exec(location.search), renderer = r ? r[1] : 'webgl2';
+  for (var c of CASES) await make(c, renderer);
+  // 1,5 s de simulación con pasos fijos (las gotas llegan hasta abajo)
+  for (var i = 0; i < 90; i++) { Object.keys(games).forEach(function (k) { games[k].loop.step(1000 / 60); }); if ((i & 15) === 15) await null; }
+  Object.keys(games).forEach(function (k) { games[k].loop.stop(); });
+  ['r2', 's2'].forEach(function (k) { out[k] = dropShape(games[k]); out[k].ok = out[k].vertical > out[k].horizontal * 1.3; /* antes del arreglo (gotas tumbadas) era ~0,6 */ });
+  out.summary = { pass: ['r2', 's2'].filter(function (k) { return out[k].ok; }).length, fail: ['r2', 's2'].filter(function (k) { return !out[k].ok; }).length };
+  document.getElementById('out').textContent = JSON.stringify(out, null, 1);
+  window.__res = out;
+  return out;
+}
+if (/auto=1/.test(location.search)) check();
+else CASES.forEach(function (c) { make(c); });
+</script>
+</body>
+</html>

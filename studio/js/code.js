@@ -74,7 +74,7 @@ const REF = [
   { t: "api.tween({ targets: self, alpha: 0, duration: 400 })", k: 'api.tween(cfg)', d: 'Animación de propiedades.' },
   { t: "api.log('hola', self.x)", k: 'api.log(...)', d: 'Escribe en la consola del Studio.' },
   { group: 'Mundo: clima, hora, luces, marcas' },
-  { t: "api.weather('rain')", k: 'api.weather(tipo)', d: 'clear, cloudy, overcast, rain, storm, snow, fog (2D: rain, storm, snow).' },
+  { t: "api.weather('rain')", k: 'api.weather(tipo)', d: 'clear, cloudy, overcast, rain, storm, snow, fog (en 2D: rain, storm, snow, fog y clear).' },
   { t: 'api.timeOfDay(20)', k: 'api.timeOfDay(hora)', d: '3D: pone la hora (0..24); sin argumento la devuelve.' },
   { t: "api.decal('blood', x, y, z)", k: 'api.decal(tipo, x, y, z)', d: '3D: bullet, blood, pool, scorch, crack.' },
   { t: 'api.light(self.x, self.y, 200, 0xffcc88, 1)', k: 'api.light(x, y, radio, color, i)', d: '2D: luz con sombras (api.lights2d para más).' },

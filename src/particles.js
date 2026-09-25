@@ -192,6 +192,12 @@ class ParticleEmitter extends Container {
     }
   }
   preUpdate(time, delta) { this.update(delta); }
+  /** Simula `ms` de golpe (en pasos de 1/30 s) para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno */
+  prewarm(ms) {
+    var t = Math.max(0, Math.min(30000, +ms || 0)), h = 1000 / 30;
+    for (; t > 0; t -= h) this.update(Math.min(h, t));
+    return this;
+  }
   update(deltaMs) {
     if (this._paused || this.destroyed) return;
     var dtMs = deltaMs * this.timeScale, dt = dtMs / 1000;

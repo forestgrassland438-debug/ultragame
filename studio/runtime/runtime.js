@@ -193,6 +193,14 @@
     });
     return 'ugs-dot';
   }
+  /** Raya de lluvia a lo largo del eje X (cola transparente → cabeza): con angleAlign apunta hacia donde cae */
+  function streakTexture(scene) {
+    if (!scene.textures.exists('ugs-streak')) scene.textures.generate('ugs-streak', 32, 4, function (ctx, w, h) {
+      var g = ctx.createLinearGradient(0, 0, w, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,1)');
+      ctx.fillStyle = g; ctx.fillRect(0, 1, w, h - 2);
+    });
+    return 'ugs-streak';
+  }
   R.dotTexture = dotTexture;
   var _m2 = new UG.Matrix();
   var VAR_RE = /\{([^{}\s]{1,40})\}/g;
@@ -785,7 +793,7 @@
       }
       case 'particles': {
         var cfg = particleConfig(p.preset, p);
-        o = add.particles(node.x, node.y, hasAsset(p.asset) ? p.asset : dotTexture(sc), cfg);
+        o = add.particles(node.x, node.y, hasAsset(p.asset) ? p.asset : cfg.angleAlign ? streakTexture(sc) : dotTexture(sc), cfg);
         if (cfg.frequency === -1 && p.emitting) o.explode(cfg.quantity);
         break;
       }
@@ -1364,7 +1372,7 @@
     if (this.view) { var map = { confetti: 'magic', coin: 'coin' }, k = map[preset] || preset; if (UG.PARTICLE3D_PRESETS[k]) this.view.effect(k, new V3(p.x, p.y, p.z || 0), { count: UG.PARTICLE3D_PRESETS[k].burst || 24 }); return; }
     var key = S.PARTICLES_2D[preset] ? preset : 'explosion', cfg = particleConfig(key, { rate: 1, scale: 1 });
     cfg.frequency = -1; cfg.emitting = false; cfg.quantity = key === 'explosion' ? cfg.quantity : 24;
-    var sc = this.scene, e = sc.add.particles(p.x, p.y, dotTexture(sc), cfg); e.depth = 1000;
+    var sc = this.scene, e = sc.add.particles(p.x, p.y, cfg.angleAlign ? streakTexture(sc) : dotTexture(sc), cfg); e.depth = 1000;
     e.explode(cfg.quantity);
     var life = cfg.lifespan && cfg.lifespan.max ? cfg.lifespan.max : (+cfg.lifespan || 1000);
     sc.time.delayedCall(life + 200, function () { if (!e.destroyed) e.destroy(); });
@@ -1632,7 +1640,7 @@
   SceneRT.prototype.setWeather = function (kind, o) {
     kind = String(kind || 'clear');
     if (this.view) { this.view.weather(kind === 'none' ? 'clear' : kind, o); return; }
-    if (!this.is3d) this.scene.weather2d(kind === 'rain' || kind === 'storm' || kind === 'snow' ? kind : 'clear', o);
+    if (!this.is3d) this.scene.weather2d(kind === 'rain' || kind === 'storm' || kind === 'snow' || kind === 'fog' ? kind : 'clear', o);
   };
   SceneRT.prototype.setTimeOfDay = function (h) {
     if (!this.view) return;

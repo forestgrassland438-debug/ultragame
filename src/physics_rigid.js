@@ -690,7 +690,7 @@ class RigidPhysics2D {
     };
     this.add = {
       existing: function (obj, o) { if (!obj.parent) { obj.scene = scene; scene.world.addChild(obj); } return link(obj, o); },
-      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, key === undefined ? '__WHITE' : key, frame); s.scene = scene; scene.world.addChild(s); return link(s, o); },
+      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, scene.textures.get(key === undefined ? '__WHITE' : key, frame)); s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s); return link(s, o); },
       image: function (x, y, key, frame, o) { return self.add.sprite(x, y, key, frame, o); },
       rectangle: function (x, y, wd, ht, color, o) { var r = new ShapeObject('rectangle', x, y, { width: wd, height: ht }, color === undefined ? 0xffd43b : color, 1); r.scene = scene; scene.world.addChild(r); return link(r, Object.assign({ width: wd, height: ht }, o || {})); },
       circle: function (x, y, rad, color, o) { var c = new ShapeObject('circle', x, y, { radius: rad, width: rad * 2, height: rad * 2 }, color === undefined ? 0x74c0fc : color, 1); c.scene = scene; scene.world.addChild(c); return link(c, Object.assign({ shape: 'circle', radius: rad, width: rad * 2, height: rad * 2 }, o || {})); },

@@ -4262,6 +4262,12 @@ class ParticleEmitter extends Container {
     }
   }
   preUpdate(time, delta) { this.update(delta); }
+  /** Simula `ms` de golpe (en pasos de 1/30 s) para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno */
+  prewarm(ms) {
+    var t = Math.max(0, Math.min(30000, +ms || 0)), h = 1000 / 30;
+    for (; t > 0; t -= h) this.update(Math.min(h, t));
+    return this;
+  }
   update(deltaMs) {
     if (this._paused || this.destroyed) return;
     var dtMs = deltaMs * this.timeScale, dt = dtMs / 1000;
@@ -10983,8 +10989,9 @@ class ArcadePhysics {
     this.world = new ArcadeWorld(scene, config);
     var self = this, w = this.world;
     var mk = function (x, y, key, frame, isStatic) {
-      var s = new Sprite(x, y, key !== undefined ? key : '__WHITE', frame);
-      s.scene = scene; scene.world.addChild(s);
+      // la clave se resuelve con las texturas de ESTA escena (sin escena se usaría las del primer juego de la página)
+      var s = new Sprite(x, y, scene.textures.get(key !== undefined ? key : '__WHITE', frame));
+      s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s);
       w.enable(s, isStatic);
       return s;
     };
@@ -11723,7 +11730,7 @@ class RigidPhysics2D {
     };
     this.add = {
       existing: function (obj, o) { if (!obj.parent) { obj.scene = scene; scene.world.addChild(obj); } return link(obj, o); },
-      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, key === undefined ? '__WHITE' : key, frame); s.scene = scene; scene.world.addChild(s); return link(s, o); },
+      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, scene.textures.get(key === undefined ? '__WHITE' : key, frame)); s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s); return link(s, o); },
       image: function (x, y, key, frame, o) { return self.add.sprite(x, y, key, frame, o); },
       rectangle: function (x, y, wd, ht, color, o) { var r = new ShapeObject('rectangle', x, y, { width: wd, height: ht }, color === undefined ? 0xffd43b : color, 1); r.scene = scene; scene.world.addChild(r); return link(r, Object.assign({ width: wd, height: ht }, o || {})); },
       circle: function (x, y, rad, color, o) { var c = new ShapeObject('circle', x, y, { radius: rad, width: rad * 2, height: rad * 2 }, color === undefined ? 0x74c0fc : color, 1); c.scene = scene; scene.world.addChild(c); return link(c, Object.assign({ shape: 'circle', radius: rad, width: rad * 2, height: rad * 2 }, o || {})); },
@@ -13614,6 +13621,26 @@ function cloudTexture2D(textures, key, o) {
   });
   return key;
 }
+/** Bruma que se repite sin costuras en horizontal y en vertical (niebla 2D): ruido de valor periódico en los dos ejes */
+function fogTexture2D(textures, key) {
+  if (textures.exists(key)) return key;
+  var S = 256, rng = new RNG(key), perm = [];
+  for (var i = 0; i < 256; i++) perm[i] = rng.float();
+  var val = function (x, y, p) { var ix = ((x % p) + p) % p, iy = ((y % p) + p) % p; return perm[(ix * 37 + iy * 91 + ((ix * 7) ^ (iy * 13))) & 255]; };
+  var noise = function (x, y, p) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    var a = val(x0, y0, p), b = val(x0 + 1, y0, p), c = val(x0, y0 + 1, p), d = val(x0 + 1, y0 + 1, p); return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy; };
+  textures.generate(key, S, S, function (ctx) {
+    var img = ctx.createImageData(S, S), D = img.data;
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var s = 0, amp = 0.5, f = 3, norm = 0;
+      for (var oc = 0; oc < 4; oc++) { s += amp * noise(x / S * f, y / S * f, f); norm += amp; amp *= 0.5; f *= 2; }
+      s /= norm; var t = Math.max(0, Math.min(1, (s - 0.3) / 0.45)); t = t * t * (3 - 2 * t);
+      var o = (y * S + x) * 4; D[o] = D[o + 1] = D[o + 2] = 255; D[o + 3] = Math.round(t * 230);
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+  return key;
+}
 /**
  * Nubes en capas con parallax (fijas a la cámara y desplazadas según su scroll y el viento).
  * o: { y, height, layers (2), speed (px/s del viento), parallax (0.05..0.5), color, alpha, coverage, seed, depth }
@@ -13626,7 +13653,7 @@ class Clouds2D extends Container {
     var W = scene.game.width, n = Math.max(1, Math.min(5, o.layers || 2)), baseY = o.y === undefined ? 60 : o.y, hgt = o.height || 170;
     for (var i = 0; i < n; i++) {
       var key = cloudTexture2D(scene.textures, '__clouds2d:' + (o.seed || 'nubes') + ':' + i + ':' + (o.coverage === undefined ? 0.5 : o.coverage), { coverage: o.coverage, seed: (o.seed || 'nubes') + i });
-      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k)); ts.setTexture(key);
+      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k), scene.textures.get(key)); ts.textureKey = key;
       ts.tint = o.color === undefined ? 0xffffff : o.color; ts.alpha = (o.alpha === undefined ? 0.9 : o.alpha) * (0.55 + 0.45 * k);
       ts.tileScaleX = ts.tileScaleY = 0.8 + 0.5 * k; ts.setScrollFactor(0);
       this.addChild(ts);
@@ -13653,20 +13680,43 @@ GameObjectFactory.prototype.skyGradient = function (top, bottom, o) {
 var WEATHER2D = {
   rain: { tex: 'rain', freq: 12, qty: [2, 4], speedY: [760, 980], speedX: [-90, -40], life: 1100, scale: 1, alpha: 0.55 },
   storm: { tex: 'rain', freq: 6, qty: [4, 7], speedY: [900, 1150], speedX: [-220, -120], life: 950, scale: 1.2, alpha: 0.65, lightning: true },
-  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 }
+  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 },
+  // niebla: capas de bruma que se desplazan por delante del mundo (sin partículas)
+  fog: { mist: true }
 };
 class Weather2D {
-  /** scene.weather2d('rain' | 'storm' | 'snow' | 'clear', { intensity (0..2), onLightning }) */
-  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
+  /** scene.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', { intensity (0..2), onLightning, color (niebla), prewarm }) */
+  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.mist = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
   set(kind, o) {
     o = o || {};
     var s = this.scene, W = s.game.width, H = s.game.height, P = WEATHER2D[kind];
     if (this.emitter) { this.emitter.destroy(); this.emitter = null; }
+    if (this.mist) { if (!this.mist.destroyed) this.mist.destroy(); this.mist = null; }
     if (this._lt) { this._lt.remove(); this._lt = null; }
     this.kind = P ? kind : 'clear';
     if (!P) return this;
+    var k0 = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
+    if (P.mist) {
+      // niebla: un velo uniforme y dos capas de bruma a pantalla completa que se desplazan a distinta velocidad
+      var fk = fogTexture2D(s.textures, '__fog2d'), col = o.color === undefined ? 0xe3e9f0 : o.color, parts = [];
+      var veil = s.add.hud.rectangle(W / 2, H / 2, W, H, col, Math.min(0.6, 0.16 * k0)); veil.setScrollFactor(0); veil.depth = -501; parts.push(veil);
+      var layers = [[0.5, 1.7, 11, 2], [0.36, 2.9, 5, -1]].map(function (L) {
+        var ts = s.add.hud.tileSprite(W / 2, H / 2, W, H, fk); ts.setScrollFactor(0); ts.tint = col; ts.alpha = Math.min(0.95, L[0] * k0); ts.tileScaleX = ts.tileScaleY = L[1]; ts.depth = -500; parts.push(ts);
+        return { s: ts, vx: L[2] * k0, vy: L[3] };
+      });
+      var cam = s.cameras ? s.cameras.main : null, t0 = 0;
+      var tick = function (time, delta) {
+        t0 += (delta || 16) / 1000; var sx = cam ? cam.scrollX : 0, sy = cam ? cam.scrollY : 0;
+        for (var i = 0; i < layers.length; i++) { var L = layers[i]; if (L.s.destroyed) continue; L.s.tilePositionX = sx * 0.3 * (i + 1) + t0 * L.vx; L.s.tilePositionY = sy * 0.3 * (i + 1) + t0 * L.vy; }
+      };
+      s.events.on('update', tick);
+      this.mist = { parts: parts, destroyed: false, destroy: function () { if (this.destroyed) return; this.destroyed = true; s.events.off('update', tick); parts.forEach(function (p) { if (!p.destroyed) p.destroy(); }); } };
+      return this;
+    }
     var T = s.textures;
-    if (!T.exists('__rain2d')) T.generate('__rain2d', 2, 18, function (c) { var g = c.createLinearGradient(0, 0, 0, 18); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 2, 18); });
+    // la gota se dibuja a lo largo del eje X (cola transparente → cabeza brillante): angleAlign gira ese eje hacia la
+    // velocidad, así cae como una raya casi vertical (dibujada en vertical quedaba tumbada, horizontal)
+    if (!T.exists('__rain2d')) T.generate('__rain2d', 18, 2, function (c) { var g = c.createLinearGradient(0, 0, 18, 0); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 18, 2); });
     if (!T.exists('__snow2d')) T.generate('__snow2d', 12, 12, function (c) { var g = c.createRadialGradient(6, 6, 0, 6, 6, 6); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 12, 12); });
     var k = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
     this.emitter = s.add.hud.particles(P.tex === 'rain' ? '__rain2d' : '__snow2d', {
@@ -13674,6 +13724,8 @@ class Weather2D {
       quantity: P.qty, scale: P.scale, alpha: P.alpha, maxParticles: Math.round(1200 * k) + 50, angleAlign: P.tex === 'rain'
     });
     this.emitter.depth = -500;
+    // la pantalla empieza ya con lluvia o nieve (si no, la nieve tardaba varios segundos en bajar de arriba)
+    if (o.prewarm !== false) this.emitter.prewarm(P.tex === 'snow' ? Math.min(P.life, (H + 40) / P.speedY[0] * 1000) : (H + 80) / P.speedY[0] * 1000);
     if (P.lightning) {
       var self = this, strike = function () {
         if (self.destroyed || !s.cameras) return;
@@ -13686,10 +13738,10 @@ class Weather2D {
     }
     return this;
   }
-  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
+  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this.mist && !this.mist.destroyed) this.mist.destroy(); this.mist = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
 }
 
-/** this.weather2d('rain' | 'storm' | 'snow' | 'clear', opciones) en cualquier escena */
+/** this.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', opciones) en cualquier escena */
 Scene.prototype.weather2d = function (kind, o) { var sys = this.sys; if (sys._weather2d && !sys._weather2d.destroyed) return sys._weather2d.set(kind, o); return (sys._weather2d = new Weather2D(this, kind, o)); };
 
 UG.Lights2D = Lights2D; UG.Light2D = Light2D; UG.LightLayer2D = LightLayer2D; UG.Clouds2D = Clouds2D; UG.Weather2D = Weather2D; UG.cloudTexture2D = cloudTexture2D;
@@ -19949,8 +20001,8 @@ var PARTICLE3D_PRESETS = {
   magic: { rate: 40, life: [0.6, 1.4], speed: [0.2, 0.8], spread: 1, gravity: 0.8, size: [0.25, 0], color: [0x8ec5ff, 0xd07bff], alpha: [1, 0], blend: 'add', drag: 0.8, radius: 0.5 },
   blood: { rate: 0, burst: 24, life: [0.3, 0.7], speed: [2, 5], spread: 0.6, direction: [0, 1, 0], gravity: -16, size: [0.15, 0.05], color: [0xb3001b, 0x5a0010], alpha: [1, 0.6], blend: 'normal', drag: 0.5 },
   muzzle: { rate: 0, burst: 10, life: [0.04, 0.09], speed: [1, 4], spread: 0.25, direction: [0, 0, 1], gravity: 0, size: [0.35, 0.05], color: [0xfff4c2, 0xffa12e], alpha: [1, 0], blend: 'add' },
-  rain: { rate: 400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.05, 0.05], stretch: 12, color: [0xaec8e8, 0xaec8e8], alpha: [0.5, 0.5], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0] },
-  snow: { rate: 120, life: [5, 7], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.9, 0.9], blend: 'normal', box: [30, 0, 30], offset: [0, 12, 0], wobble: 0.6 },
+  rain: { rate: 1400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.045, 0.045], stretch: 16, color: [0xe3ecf7, 0xe3ecf7], alpha: [0.75, 0.75], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0], prewarm: 1 },
+  snow: { rate: 420, life: [7, 10], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.95, 0.95], blend: 'normal', box: [30, 14, 30], offset: [0, 6, 0], wobble: 0.6, prewarm: 10 },
   coin: { rate: 0, burst: 16, life: [0.3, 0.6], speed: [2, 4], spread: 1, gravity: -4, size: [0.2, 0], color: [0xffe066, 0xffb700], alpha: [1, 0], blend: 'add' },
   trail: { rate: 50, life: [0.3, 0.5], speed: [0, 0.2], spread: 1, gravity: 0, size: [0.35, 0], color: [0x9be7ff, 0x3f8cff], alpha: [0.7, 0], blend: 'add' }
 };
@@ -19994,6 +20046,16 @@ class ParticleEmitter3D extends InstancedMesh3D {
   /** Emite n partículas ya (explosión, chispas, disparo). position y direction ([x,y,z]) opcionales (mundo) */
   burst(n, position, direction) { this._dirOverride = direction || null; for (var i = 0; i < n; i++) this._spawn(position); this._dirOverride = null; return this; }
   start() { this.emitting = true; this._t = 0; return this; }
+  /**
+   * Simula `seconds` de golpe para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno en vez de ir
+   * apareciendo desde arriba. Usa la posición actual del emisor.
+   */
+  prewarm(seconds) {
+    var t = Math.max(0, Math.min(30, +seconds || 0)), h = 1 / 30;
+    if (this.worldSpace) this.updateWorldMatrix();
+    for (; t > 0; t -= h) this._step(Math.min(h, t));
+    return this;
+  }
   stop() { this.emitting = false; return this; }
   get alive() { return this._n; }
   _spawn(at) {
@@ -20074,6 +20136,7 @@ class ParticleEmitter3D extends InstancedMesh3D {
     this.visible = this._n > 0 || this.visible;
   }
   update(dt) {
+    if (this.cfg.prewarm > 0 && !this._warmed) { this._warmed = true; if (this.emitting) this.prewarm(this.cfg.prewarm); }
     this._step(dt);
     if (this.view && this.view.camera) this._build(this.view.camera);
     if (this.autoDestroy && !this.emitting && this._n === 0 && !this._pendingBurst) { this.destroy(); return false; }
@@ -20302,9 +20365,9 @@ var WEATHER_PRESETS = {
   cloudy: { clouds: { coverage: 0.62, color: 0xe9edf2, opacity: 0.95 }, fog: 0.8, particles: null, light: 0.8 },
   overcast: { clouds: { coverage: 0.9, color: 0xc4c9d1, opacity: 1, sharpness: 0.6 }, fog: 0.6, particles: null, light: 0.6 },
   rain: { clouds: { coverage: 0.85, color: 0x9aa3ae, opacity: 1, sharpness: 0.55 }, fog: 0.55, particles: 'rain', light: 0.55 },
-  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 900, light: 0.4, lightning: true },
+  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 2600, light: 0.4, lightning: true },
   snow: { clouds: { coverage: 0.8, color: 0xdfe4ea, opacity: 1, sharpness: 0.5 }, fog: 0.5, particles: 'snow', light: 0.75 },
-  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.25, particles: null, light: 0.7 }
+  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.12, particles: null, light: 0.7 }
 };
 /** Clima de la vista: view.weather('rain' | 'storm' | 'snow' | 'cloudy' | 'overcast' | 'fog' | 'clear', { intensity, lightning, onLightning }) */
 class Weather3D {
@@ -20318,14 +20381,32 @@ class Weather3D {
     this.kind = WEATHER_PRESETS[kind] ? kind : 'clear'; this.intensity = o.intensity === undefined ? 1 : Math.max(0, Math.min(2, +o.intensity || 0));
     this.lightning = o.lightning !== undefined ? !!o.lightning : !!P.lightning; this.onLightning = typeof o.onLightning === 'function' ? o.onLightning : null;
     sc.setClouds(P.clouds);
-    // niebla: se guarda la original y se acerca según el clima
-    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.35 + 0.65 * P.fog); }
+    // cielo: los climas grises lo apagan hacia gris (se guardan los colores para volver a despejado). Con ciclo
+    // día/noche no se toca: ese control pinta el cielo en cada fotograma
+    var dnOn = v._dayNight && !v._dayNight.destroyed;
+    if (sc.sky && !dnOn) {
+      if (!this._sky0 || this._skyRef !== sc.sky) { this._sky0 = { top: sc.sky.top, horizon: sc.sky.horizon, bottom: sc.sky.bottom }; this._skyRef = sc.sky; }
+      var gm = Math.max(0, 1 - P.fog) * 0.85, grey = P.particles === 'snow' ? 0xdfe3e8 : 0xb9c0c8;
+      sc.sky.top = Color.lerp(this._sky0.top, grey, gm); sc.sky.horizon = Color.lerp(this._sky0.horizon, grey, gm * 0.7); sc.sky.bottom = Color.lerp(this._sky0.bottom, grey, gm * 0.4);
+    }
+    // niebla: se guarda la original y se acerca según el clima. Si la escena no tenía niebla y el clima la pide (lluvia,
+    // nieve, niebla…) se crea una del color del horizonte (antes «niebla» no hacía nada en una escena sin niebla);
+    // al volver a despejado se quita
+    if (!sc.fog && P.fog < 0.99) { var hz = sc.sky ? sc.sky.horizon : sc.background; /* horizonte ya ajustado al clima */ sc.setFog('linear', hz === undefined ? 0xc4ccd6 : hz, 20, 120); this._ownFog = sc.fog; this._fog0 = null; }
+    else if (this._ownFog && P.fog >= 0.99 && sc.fog === this._ownFog) { sc.fog = null; this._ownFog = null; this._fog0 = null; }
+    if (this._ownFog && sc.fog === this._ownFog && sc.sky) sc.fog.color = sc.sky.horizon; // la niebla propia sigue al horizonte
+    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.25 + 0.75 * P.fog); }
     this.lightScale = P.light;
     if (this._fx) { this._fx.destroy(); this._fx = null; }
     if (P.particles) {
       var base = PARTICLE3D_PRESETS[P.particles], rate = (P.rate || base.rate) * this.intensity;
-      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: [40, 0, 40], offset: [0, P.particles === 'snow' ? 14 : 18, 0], worldSpace: true });
+      // la nieve cae despacio: nace en toda la columna alrededor de la cámara; la lluvia, arriba (llega abajo en 1 s)
+      var snow = P.particles === 'snow';
+      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: snow ? [34, 16, 34] : [26, 0, 26], offset: [0, snow ? 7 : 18, 0], worldSpace: true, prewarm: 0 });
       this._fx.name = 'weather:' + P.particles;
+      // empieza ya lleno, centrado en la cámara (si no, la nieve tardaba varios segundos en verse)
+      if (v.camera) { v.camera.getWorldPosition(_wv); this._fx.position.set(_wv.x, _wv.y - 2, _wv.z); }
+      this._fx.prewarm(base.life[1]);
     }
     // luces que se atenúan con el clima (sol y cielo de la escena); la intensidad base se guarda una sola vez
     var base0 = this._base || (this._base = new Map());
@@ -20352,6 +20433,10 @@ class Weather3D {
   destroy() {
     if (this.destroyed) return; this.destroyed = true;
     if (this._fx && !this._fx.destroyed) this._fx.destroy(); this._fx = null;
+    if (this._ownFog && this.view && this.view.scene3d && this.view.scene3d.fog === this._ownFog) this.view.scene3d.fog = null;
+    this._ownFog = null;
+    if (this._sky0 && this.view && this.view.scene3d && this.view.scene3d.sky === this._skyRef) { var sk = this.view.scene3d.sky; sk.top = this._sky0.top; sk.horizon = this._sky0.horizon; sk.bottom = this._sky0.bottom; }
+    this._sky0 = null; this._skyRef = null;
     if (this._base) { this._base.forEach(function (b, l) { if (!l.destroyed) l.intensity = b; }); this._base.clear(); }
     var v = this.view; this.view = null; this.onLightning = null;
     if (v && v.controls) { var i = v.controls.indexOf(this); if (i >= 0) v.controls.splice(i, 1); }

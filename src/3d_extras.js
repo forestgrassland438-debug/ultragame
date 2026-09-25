@@ -11,8 +11,8 @@ var PARTICLE3D_PRESETS = {
   magic: { rate: 40, life: [0.6, 1.4], speed: [0.2, 0.8], spread: 1, gravity: 0.8, size: [0.25, 0], color: [0x8ec5ff, 0xd07bff], alpha: [1, 0], blend: 'add', drag: 0.8, radius: 0.5 },
   blood: { rate: 0, burst: 24, life: [0.3, 0.7], speed: [2, 5], spread: 0.6, direction: [0, 1, 0], gravity: -16, size: [0.15, 0.05], color: [0xb3001b, 0x5a0010], alpha: [1, 0.6], blend: 'normal', drag: 0.5 },
   muzzle: { rate: 0, burst: 10, life: [0.04, 0.09], speed: [1, 4], spread: 0.25, direction: [0, 0, 1], gravity: 0, size: [0.35, 0.05], color: [0xfff4c2, 0xffa12e], alpha: [1, 0], blend: 'add' },
-  rain: { rate: 400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.05, 0.05], stretch: 12, color: [0xaec8e8, 0xaec8e8], alpha: [0.5, 0.5], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0] },
-  snow: { rate: 120, life: [5, 7], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.9, 0.9], blend: 'normal', box: [30, 0, 30], offset: [0, 12, 0], wobble: 0.6 },
+  rain: { rate: 1400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.045, 0.045], stretch: 16, color: [0xe3ecf7, 0xe3ecf7], alpha: [0.75, 0.75], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0], prewarm: 1 },
+  snow: { rate: 420, life: [7, 10], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.95, 0.95], blend: 'normal', box: [30, 14, 30], offset: [0, 6, 0], wobble: 0.6, prewarm: 10 },
   coin: { rate: 0, burst: 16, life: [0.3, 0.6], speed: [2, 4], spread: 1, gravity: -4, size: [0.2, 0], color: [0xffe066, 0xffb700], alpha: [1, 0], blend: 'add' },
   trail: { rate: 50, life: [0.3, 0.5], speed: [0, 0.2], spread: 1, gravity: 0, size: [0.35, 0], color: [0x9be7ff, 0x3f8cff], alpha: [0.7, 0], blend: 'add' }
 };
@@ -56,6 +56,16 @@ class ParticleEmitter3D extends InstancedMesh3D {
   /** Emite n partículas ya (explosión, chispas, disparo). position y direction ([x,y,z]) opcionales (mundo) */
   burst(n, position, direction) { this._dirOverride = direction || null; for (var i = 0; i < n; i++) this._spawn(position); this._dirOverride = null; return this; }
   start() { this.emitting = true; this._t = 0; return this; }
+  /**
+   * Simula `seconds` de golpe para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno en vez de ir
+   * apareciendo desde arriba. Usa la posición actual del emisor.
+   */
+  prewarm(seconds) {
+    var t = Math.max(0, Math.min(30, +seconds || 0)), h = 1 / 30;
+    if (this.worldSpace) this.updateWorldMatrix();
+    for (; t > 0; t -= h) this._step(Math.min(h, t));
+    return this;
+  }
   stop() { this.emitting = false; return this; }
   get alive() { return this._n; }
   _spawn(at) {
@@ -136,6 +146,7 @@ class ParticleEmitter3D extends InstancedMesh3D {
     this.visible = this._n > 0 || this.visible;
   }
   update(dt) {
+    if (this.cfg.prewarm > 0 && !this._warmed) { this._warmed = true; if (this.emitting) this.prewarm(this.cfg.prewarm); }
     this._step(dt);
     if (this.view && this.view.camera) this._build(this.view.camera);
     if (this.autoDestroy && !this.emitting && this._n === 0 && !this._pendingBurst) { this.destroy(); return false; }

@@ -227,7 +227,7 @@
     smoke: { label: 'Humo', cfg: { speed: { min: 20, max: 60 }, angle: { min: 250, max: 290 }, lifespan: { min: 1200, max: 2400 }, scale: { start: 0.6, end: 2.2 }, alpha: { start: 0.45, end: 0 }, color: [0x999999, 0x444444], frequency: 60, quantity: 1, gravityY: -20 } },
     sparks: { label: 'Chispas', cfg: { speed: { min: 150, max: 380 }, lifespan: { min: 250, max: 650 }, scale: { start: 0.3, end: 0 }, alpha: { start: 1, end: 0 }, color: [0xffffff, 0xffc94d], blendMode: 'add', frequency: 30, quantity: 3, gravityY: 500 } },
     magic: { label: 'Magia', cfg: { speed: { min: 10, max: 60 }, lifespan: { min: 600, max: 1400 }, scale: { start: 0.5, end: 0 }, alpha: { start: 1, end: 0 }, color: [0x8ec5ff, 0xd07bff], blendMode: 'add', frequency: 25, quantity: 1, x: { min: -24, max: 24 }, y: { min: -24, max: 24 } } },
-    rain: { label: 'Lluvia', cfg: { speedY: { min: 700, max: 900 }, speedX: { min: -40, max: -20 }, lifespan: 1200, scale: { start: 0.12, end: 0.12 }, alpha: { start: 0.5, end: 0.5 }, color: [0xaec8e8], frequency: 5, quantity: 4, stretch: 8, x: { min: -700, max: 700 } } },
+    rain: { label: 'Lluvia', cfg: { speedY: { min: 700, max: 900 }, speedX: { min: -40, max: -20 }, lifespan: 1200, scale: { start: 0.55, end: 0.55 }, alpha: { start: 0.6, end: 0.6 }, color: [0xc8daf0], frequency: 5, quantity: 4, angleAlign: true, x: { min: -700, max: 700 } } },
     snow: { label: 'Nieve', cfg: { speedY: { min: 40, max: 90 }, speedX: { min: -20, max: 20 }, lifespan: 9000, scale: { start: 0.25, end: 0.25 }, alpha: { start: 0.9, end: 0.9 }, color: [0xffffff], frequency: 40, quantity: 2, x: { min: -700, max: 700 } } },
     confetti: { label: 'Confeti', cfg: { speed: { min: 200, max: 420 }, angle: { min: 230, max: 310 }, lifespan: { min: 1500, max: 2600 }, scale: { start: 0.35, end: 0.25 }, alpha: { start: 1, end: 0.8 }, tint: [0xff6b6b, 0xffd43b, 0x69db7c, 0x4dabf7, 0xda77f2], frequency: 30, quantity: 3, gravityY: 420, rotate: { start: 0, end: 720 } } },
     bubbles: { label: 'Burbujas', cfg: { speed: { min: 20, max: 60 }, angle: { min: 260, max: 280 }, lifespan: { min: 2000, max: 3500 }, scale: { start: 0.2, end: 0.6 }, alpha: { start: 0.6, end: 0 }, color: [0xbde0fe], frequency: 120, quantity: 1, gravityY: -30, x: { min: -40, max: 40 } } },
@@ -371,7 +371,7 @@
     callFunction: { label: 'Llamar a una función del script de escena', icon: 'ƒ', params: [{ key: 'name', label: 'Nombre de la función', type: 'text', def: 'miFuncion' }] },
     log: { label: 'Escribir en la consola', icon: '🖨️', params: [{ key: 'message', label: 'Mensaje ({variable} se sustituye)', type: 'text', def: 'Puntos: {puntos}' }] },
     impulse: { label: 'Empujar (impulso)', icon: '👊', params: [TARGET, { key: 'x', label: 'X', type: 'number', def: 0, step: 10 }, { key: 'y', label: 'Y', type: 'number', def: -300, step: 10 }, { key: 'z', label: 'Z (3D)', type: 'number', def: 0, step: 0.5 }] },
-    setWeather: { label: 'Cambiar el clima', icon: '🌦️', params: [{ key: 'weather', label: 'Clima', type: 'select', def: 'rain', options: [['clear', 'Despejado'], ['cloudy', 'Nublado (3D)'], ['overcast', 'Cubierto (3D)'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla (3D)']] }] },
+    setWeather: { label: 'Cambiar el clima', icon: '🌦️', params: [{ key: 'weather', label: 'Clima', type: 'select', def: 'rain', options: [['clear', 'Despejado'], ['cloudy', 'Nublado (3D)'], ['overcast', 'Cubierto (3D)'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla']] }] },
     setTimeOfDay: { label: 'Poner la hora del día (3D)', icon: '🕒', params: [{ key: 'hour', label: 'Hora (0..24)', type: 'number', def: 20, min: 0, max: 24, step: 0.5 }] },
     addDecal: { label: 'Marca en el suelo o pared (3D)', icon: '🩸', params: [{ key: 'kind', label: 'Tipo', type: 'select', def: 'scorch', options: [['bullet', 'Agujero de bala'], ['blood', 'Sangre'], ['pool', 'Charco'], ['scorch', 'Quemadura'], ['crack', 'Grieta']] }, { key: 'at', label: 'Bajo', type: 'target', def: 'self' }, { key: 'size', label: 'Tamaño', type: 'number', def: 1.5, min: 0.05, max: 50, step: 0.1 }] },
     web3Connect: { label: 'Conectar la cartera (web3)', icon: '🦊', params: [] },
@@ -488,7 +488,7 @@
   S.SCENE_ENV_2D = [
     { key: 'engine', label: 'Física', type: 'select', def: 'arcade', options: [['arcade', 'Arcade (rápida: plataformas, naves)'], ['rigid', 'Cuerpos rígidos (giran, se apilan, uniones)']] },
     { key: 'lights', label: 'Luces 2D con sombras', type: 'bool', def: false }, { key: 'ambient', label: 'Luz ambiente (color «apagado»)', type: 'color', def: '#1a1e30' },
-    { key: 'weather', label: 'Clima', type: 'select', def: 'none', options: [['none', 'Ninguno'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve']] }
+    { key: 'weather', label: 'Clima', type: 'select', def: 'none', options: [['none', 'Ninguno'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla']] }
   ];
 
   /* --------------------------------------------------------------- saneado (entrada no confiable: archivo, red) */
