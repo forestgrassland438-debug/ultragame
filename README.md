@@ -76,7 +76,7 @@ Con módulos: `import UG from './dist/ultragame.esm.js'`. En Node: `const UG = r
 ```bash
 node tools/build.js                            # compila src/ -> dist/ (y copia los tipos)
 node tools/server.js --port 8080 --allow-save  # servidor estático en 127.0.0.1 (el guardado lo usan las páginas de captura)
-node tests/node-tests.js                       # 83 pruebas sin navegador (2D, 3D y Studio)
+npm test                                       # compila y pasa todas las pruebas sin navegador (motor 2D/3D, Studio, entrada, exportación)
 ```
 
 Después abre:
@@ -89,6 +89,9 @@ Después abre:
 - `http://127.0.0.1:8080/tests/3d-basic.html` y `3d-models.html` — render 3D por píxeles y carga de modelos
 - `http://127.0.0.1:8080/tests/capture-thumbs3d.html?smoke=1` — los 8 juegos 3D jugados por su bot en WebGPU/WebGL2/WebGL con control de errores y fugas
 - `http://127.0.0.1:8080/tests/studio-runtime.html?auto=1` — runtime del Studio
+- `http://127.0.0.1:8080/tests/weather.html?auto=1` — climas 2D y 3D (lluvia, tormenta, nieve, niebla) con medida de la orientación de las gotas (`&r=canvas` para el renderizador Canvas)
+- `http://127.0.0.1:8080/tests/docs-examples.html` — ejecuta los ejemplos de la documentación (física rígida 2D, luces 2D, clima 2D, partículas, Web3 con cartera simulada y mundo 3D) y comprueba su efecto
+- `http://127.0.0.1:8080/tests/studio-physics.html?auto=1` — física del Studio: suelos, plataformas de un sentido, mapas de Tiled, cuerpos rígidos, 3D y dibujo de colisiones
 - `http://127.0.0.1:8080/tests/bench.html` — benchmarks
 
 ## Juegos

@@ -175,6 +175,26 @@ function cloudTexture2D(textures, key, o) {
   });
   return key;
 }
+/** Bruma que se repite sin costuras en horizontal y en vertical (niebla 2D): ruido de valor periódico en los dos ejes */
+function fogTexture2D(textures, key) {
+  if (textures.exists(key)) return key;
+  var S = 256, rng = new RNG(key), perm = [];
+  for (var i = 0; i < 256; i++) perm[i] = rng.float();
+  var val = function (x, y, p) { var ix = ((x % p) + p) % p, iy = ((y % p) + p) % p; return perm[(ix * 37 + iy * 91 + ((ix * 7) ^ (iy * 13))) & 255]; };
+  var noise = function (x, y, p) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    var a = val(x0, y0, p), b = val(x0 + 1, y0, p), c = val(x0, y0 + 1, p), d = val(x0 + 1, y0 + 1, p); return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy; };
+  textures.generate(key, S, S, function (ctx) {
+    var img = ctx.createImageData(S, S), D = img.data;
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var s = 0, amp = 0.5, f = 3, norm = 0;
+      for (var oc = 0; oc < 4; oc++) { s += amp * noise(x / S * f, y / S * f, f); norm += amp; amp *= 0.5; f *= 2; }
+      s /= norm; var t = Math.max(0, Math.min(1, (s - 0.3) / 0.45)); t = t * t * (3 - 2 * t);
+      var o = (y * S + x) * 4; D[o] = D[o + 1] = D[o + 2] = 255; D[o + 3] = Math.round(t * 230);
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+  return key;
+}
 /**
  * Nubes en capas con parallax (fijas a la cámara y desplazadas según su scroll y el viento).
  * o: { y, height, layers (2), speed (px/s del viento), parallax (0.05..0.5), color, alpha, coverage, seed, depth }
@@ -187,7 +207,7 @@ class Clouds2D extends Container {
     var W = scene.game.width, n = Math.max(1, Math.min(5, o.layers || 2)), baseY = o.y === undefined ? 60 : o.y, hgt = o.height || 170;
     for (var i = 0; i < n; i++) {
       var key = cloudTexture2D(scene.textures, '__clouds2d:' + (o.seed || 'nubes') + ':' + i + ':' + (o.coverage === undefined ? 0.5 : o.coverage), { coverage: o.coverage, seed: (o.seed || 'nubes') + i });
-      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k)); ts.setTexture(key);
+      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k), scene.textures.get(key)); ts.textureKey = key;
       ts.tint = o.color === undefined ? 0xffffff : o.color; ts.alpha = (o.alpha === undefined ? 0.9 : o.alpha) * (0.55 + 0.45 * k);
       ts.tileScaleX = ts.tileScaleY = 0.8 + 0.5 * k; ts.setScrollFactor(0);
       this.addChild(ts);
@@ -214,20 +234,43 @@ GameObjectFactory.prototype.skyGradient = function (top, bottom, o) {
 var WEATHER2D = {
   rain: { tex: 'rain', freq: 12, qty: [2, 4], speedY: [760, 980], speedX: [-90, -40], life: 1100, scale: 1, alpha: 0.55 },
   storm: { tex: 'rain', freq: 6, qty: [4, 7], speedY: [900, 1150], speedX: [-220, -120], life: 950, scale: 1.2, alpha: 0.65, lightning: true },
-  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 }
+  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 },
+  // niebla: capas de bruma que se desplazan por delante del mundo (sin partículas)
+  fog: { mist: true }
 };
 class Weather2D {
-  /** scene.weather2d('rain' | 'storm' | 'snow' | 'clear', { intensity (0..2), onLightning }) */
-  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
+  /** scene.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', { intensity (0..2), onLightning, color (niebla), prewarm }) */
+  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.mist = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
   set(kind, o) {
     o = o || {};
     var s = this.scene, W = s.game.width, H = s.game.height, P = WEATHER2D[kind];
     if (this.emitter) { this.emitter.destroy(); this.emitter = null; }
+    if (this.mist) { if (!this.mist.destroyed) this.mist.destroy(); this.mist = null; }
     if (this._lt) { this._lt.remove(); this._lt = null; }
     this.kind = P ? kind : 'clear';
     if (!P) return this;
+    var k0 = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
+    if (P.mist) {
+      // niebla: un velo uniforme y dos capas de bruma a pantalla completa que se desplazan a distinta velocidad
+      var fk = fogTexture2D(s.textures, '__fog2d'), col = o.color === undefined ? 0xe3e9f0 : o.color, parts = [];
+      var veil = s.add.hud.rectangle(W / 2, H / 2, W, H, col, Math.min(0.6, 0.16 * k0)); veil.setScrollFactor(0); veil.depth = -501; parts.push(veil);
+      var layers = [[0.5, 1.7, 11, 2], [0.36, 2.9, 5, -1]].map(function (L) {
+        var ts = s.add.hud.tileSprite(W / 2, H / 2, W, H, fk); ts.setScrollFactor(0); ts.tint = col; ts.alpha = Math.min(0.95, L[0] * k0); ts.tileScaleX = ts.tileScaleY = L[1]; ts.depth = -500; parts.push(ts);
+        return { s: ts, vx: L[2] * k0, vy: L[3] };
+      });
+      var cam = s.cameras ? s.cameras.main : null, t0 = 0;
+      var tick = function (time, delta) {
+        t0 += (delta || 16) / 1000; var sx = cam ? cam.scrollX : 0, sy = cam ? cam.scrollY : 0;
+        for (var i = 0; i < layers.length; i++) { var L = layers[i]; if (L.s.destroyed) continue; L.s.tilePositionX = sx * 0.3 * (i + 1) + t0 * L.vx; L.s.tilePositionY = sy * 0.3 * (i + 1) + t0 * L.vy; }
+      };
+      s.events.on('update', tick);
+      this.mist = { parts: parts, destroyed: false, destroy: function () { if (this.destroyed) return; this.destroyed = true; s.events.off('update', tick); parts.forEach(function (p) { if (!p.destroyed) p.destroy(); }); } };
+      return this;
+    }
     var T = s.textures;
-    if (!T.exists('__rain2d')) T.generate('__rain2d', 2, 18, function (c) { var g = c.createLinearGradient(0, 0, 0, 18); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 2, 18); });
+    // la gota se dibuja a lo largo del eje X (cola transparente → cabeza brillante): angleAlign gira ese eje hacia la
+    // velocidad, así cae como una raya casi vertical (dibujada en vertical quedaba tumbada, horizontal)
+    if (!T.exists('__rain2d')) T.generate('__rain2d', 18, 2, function (c) { var g = c.createLinearGradient(0, 0, 18, 0); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 18, 2); });
     if (!T.exists('__snow2d')) T.generate('__snow2d', 12, 12, function (c) { var g = c.createRadialGradient(6, 6, 0, 6, 6, 6); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 12, 12); });
     var k = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
     this.emitter = s.add.hud.particles(P.tex === 'rain' ? '__rain2d' : '__snow2d', {
@@ -235,6 +278,8 @@ class Weather2D {
       quantity: P.qty, scale: P.scale, alpha: P.alpha, maxParticles: Math.round(1200 * k) + 50, angleAlign: P.tex === 'rain'
     });
     this.emitter.depth = -500;
+    // la pantalla empieza ya con lluvia o nieve (si no, la nieve tardaba varios segundos en bajar de arriba)
+    if (o.prewarm !== false) this.emitter.prewarm(P.tex === 'snow' ? Math.min(P.life, (H + 40) / P.speedY[0] * 1000) : (H + 80) / P.speedY[0] * 1000);
     if (P.lightning) {
       var self = this, strike = function () {
         if (self.destroyed || !s.cameras) return;
@@ -247,10 +292,10 @@ class Weather2D {
     }
     return this;
   }
-  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
+  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this.mist && !this.mist.destroyed) this.mist.destroy(); this.mist = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
 }
 
-/** this.weather2d('rain' | 'storm' | 'snow' | 'clear', opciones) en cualquier escena */
+/** this.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', opciones) en cualquier escena */
 Scene.prototype.weather2d = function (kind, o) { var sys = this.sys; if (sys._weather2d && !sys._weather2d.destroyed) return sys._weather2d.set(kind, o); return (sys._weather2d = new Weather2D(this, kind, o)); };
 
 UG.Lights2D = Lights2D; UG.Light2D = Light2D; UG.LightLayer2D = LightLayer2D; UG.Clouds2D = Clouds2D; UG.Weather2D = Weather2D; UG.cloudTexture2D = cloudTexture2D;

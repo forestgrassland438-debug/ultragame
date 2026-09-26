@@ -32,6 +32,7 @@ const args = process.argv.slice(2);
 const argVal = (name, def) => { const i = args.indexOf(name); return i >= 0 && i + 1 < args.length ? args[i + 1] : def; };
 const PORT_ARG = Number(argVal('--port', '5210'));
 const WORKSPACE = path.resolve(argVal('--workspace', path.join(ROOT, 'projects')));
+const recoveryStore = require('./recovery-store')(WORKSPACE);
 const NO_OPEN = args.includes('--no-open');
 const BROWSER = argVal('--browser', null);
 const TOKEN = crypto.randomBytes(24).toString('hex');
@@ -238,6 +239,12 @@ async function api(req, res, url) {
   if (!originOk(req, req.method !== 'GET' && req.method !== 'HEAD')) return fail(res, 403, 'origen no permitido');
   const q = url.searchParams, route = req.method + ' ' + url.pathname;
   switch (route) {
+    case 'GET /api/recovery':
+      return q.has('key') ? send(res,200,recoveryStore.load(q.get('key')),'application/octet-stream') : send(res,200,{drafts:recoveryStore.list()});
+    case 'PUT /api/recovery': {
+      const bytes=await readBody(req,64*1024*1024);
+      return send(res,200,recoveryStore.save(q.get('key'),{kind:q.get('kind'),name:q.get('name'),projectId:q.get('project')},bytes));
+    }
     case 'GET /api/office':
       return send(res, 200, officeConverter.status());
     case 'POST /api/office/convert': {
@@ -327,7 +334,7 @@ async function api(req, res, url) {
       const dir = projectDir(q.get('p')); if (!dir || !fs.existsSync(dir)) return fail(res, 404, 'no existe');
       const target = q.get('what') === 'export' ? path.join(dir, 'export') : dir;
       if (!isSafePath(WORKSPACE, target)) return fail(res, 403, 'ruta no permitida');
-      if (!fs.existsSync(target)) return fail(res, 404, 'todavía no existe');
+      if (!fs.existsSync(target)) return fail(res, 404, q.get('what') === 'export' ? 'Todavía no has exportado este proyecto: usa primero Archivo › Exportar a carpeta (disco)' : 'La carpeta del proyecto no existe');
       const cmd = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
       try { const ch = spawn(cmd, [target], { detached: true, stdio: 'ignore', shell: false }); ch.on('error', () => {}); ch.unref(); } catch (e) { return fail(res, 500, 'no se pudo abrir'); }
       return send(res, 200, { ok: true });

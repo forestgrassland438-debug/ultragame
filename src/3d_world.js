@@ -79,9 +79,9 @@ var WEATHER_PRESETS = {
   cloudy: { clouds: { coverage: 0.62, color: 0xe9edf2, opacity: 0.95 }, fog: 0.8, particles: null, light: 0.8 },
   overcast: { clouds: { coverage: 0.9, color: 0xc4c9d1, opacity: 1, sharpness: 0.6 }, fog: 0.6, particles: null, light: 0.6 },
   rain: { clouds: { coverage: 0.85, color: 0x9aa3ae, opacity: 1, sharpness: 0.55 }, fog: 0.55, particles: 'rain', light: 0.55 },
-  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 900, light: 0.4, lightning: true },
+  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 2600, light: 0.4, lightning: true },
   snow: { clouds: { coverage: 0.8, color: 0xdfe4ea, opacity: 1, sharpness: 0.5 }, fog: 0.5, particles: 'snow', light: 0.75 },
-  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.25, particles: null, light: 0.7 }
+  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.12, particles: null, light: 0.7 }
 };
 /** Clima de la vista: view.weather('rain' | 'storm' | 'snow' | 'cloudy' | 'overcast' | 'fog' | 'clear', { intensity, lightning, onLightning }) */
 class Weather3D {
@@ -95,14 +95,32 @@ class Weather3D {
     this.kind = WEATHER_PRESETS[kind] ? kind : 'clear'; this.intensity = o.intensity === undefined ? 1 : Math.max(0, Math.min(2, +o.intensity || 0));
     this.lightning = o.lightning !== undefined ? !!o.lightning : !!P.lightning; this.onLightning = typeof o.onLightning === 'function' ? o.onLightning : null;
     sc.setClouds(P.clouds);
-    // niebla: se guarda la original y se acerca según el clima
-    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.35 + 0.65 * P.fog); }
+    // cielo: los climas grises lo apagan hacia gris (se guardan los colores para volver a despejado). Con ciclo
+    // día/noche no se toca: ese control pinta el cielo en cada fotograma
+    var dnOn = v._dayNight && !v._dayNight.destroyed;
+    if (sc.sky && !dnOn) {
+      if (!this._sky0 || this._skyRef !== sc.sky) { this._sky0 = { top: sc.sky.top, horizon: sc.sky.horizon, bottom: sc.sky.bottom }; this._skyRef = sc.sky; }
+      var gm = Math.max(0, 1 - P.fog) * 0.85, grey = P.particles === 'snow' ? 0xdfe3e8 : 0xb9c0c8;
+      sc.sky.top = Color.lerp(this._sky0.top, grey, gm); sc.sky.horizon = Color.lerp(this._sky0.horizon, grey, gm * 0.7); sc.sky.bottom = Color.lerp(this._sky0.bottom, grey, gm * 0.4);
+    }
+    // niebla: se guarda la original y se acerca según el clima. Si la escena no tenía niebla y el clima la pide (lluvia,
+    // nieve, niebla…) se crea una del color del horizonte (antes «niebla» no hacía nada en una escena sin niebla);
+    // al volver a despejado se quita
+    if (!sc.fog && P.fog < 0.99) { var hz = sc.sky ? sc.sky.horizon : sc.background; /* horizonte ya ajustado al clima */ sc.setFog('linear', hz === undefined ? 0xc4ccd6 : hz, 20, 120); this._ownFog = sc.fog; this._fog0 = null; }
+    else if (this._ownFog && P.fog >= 0.99 && sc.fog === this._ownFog) { sc.fog = null; this._ownFog = null; this._fog0 = null; }
+    if (this._ownFog && sc.fog === this._ownFog && sc.sky) sc.fog.color = sc.sky.horizon; // la niebla propia sigue al horizonte
+    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.25 + 0.75 * P.fog); }
     this.lightScale = P.light;
     if (this._fx) { this._fx.destroy(); this._fx = null; }
     if (P.particles) {
       var base = PARTICLE3D_PRESETS[P.particles], rate = (P.rate || base.rate) * this.intensity;
-      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: [40, 0, 40], offset: [0, P.particles === 'snow' ? 14 : 18, 0], worldSpace: true });
+      // la nieve cae despacio: nace en toda la columna alrededor de la cámara; la lluvia, arriba (llega abajo en 1 s)
+      var snow = P.particles === 'snow';
+      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: snow ? [34, 16, 34] : [26, 0, 26], offset: [0, snow ? 7 : 18, 0], worldSpace: true, prewarm: 0 });
       this._fx.name = 'weather:' + P.particles;
+      // empieza ya lleno, centrado en la cámara (si no, la nieve tardaba varios segundos en verse)
+      if (v.camera) { v.camera.getWorldPosition(_wv); this._fx.position.set(_wv.x, _wv.y - 2, _wv.z); }
+      this._fx.prewarm(base.life[1]);
     }
     // luces que se atenúan con el clima (sol y cielo de la escena); la intensidad base se guarda una sola vez
     var base0 = this._base || (this._base = new Map());
@@ -129,6 +147,10 @@ class Weather3D {
   destroy() {
     if (this.destroyed) return; this.destroyed = true;
     if (this._fx && !this._fx.destroyed) this._fx.destroy(); this._fx = null;
+    if (this._ownFog && this.view && this.view.scene3d && this.view.scene3d.fog === this._ownFog) this.view.scene3d.fog = null;
+    this._ownFog = null;
+    if (this._sky0 && this.view && this.view.scene3d && this.view.scene3d.sky === this._skyRef) { var sk = this.view.scene3d.sky; sk.top = this._sky0.top; sk.horizon = this._sky0.horizon; sk.bottom = this._sky0.bottom; }
+    this._sky0 = null; this._skyRef = null;
     if (this._base) { this._base.forEach(function (b, l) { if (!l.destroyed) l.intensity = b; }); this._base.clear(); }
     var v = this.view; this.view = null; this.onLightning = null;
     if (v && v.controls) { var i = v.controls.indexOf(this); if (i >= 0) v.controls.splice(i, 1); }

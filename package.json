@@ -10,6 +10,7 @@
     "build": "node tools/build.js",
     "watch": "node tools/build.js --watch",
     "serve": "node tools/server.js --port 8080",
+    "test": "node tools/build.js && node tests/node-tests.js && node tests/node-tests-input.js && node tests/node-tests-games3d.js && node --test tests/node-tests-export.js tests/node-tests-studio-regressions.js",
     "test:node": "node tests/node-tests.js",
     "studio": "node tools/studio-server.js",
     "models": "node tools/make-models.js"

@@ -143,6 +143,20 @@ class RigidBody2D extends EventEmitter {
     if (g.parent && g.parent.worldTransform && g.parent !== (g.scene && g.scene.world)) { var p = g.parent.worldTransform.applyInverse(ox, oy, new Vec2()); g.x = p.x; g.y = p.y; }
     else { g.x = ox; g.y = oy; }
     if (!this.fixedRotation || this.angle) g.rotation = this.angle;
+    this._goX = g.x; this._goY = g.y; this._goRotation = g.rotation;
+  }
+  /** Scripts y tweens pueden mover el dibujo: incorporar ese cambio antes de simular, sin
+   * confundirlo con una posición escrita por la física en el fotograma anterior. */
+  _readObject() {
+    var g = this.gameObject; if (!g || g.destroyed || this._goX === undefined) return;
+    var moved = g.x !== this._goX || g.y !== this._goY;
+    if (Number.isFinite(g.rotation) && g.rotation !== this._goRotation) this.setAngle(g.rotation);
+    if (moved && Number.isFinite(g.x) && Number.isFinite(g.y)) {
+      var x = g.x, y = g.y;
+      if (g.parent && g.parent.worldTransform && g.parent !== (g.scene && g.scene.world)) { var p = g.parent.worldTransform.apply(x, y, new Vec2()); x = p.x; y = p.y; }
+      this.setPosition(x, y);
+    }
+    this._goX = g.x; this._goY = g.y; this._goRotation = g.rotation;
   }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.gameObject = null; }
 }
@@ -291,16 +305,30 @@ class RigidWorld2D extends EventEmitter {
   /** Cajas estáticas a partir de una capa de tilemap (fusiona tiles contiguos por filas). tiles: índices sólidos (por defecto todos > 0) */
   addTilemapLayer(layer, o) {
     o = o || {};
-    var data = layer.data || layer.layer && layer.layer.data, tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
-    if (!data) return out;
-    var ox = (layer.x || 0), oy = (layer.y || 0), solid = o.tiles ? new Set(o.tiles) : null;
-    for (var y = 0; y < data.length; y++) {
-      var row = data[y], x = 0;
-      while (x < row.length) {
-        var t = row[x], idx = t && typeof t === 'object' ? t.index : t, ok = solid ? solid.has(idx) : idx > 0;
-        if (!ok) { x++; continue; }
-        var x0 = x; while (x < row.length) { var t2 = row[x], i2 = t2 && typeof t2 === 'object' ? t2.index : t2; if (!(solid ? solid.has(i2) : i2 > 0)) break; x++; }
-        out.push(this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o));
+    var tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
+    var solid = o.tiles ? new Set(o.tiles) : null, W, H, sx = 0, sy = 0, isSolid;
+    if (typeof layer.collidesAt === 'function' && layer.tileData) {
+      // TilemapLayer del motor: datos planos; sólido = colisión activada en la capa (o índices de o.tiles)
+      W = layer.layerWidth; H = layer.layerHeight; sx = layer.startX || 0; sy = layer.startY || 0;
+      isSolid = solid ? function (x, y) { return solid.has(layer.gidAt(x + sx, y + sy) & TILE_GID_MASK); } : function (x, y) { return layer.collidesAt(x + sx, y + sy) !== 0; };
+    } else {
+      // datos por filas (array de arrays de índices o de {index})
+      var data = layer.data || layer.layer && layer.layer.data; if (!data || !data.length || !Array.isArray(data[0]) && typeof data[0] !== 'object') return out;
+      H = data.length; W = 0; for (var r = 0; r < H; r++) W = Math.max(W, data[r] ? data[r].length : 0);
+      isSolid = function (x, y) { var row = data[y], t = row ? row[x] : 0, idx = t && typeof t === 'object' ? t.index : t; return solid ? solid.has(idx) : idx > 0; };
+    }
+    // posición y escala reales de la capa (puede estar dentro de un grupo desplazado o escalado)
+    var m = layer.getWorldMatrix ? layer.getWorldMatrix(new Matrix(), 0, 0) : null;
+    var ox = m ? m.tx : (layer.x || 0), oy = m ? m.ty : (layer.y || 0);
+    if (m) { tw *= Math.hypot(m.a, m.b) || 1; th *= Math.hypot(m.c, m.d) || 1; }
+    ox += sx * tw; oy += sy * th;
+    // tiles contiguos de cada fila en una sola caja (menos cuerpos y sin enganches entre tiles)
+    for (var y = 0; y < H && out.length < 20000; y++) {
+      var x = 0;
+      while (x < W) {
+        if (!isSolid(x, y)) { x++; continue; }
+        var x0 = x; while (x < W && isSolid(x, y)) x++;
+        var b = this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o); if (b) out.push(b);
       }
     }
     return out;
@@ -319,6 +347,7 @@ class RigidWorld2D extends EventEmitter {
   /* ---------- paso ---------- */
   step(dt) {
     if (this.destroyed || this.paused || !(dt > 0)) return;
+    for (var oi = 0; oi < this.bodies.length; oi++) if (this.bodies[oi].enabled) this.bodies[oi]._readObject();
     this._acc += Math.min(dt, this.fixedStep * this.maxSubSteps);
     var n = 0;
     while (this._acc >= this.fixedStep - 1e-9 && n < this.maxSubSteps) { this._fixed(this.fixedStep); this._acc -= this.fixedStep; n++; }
@@ -676,7 +705,7 @@ class RigidPhysics2D {
     };
     this.add = {
       existing: function (obj, o) { if (!obj.parent) { obj.scene = scene; scene.world.addChild(obj); } return link(obj, o); },
-      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, key === undefined ? '__WHITE' : key, frame); s.scene = scene; scene.world.addChild(s); return link(s, o); },
+      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, scene.textures.get(key === undefined ? '__WHITE' : key, frame)); s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s); return link(s, o); },
       image: function (x, y, key, frame, o) { return self.add.sprite(x, y, key, frame, o); },
       rectangle: function (x, y, wd, ht, color, o) { var r = new ShapeObject('rectangle', x, y, { width: wd, height: ht }, color === undefined ? 0xffd43b : color, 1); r.scene = scene; scene.world.addChild(r); return link(r, Object.assign({ width: wd, height: ht }, o || {})); },
       circle: function (x, y, rad, color, o) { var c = new ShapeObject('circle', x, y, { radius: rad, width: rad * 2, height: rad * 2 }, color === undefined ? 0x74c0fc : color, 1); c.scene = scene; scene.world.addChild(c); return link(c, Object.assign({ shape: 'circle', radius: rad, width: rad * 2, height: rad * 2 }, o || {})); },
