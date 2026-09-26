@@ -56,6 +56,7 @@
     <li><a href="#inicio">Qué es</a></li>
     <li><a href="#abrir">Abrir el Studio</a></li>
     <li><a href="#interfaz">La interfaz</a></li>
+    <li><a href="#ventanas">Paneles, diseños y tema</a></li>
     <li><a href="#proyectos">Proyectos y plantillas</a></li>
     <li class="grp">Crear</li>
     <li><a href="#escenas">Escenas 2D y 3D</a></li>
@@ -65,8 +66,12 @@
     <li><a href="#fisica">Física</a></li>
     <li><a href="#eventos">Hojas de eventos</a></li>
     <li><a href="#scripts">Scripts (código)</a></li>
+    <li><a href="#plugins">Plugins y puente con la página</a></li>
     <li><a href="#efectos">Efectos</a></li>
     <li><a href="#recursos">Recursos y Blender</a></li>
+    <li><a href="#arte">Editor de imágenes (Arte)</a></li>
+    <li><a href="#web3">Web3 (carteras y contratos)</a></li>
+    <li><a href="#backend">Backend (tu servidor)</a></li>
     <li class="grp">Probar y publicar</li>
     <li><a href="#jugar">Jugar y depurar</a></li>
     <li><a href="#exportar">Exportar y publicar</a></li>
@@ -110,16 +115,27 @@
   <h2>La interfaz</h2>
   <table>
     <tr><th>Zona</th><th>Para qué sirve</th></tr>
-    <tr><td>Barra superior</td><td>Menús (Archivo, Editar, Añadir, Escena, Ejecutar, Ayuda), <b>▶ Jugar</b> (desde la escena inicial), <b>▶ Esta escena</b>, <b>■ Detener</b>, renderizador de prueba y estado de guardado.</td></tr>
+    <tr><td>Barra superior</td><td>Menús (Archivo, Editar, Añadir, Escena, Ejecutar, Ventana, Ayuda; en pantallas estrechas, todos en <b>☰</b>), <b>▶ Jugar</b> (desde la escena inicial), <b>▶ Esta escena</b>, <b>■ Detener</b>, renderizador de prueba y estado de guardado.</td></tr>
     <tr><td>Escenas</td><td>Lista de escenas (★ = inicial). <b>＋2D</b> / <b>＋3D</b> crean escenas. Doble clic: renombrar; clic derecho: duplicar, hacer inicial, borrar.</td></tr>
     <tr><td>Jerarquía</td><td>Objetos de la escena en árbol. Arrastra para reordenar o para meter un objeto dentro de otro (hijos que se mueven con su padre). Clic derecho: renombrar, duplicar, copiar/pegar, añadir hijo, convertir en plantilla, borrar. 👁 muestra u oculta.</td></tr>
     <tr><td>Escena (centro)</td><td>La vista de edición: se dibuja con el propio motor, así que ves exactamente lo mismo que en el juego.</td></tr>
     <tr><td>Eventos</td><td>La hoja de eventos de la escena actual (programación sin código).</td></tr>
-    <tr><td>Scripts</td><td>Editor de código con resaltado, números de línea, errores marcados y referencia de la API.</td></tr>
+    <tr><td>Código</td><td>Editor de código con resaltado, números de línea, errores marcados, buscar (<kbd>Ctrl</kbd>+<kbd>F</kbd>), comentar (<kbd>Ctrl</kbd>+<kbd>/</kbd>), <b>⬇ Descargar</b> el script como <code>.js</code> y referencia de la API (clic para insertar).</td></tr>
+    <tr><td>Arte · Web3 · Backend</td><td>Editor de imágenes y pixel art, contratos y carteras, y rutas de tu propio servidor (ver sus secciones).</td></tr>
     <tr><td>Inspector</td><td>Propiedades del objeto seleccionado (o de la escena y el proyecto si no hay selección, o del recurso pulsado en Recursos).</td></tr>
     <tr><td>Recursos / Biblioteca / Consola</td><td>Tus archivos importados, los recursos incluidos con UltraGame y los mensajes del juego al probarlo.</td></tr>
   </table>
   <p>Todo se guarda solo (unos segundos después de cada cambio) y todo se puede deshacer con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
+</section>
+
+<section id="ventanas">
+  <h2>Paneles, diseños y tema</h2>
+  <ul>
+    <li>Arrastra el borde de un panel para cambiar su tamaño. <b>—</b> lo oculta (vuelve con la pestaña del borde) y <b>⧉</b> lo convierte en una ventana flotante que puedes mover; <b>⇲ Acoplar</b> lo devuelve a su sitio.</li>
+    <li>Menú <b>Ventana</b>: mostrar u ocultar cada zona, desacoplarlas, <b>modo enfoque</b> (solo la vista, <kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>F</kbd> o <b>⛶</b>), diseños predefinidos (<i>Predeterminado</i>, <i>Programar</i>, <i>Arte</i>, <i>Compacto</i>, <i>Probar el juego</i>), <b>Restablecer el diseño</b>, tema <b>oscuro</b> o <b>claro</b> y acceso a cada pestaña. El diseño y el tema se recuerdan.</li>
+    <li>En pantallas estrechas (móvil o tableta en vertical) aparece una barra inferior; la jerarquía y el Inspector se abren como cajones laterales.</li>
+    <li><kbd>Esc</kbd> cierra el menú o diálogo abierto sin tocar tu selección; con nada abierto, deselecciona (o detiene la partida si estás jugando).</li>
+  </ul>
 </section>
 
 <section id="proyectos">
@@ -191,11 +207,15 @@
     <li><b>Estática:</b> no se mueve; es el suelo o el muro.</li>
     <li><b>Cinemática:</b> se mueve por comportamientos o scripts sin gravedad y empuja a los dinámicos (plataformas móviles).</li>
     <li>Opciones: rebote, rozamiento del aire, cuerpo circular, choca con los bordes, se puede empujar y «sólido para otros dinámicos».</li>
+    <li><b>Caja de colisión:</b> «Ajustada al dibujo» (por defecto) ignora los bordes transparentes de la imagen; «Imagen completa» usa todo el rectángulo; «Personalizada» deja poner ancho, alto y desplazamiento.</li>
+    <li><b>Plataforma de un sentido</b> (estáticas y cinemáticas): se atraviesa desde abajo y se pisa desde arriba.</li>
+    <li>Con la casilla <b>Colisiones</b> de la vista ves lo que choca en el juego: naranja estático, azul cinemático, amarillo dinámico.</li>
   </ul>
   <h3>3D</h3>
   <ul>
     <li><b>Estática (caja):</b> caja envolvente (rápida). <b>Estática exacta (malla):</b> la forma real del modelo (casas en las que se entra, rampas, terrenos).</li>
     <li><b>Cuerpo dinámico:</b> esfera o caja con masa y rebote. <b>Personaje:</b> cápsula que sube escalones y rampas (la usan los jugadores 3D y la persecución). <b>Zona:</b> detecta contactos sin chocar (metas, puntos de control).</li>
+    <li>La casilla <b>Colisiones</b> de la vista 3D dibuja cada colisionador tal como lo creará el juego: cajas naranjas (estáticas), amarillas (dinámicas), la cápsula azul del personaje (empieza en la base del modelo) y zonas rosas. De las mallas exactas solo se marca su caja, tenue.</li>
   </ul>
   <div class="note">Los contactos para eventos, coleccionables y peligros se detectan por <b>etiquetas</b>, también entre objetos sin física.</div>
 </section>
@@ -206,7 +226,7 @@
   <ul>
     <li><b>self</b> es el objeto de la condición (el que se toca o se pulsa) y <b>other</b> el otro objeto del contacto. En los campos «Objeto» puedes escribir <code>self</code>, <code>other</code>, <code>tag:enemigo</code>, <code>name:Jugador</code> o <code>all</code>.</li>
     <li>Las condiciones de contacto se cumplen <b>al empezar a tocarse</b> (no mientras siguen tocándose).</li>
-    <li>«Comparar variable» y «Mientras una tecla…» se pueden negar (casilla <b>no</b>). «Solo una vez» ejecuta el evento la primera vez.</li>
+    <li>«Comparar variable», «Mientras una tecla…», «Probabilidad», «La cartera está conectada» y «Es de noche» se pueden negar (casilla <b>no</b>). «Solo una vez» ejecuta el evento la primera vez.</li>
     <li>En los textos, <code>{nombre}</code> se sustituye por el valor de la variable (del objeto si la tiene propia, si no global).</li>
   </ul>
   <h3>Ejemplos</h3>
@@ -228,7 +248,7 @@
   <h2>Scripts (código)</h2>
   <p>Un script es JavaScript normal. Asígnalo a uno o varios objetos (Inspector › Script) o escríbelo como <b>script de escena</b>. Cada objeto recibe su propia copia (sus variables no se mezclan). Dentro tienes:</p>
   <ul>
-    <li><code>self</code>: el objeto del motor (un sprite, texto, forma… en 2D; un <code>Node3D</code> en 3D). Todo el motor está disponible: <code>self.x</code>, <code>self.body.setVelocity()</code>, <code>self.position</code>, <code>self.play('Walk')</code>… (ver la <a href="index.html">documentación del motor</a>).</li>
+    <li><code>self</code>: el objeto del motor (un sprite, texto, forma… en 2D; un <code>Node3D</code> en 3D). Todo el motor está disponible: <code>self.x</code>, <code>self.body.setVelocity()</code> (física arcade; con cuerpos rígidos <code>self.rbody</code>, y con cualquiera <code>api.velocity()</code> / <code>api.setVelocity()</code> / <code>api.onGround()</code>), <code>self.position</code>, <code>self.play('Walk')</code>… (ver la <a href="index.html">documentación del motor</a>).</li>
     <li><code>api</code>: ayuda del Studio (tabla de abajo). <code>UG</code>: el motor completo.</li>
     <li>Funciones que el Studio llama si existen: <code>onStart()</code>, <code>onUpdate(dt)</code>, <code>onCollide(other)</code>, <code>onClick(pointer)</code>, <code>onDestroy()</code>, <code>onMessage(nombre, datos)</code>. Las funciones del script de escena se pueden llamar desde eventos («Llamar a una función»).</li>
   </ul>
@@ -262,6 +282,7 @@ function guardarRecord() {                      // llamada desde un evento
     <tr><td><code>api.pointer</code></td><td>Ratón o dedo: <code>x</code>, <code>y</code>, <code>worldX</code>, <code>worldY</code>, <code>isDown</code></td></tr>
     <tr><td><code>api.find(ref)</code> · <code>api.findAll(ref)</code> · <code>api.entityOf(obj)</code></td><td>Buscar objetos por <code>'name:X'</code>, <code>'tag:x'</code> o nombre; la entidad tiene <code>name</code>, <code>tags</code>, <code>vars</code>, <code>hp</code>, <code>ch</code> (personaje 3D), <code>body</code></td></tr>
     <tr><td><code>api.spawn(plantilla, x, y, z)</code> · <code>api.destroy(obj, efecto)</code> · <code>api.damage(obj, n)</code></td><td>Crear copias, destruir (sin argumentos: este objeto), quitar vida</td></tr>
+    <tr><td><code>api.velocity(obj)</code> · <code>api.setVelocity(x, y, z, obj)</code> · <code>api.onGround(obj)</code> · <code>api.impulse(obj, x, y, z)</code></td><td>Velocidad (<code>{ x, y, z }</code>), cambiarla (<code>null</code> = no tocar ese eje), si está apoyado y empuje. Funcionan igual con física arcade, cuerpos rígidos y 3D (sin <code>obj</code>: este objeto)</td></tr>
     <tr><td><code>api.get(n)</code> · <code>api.set(n, v)</code> · <code>api.add(n, cantidad)</code> · <code>api.my</code> · <code>api.vars</code></td><td>Variables (propias del objeto primero, luego globales)</td></tr>
     <tr><td><code>api.save(clave, valor)</code> · <code>api.load(clave, porDefecto)</code></td><td>Guardado entre partidas (JSON, máx. 256 KB por clave)</td></tr>
     <tr><td><code>api.sfx(efecto, vol)</code> · <code>api.sound(recurso, vol)</code> · <code>api.music(recurso, vol)</code> · <code>api.stopMusic()</code></td><td>Sonido: efectos sintetizados (<code>coin</code>, <code>laser</code>, <code>explosion</code>, <code>jump</code>, <code>hit</code>, <code>hurt</code>, <code>powerup</code>…) o tus audios</td></tr>
@@ -271,9 +292,35 @@ function guardarRecord() {                      // llamada desde un evento
     <tr><td><code>api.emit(nombre, datos)</code></td><td>Envía un mensaje a todos los scripts (<code>onMessage</code>)</td></tr>
     <tr><td><code>api.random(a, b)</code> · <code>api.chance(p)</code> · <code>api.distance(a, b)</code> · <code>api.text(plantilla)</code></td><td>Utilidades</td></tr>
     <tr><td><code>api.camera</code> · <code>api.physics</code> · <code>api.view</code> · <code>api.scene</code> · <code>api.game</code> · <code>api.animKey</code></td><td>Cámara (2D o 3D), mundo físico, vista 3D, escena y juego del motor; clave de la animación de un sprite</td></tr>
+    <tr><td><code>api.weather(tipo)</code> · <code>api.timeOfDay(h)</code></td><td>Cambia el clima (<code>'rain'</code>, <code>'storm'</code>, <code>'snow'</code>, <code>'fog'</code>, <code>'clear'</code>; en 3D también <code>'cloudy'</code> y <code>'overcast'</code>) y la hora del ciclo de día y noche en 3D (sin argumento devuelve la hora)</td></tr>
+    <tr><td><code>api.light(x, y, radio, color, intensidad)</code> · <code>api.lights2d</code> · <code>api.rigid</code></td><td>2D: añade una luz con sombras (activa las luces de la escena) · sistema de luces 2D · física de cuerpos rígidos de la escena (si la usa)</td></tr>
+    <tr><td><code>api.decal(tipo, x, y, z, { normal, size, life })</code></td><td>3D: marca sobre una superficie (<code>'bullet'</code>, <code>'blood'</code>, <code>'pool'</code>, <code>'scorch'</code>, <code>'crack'</code>)</td></tr>
+    <tr><td><code>api.http(método, ruta, cuerpo)</code></td><td>Petición a tu backend (rutas relativas como <code>'/api/puntuaciones'</code>) o a un origen permitido en el proyecto. Devuelve una promesa con <code>{ ok, status, data }</code> (JSON ya leído). Máx. 20 por segundo, 1 MB y 15 s</td></tr>
+    <tr><td><code>api.web3</code></td><td>Cartera y contratos de la pestaña Web3: <code>connect()</code>, <code>account</code>, <code>chainId</code>, <code>connected</code>, <code>balance()</code>, <code>read(contrato, función, ...args)</code>, <code>write(contrato, función, args, valor)</code>, <code>sign(mensaje)</code>, <code>on(evento, fn)</code>, <code>utils</code> (= <code>UG.Web3</code>)</td></tr>
+    <tr><td><code>api.bridge</code></td><td>Puente con la página que contiene el juego: <code>send(nombre, datos)</code>, <code>on(nombre, fn)</code>, <code>off</code> (ver <a href="#plugins">Plugins y puente</a>)</td></tr>
     <tr><td><code>api.log(...)</code> · <code>api.warn(...)</code></td><td>Escribir en la consola del Studio</td></tr>
   </table>
   <div class="note">Si una función de tu script lanza un error, la consola muestra el mensaje con el nombre del script y la <b>línea</b> (clic para ir a ella) y esa función se desactiva para no repetir el error; el resto del juego sigue. Un error de sintaxis solo desactiva ese script.</div>
+</section>
+
+<section id="plugins">
+  <h2>Plugins y puente con la página</h2>
+  <p>Un <b>plugin</b> (Código › <b>🔌</b>, o la casilla «Plugin global» de un script) es código que corre siempre, en todas las escenas, sin asignarlo a objetos. Sirve para lógica global (logros, analíticas, guardado en la nube) y para hablar con la web que contiene el juego.</p>
+<pre><code class="js">// Plugin: api.game, api.vars, api.get/set, api.save/load, api.http, api.web3, api.bridge, api.emit, api.goto, api.log
+function onGameStart(game) { api.log('Arranca', game.width + '×' + game.height); }
+function onSceneStart(escena) { api.bridge.send('escena', { nombre: api.get('nivel') }); }
+function onUpdate(dt) { }
+function onBridge(nombre, datos) {              // mensajes de la página
+  if (nombre === 'dar-monedas') api.add('monedas', Number(datos) || 0);
+}</code></pre>
+<pre><code class="js">// En la página que contiene el juego exportado (misma página)
+window.addEventListener('ug-bridge-out', (e) =&gt; console.log(e.detail.name, e.detail.data));
+window.ugsGame.bridge.receive('dar-monedas', 50);          // el juego exportado queda en window.ugsGame
+
+// Si el juego va en un &lt;iframe&gt; de otro dominio: añade ese dominio en «Orígenes del puente» (Inspector del proyecto)
+iframe.contentWindow.postMessage({ type: 'ug-bridge', name: 'dar-monedas', data: 50 }, 'https://mijuego.itch.io');
+window.addEventListener('message', (e) =&gt; { if (e.data &amp;&amp; e.data.type === 'ug-bridge') console.log(e.data.name, e.data.data); });</code></pre>
+  <p>Los datos viajan como JSON (máx. 64 KB) y nunca se ejecuta código recibido. En el Studio puedes probarlo desde la barra del juego: escribe el nombre y los datos junto a <b>🔌</b> y pulsa <b>Enviar</b>. En eventos: acción «Enviar mensaje al puente (página)» y condición «Al recibir un mensaje del puente (página)».</p>
 </section>
 
 <section id="efectos">
@@ -301,12 +348,63 @@ function guardarRecord() {                      // llamada desde un evento
   <div class="note warn">Un modelo que no se pudo cargar aparece como un cubo rosa y la consola explica el motivo (por ejemplo, compresión Draco no soportada).</div>
 </section>
 
+<section id="arte">
+  <h2>Editor de imágenes (Arte)</h2>
+  <p>La pestaña <b>🎨 Arte</b> dibuja y retoca las imágenes del proyecto sin salir del Studio. Tiene dos modos: <b>Foto</b> (pinceles suaves, degradados, clonar, desenfocar…) y <b>Pixel art</b> (lápiz exacto, tramas, animación). <b>Guardar</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) actualiza el recurso y todo lo que lo usa.</p>
+  <ul>
+    <li><b>Herramientas:</b> mover, selecciones (rectángulo, elipse, lazo, varita), recortar, pincel, lápiz, borrador, bote, degradado, tramado y sombreado (pixel art), reemplazar color, clonar, dedo, desenfocar, sobreexponer, línea, rectángulo, elipse, texto, cuentagotas, mano y zoom.</li>
+    <li><b>Lápiz de pixel art:</b> tamaño 1–64 (<kbd>[</kbd> y <kbd>]</kbd>), punta cuadrada o redonda, <b>píxel perfecto</b> (sin esquinas dobles en las líneas a mano), simetría horizontal y vertical, y <b>mosaico continuo</b>: el trazo que sale por un borde entra por el opuesto (texturas y fondos que se repiten sin costuras; se activa también la vista repetida 3×3).</li>
+    <li><b>Capas</b> con opacidad, modos de fusión, bloqueo de transparencia y ocultar; <b>fotogramas</b> con papel cebolla y reproducción (<kbd>,</kbd> y <kbd>.</kbd> para cambiar de fotograma).</li>
+    <li><b>Imagen:</b> tamaño de la imagen (vecino más cercano, suave, o <b>Scale2x / Scale3x / Scale4x</b>: amplía pixel art suavizando las diagonales sin mezclar colores), tamaño del lienzo con anclaje, recortar a la selección o al contenido, voltear y girar.</li>
+    <li><b>Filtros:</b> brillo y contraste, tono y saturación, niveles, equilibrio de color, desenfoques, enfocar, ruido, pixelar, relieve, bordes, viñeta, contorno para sprites, sombra, resplandor, quitar fondo (croma), reducir a la paleta (con trama) y más; solo afectan a la selección si la hay.</li>
+    <li><b>Paletas:</b> PICO-8, DawnBringer, Sweetie 16, Endesga 32, Game Boy, CGA…, los colores de la imagen o una personalizada, que se recuerda entre sesiones. <b>⬆ Importar</b> lee <code>.hex</code> (Lospec), <code>.gpl</code> (GIMP, Aseprite), <code>.pal</code> (JASC), <code>.txt</code> (Paint.NET) o los colores de una imagen; <b>⬇</b> la guarda en <code>.hex</code>, <code>.gpl</code> o PNG.</li>
+    <li><b>🌈 Rampa:</b> genera de 2 a 16 tonos a partir del color principal (sombras hacia el frío y luces hacia el cálido, con el giro de tono que elijas) o del principal al secundario, y los añade a la paleta.</li>
+    <li><b>Exportar:</b> PNG (también ampliado ×2, ×4…), JPG, WebP, GIF animado, hoja de sprites o cada fotograma por separado.</li>
+    <li>Atajos: <kbd>X</kbd> intercambia colores, <kbd>D</kbd> negro y blanco, <kbd>Espacio</kbd> desplaza la vista, <kbd>0</kbd> ajusta a la ventana, <kbd>1</kbd> tamaño real, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> deshacer y rehacer, y la letra de cada herramienta (V, M, L, W, C, B, N, E, G, S, U, T, I, H, Z).</li>
+  </ul>
+</section>
+
+<section id="web3">
+  <h2>Web3 (carteras y contratos)</h2>
+  <ol>
+    <li>Pestaña <b>⛓ Web3</b> › <b>Activar web3</b>. Elige la red (Sepolia, Base Sepolia, Polygon Amoy… o una principal), el <b>pago máximo por transacción</b> y el <b>modo al jugar</b>: <i>Simulado</i> (cartera y contratos falsos con respuestas que tú defines: no necesitas nada instalado) o <i>Cartera real</i> (MetaMask, Rabby, Coinbase Wallet…).</li>
+    <li><b>Añadir contrato</b> desde una plantilla (ERC-20, ERC-721, ERC-1155, clasificación, tienda, recompensas firmadas) o vacío. El código Solidity se edita en la pestaña Código y el <b>ABI se regenera solo</b>; también puedes pegar el ABI de Remix, Hardhat, Foundry o Etherscan.</li>
+    <li>Para desplegar: compila en Remix (o exporta el proyecto Hardhat/Foundry), pega el <b>bytecode</b> y pulsa <b>Desplegar</b> con la cartera conectada; la dirección se guarda para esa red. O pega la dirección de un contrato ya desplegado.</li>
+    <li>Cada función del ABI tiene su fila para probarla: <b>Leer</b> (gratis) o <b>Enviar</b> (transacción que confirmas en la cartera). Los números grandes se muestran también con 18 decimales.</li>
+  </ol>
+  <p>En el juego: eventos «Conectar la cartera», «Leer de un contrato» (guarda el resultado en una variable), «Enviar transacción», «Firmar un mensaje», y condiciones «La cartera está conectada» y «Al ocurrir algo en la cartera»; tras conectar, <code>{cuenta}</code> y <code>{red}</code> se pueden usar en textos. En scripts: <code>api.web3</code>. Al jugar desde el Studio con cartera real, cada transacción o firma pide primero confirmación al Studio y después a la cartera.</p>
+  <div class="note">Usa redes de pruebas mientras desarrollas. El juego nunca ve claves privadas; lo que tenga valor (premios, NFTs) debe decidirlo el contrato o tu servidor, no el cliente.</div>
+</section>
+
+<section id="backend">
+  <h2>Backend (tu servidor)</h2>
+  <p>La pestaña <b>🌐 Backend</b> genera un servidor Node sin dependencias para tu juego: clasificaciones, partidas guardadas, tiendas, validación de puntuaciones…</p>
+  <ol>
+    <li><b>Activar backend</b> y <b>＋ Añadir ruta</b> desde una plantilla (hola mundo, clasificación, partida guardada…) o vacía. Cada ruta tiene método, camino (<code>/api/jugador/:id</code>), límite por minuto, clave opcional y su código (se edita en la pestaña Código).</li>
+    <li><b>▶ Ejecutar</b> lo arranca en tu equipo (necesita el servidor del Studio). <b>Probar</b> envía una petición y muestra la respuesta; el registro del servidor aparece debajo. <b>■ Detener</b> lo para.</li>
+    <li>Al jugar desde el Studio, el juego usa el backend local si está en marcha; al exportar, la <b>URL de producción</b> (o rutas relativas si el backend sirve también el juego). <b>⬇ Exportar servidor (.zip)</b> y en el servidor: <code>node server.js</code> (Node 18+).</li>
+  </ol>
+<pre><code class="js">// Ruta POST /api/puntuaciones (código de la ruta)
+const nombre = ctx.text(ctx.body.nombre, 20), puntos = ctx.int(ctx.body.puntos, 0, 1e9);
+db.push('puntos', { nombre, puntos, t: Date.now() }, 100);
+return { ok: true };
+
+// En el juego (script) o con la acción «Petición a tu servidor»
+api.http('POST', '/api/puntuaciones', { nombre: 'ana', puntos: api.get('puntos') }).then((r) =&gt; api.log(r.status, r.data));</code></pre>
+  <p>Seguridad del servidor generado: JSON obligatorio en las escrituras (bloquea CSRF), CORS con lista blanca de orígenes, límite de peticiones por IP y ruta, 256 KB por petición, 10 s por ruta, claves <code>__proto__</code> eliminadas y errores internos ocultos. La base de datos es un JSON en disco con escritura atómica (<code>db.get/set/push/incr/list</code>).</p>
+</section>
+
 <section id="jugar">
   <h2>Jugar y depurar</h2>
   <ul>
     <li><b>▶ Jugar</b> (<kbd>F5</kbd>) arranca desde la escena inicial; <b>▶ Esta escena</b> (<kbd>Mayús</kbd>+<kbd>F5</kbd>) desde la actual. <b>■ Detener</b> o <kbd>Esc</kbd> vuelve al editor.</li>
     <li>El juego corre en la pestaña <b>🎮 Juego</b>; haz clic en él para darle el teclado. La <b>consola</b> muestra <code>api.log</code>, avisos y errores con enlace a la línea.</li>
     <li>El selector de renderizador permite probar el juego en WebGPU, WebGL2, WebGL o Canvas (solo 2D).</li>
+    <li>Casilla <b>Colisiones</b> de la barra del juego: dibuja lo que choca mientras juegas (2D y 3D) y se cambia sin reiniciar la partida.</li>
+    <li><b>🔎 Variables</b>: panel con las variables globales, la escena y los FPS en vivo. Haz clic en un valor para cambiarlo en esa partida (vida, puntos, nivel…) sin tocar el proyecto.</li>
+    <li><b>Probar en dispositivos</b>: el selector de la barra del juego tiene ~30 tamaños (móviles, tabletas, portátiles, monitores, consolas portátiles o uno personalizado); <b>⟳ Girar</b> cambia entre vertical y horizontal, <b>Zoom</b> ajusta el tamaño, <b>Marco</b> dibuja el dispositivo y <b>Zona segura</b> marca la muesca y las barras del sistema (no pongas botones ahí). <b>▦ Comparar</b> juega en varios dispositivos a la vez. También desde Ejecutar › Probar en un móvil / en una tableta.</li>
+    <li><b>🔌 Enviar</b> manda un mensaje al juego como lo haría la página que lo contiene (para probar <code>onBridge</code>); <b>↻</b> reinicia la partida.</li>
+    <li>Ejecutar › <b>Validar y probar la exportación</b>: comprueba que existen todos los recursos usados, su tamaño, y arranca el juego exportado unos segundos buscando errores.</li>
   </ul>
 </section>
 

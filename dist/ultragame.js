@@ -4262,6 +4262,12 @@ class ParticleEmitter extends Container {
     }
   }
   preUpdate(time, delta) { this.update(delta); }
+  /** Simula `ms` de golpe (en pasos de 1/30 s) para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno */
+  prewarm(ms) {
+    var t = Math.max(0, Math.min(30000, +ms || 0)), h = 1000 / 30;
+    for (; t > 0; t -= h) this.update(Math.min(h, t));
+    return this;
+  }
   update(deltaMs) {
     if (this._paused || this.destroyed) return;
     var dtMs = deltaMs * this.timeScale, dt = dtMs / 1000;
@@ -9077,6 +9083,7 @@ class Loader extends EventEmitter {
     this.queue = [];
     this.loading = false;
     this.path = ''; this.baseURL = '';
+    this.urlResolver = null;
     this.maxParallel = 6;
     this.timeout = 60000;
     this.crossOrigin = 'anonymous';
@@ -9095,6 +9102,9 @@ class Loader extends EventEmitter {
   get cache() { return this.game.cache; }
   setPath(p) { this.path = p ? (p.charAt(p.length - 1) === '/' ? p : p + '/') : ''; return this; }
   setBaseURL(u) { this.baseURL = u ? (u.charAt(u.length - 1) === '/' ? u : u + '/') : ''; return this; }
+  /** Resuelve archivos virtuales sin perder la carpeta original de sus dependencias. */
+  setURLResolver(fn) { this.urlResolver = typeof fn === 'function' ? fn : null; return this; }
+  resolveURL(url) { return this.urlResolver && typeof url === 'string' ? this.urlResolver(url) : url; }
   setCORS(v) { this.crossOrigin = v; return this; }
   _url(u) {
     if (!u || typeof u !== 'string') return u;
@@ -9231,11 +9241,12 @@ class Loader extends EventEmitter {
     if (r) r(this);
   }
   reset() { this.abort(); this.failed = []; this._aborted = false; return this; }
-  destroy() { this.abort(); this.off(); this.game = null; this.scene = null; }
+  destroy() { this.abort(); this.off(); this.urlResolver = null; this.game = null; this.scene = null; }
 
   /* ------------- red ------------- */
   fetchBytes(url, file) {
     var self = this;
+    url = this.resolveURL(url);
     if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL bloqueada por la política de seguridad: ' + String(url).slice(0, 80)));
     var integrity = file && file.integrity;
     var check = function (buf) {
@@ -9281,6 +9292,7 @@ class Loader extends EventEmitter {
   fetchJSON(url, file) { return this.fetchText(url, file).then(function (t) { return JSON.parse(t); }); }
   loadImageElement(url, file) {
     var self = this;
+    url = this.resolveURL(url);
     if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL de imagen bloqueada: ' + String(url).slice(0, 80)));
     if (typeof Image === 'undefined') {
       if (typeof createImageBitmap === 'function') return this.fetchBytes(url, file).then(function (b) { return createImageBitmap(new Blob([b])); });
@@ -9369,7 +9381,11 @@ class Loader extends EventEmitter {
           if (sj) g.cache.audio.set(f.key, sj);
           if (g.sound.disabled) return null;
           g.sound._ensureContext();
-          if (g.sound.useHTML5 || !g.sound.ctx) { g.sound.addHTML5(f.key, aurl); return aurl; }
+          if (g.sound.useHTML5 || !g.sound.ctx) {
+            var resolvedAudio = self.resolveURL(aurl);
+            if (!Security.isSafeURL(resolvedAudio)) throw new Error('URL de audio bloqueada');
+            g.sound.addHTML5(f.key, resolvedAudio); return resolvedAudio;
+          }
           return self.fetchBytes(aurl, f).then(function (buf) { return g.sound.decodeAudio(f.key, buf); });
         });
       }
@@ -9378,6 +9394,7 @@ class Loader extends EventEmitter {
       case 'generate': return Promise.resolve(g.textures.generate(f.key, f.w, f.h, f.draw, f.opts));
       case 'font': {
         if (typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) return Promise.resolve(null);
+        url = this.resolveURL(url);
         if (!Security.isSafeURL(url)) return Promise.reject(new Error('URL de fuente bloqueada'));
         var face = new FontFace(f.key, 'url("' + String(url).replace(/["\\\n\r]/g, '') + '")', f.descriptors);
         return face.load().then(function (loaded) { document.fonts.add(loaded); return loaded; });
@@ -10173,6 +10190,7 @@ UG.TilesetRuntime = TilesetRuntime;
  * Paso fijo (60 Hz por defecto) => simulación estable y reproducible. */
 
 function makeDirs(v) { return { none: v === undefined ? true : v, up: false, down: false, left: false, right: false }; }
+var _anchorTmp = { x: 0, y: 0 }, _worldM = new Matrix();
 function resetDirs(d, none) { d.none = none; d.up = false; d.down = false; d.left = false; d.right = false; }
 
 class Body {
@@ -10190,6 +10208,8 @@ class Body {
     this.maxVelocity = new Vec2(10000, 10000); this.maxSpeed = -1;
     this.bounce = new Vec2(); this.friction = new Vec2(1, 0); this.gravity = new Vec2();
     this.worldBounce = null;
+    /** Plataforma de un sentido: solo choca con lo que cae encima desde arriba */
+    this.oneWay = false; this.useWorldBounds = false;
     this.allowGravity = !isStatic; this.allowDrag = true; this.useDamping = false;
     this.immovable = !!isStatic; this.pushable = !isStatic; this.moves = !isStatic; this.mass = 1;
     this.collideWorldBounds = false; this.onWorldBounds = false; this.onCollide = false; this.onOverlap = false;
@@ -10220,30 +10240,81 @@ class Body {
   onWall() { return this.blocked.left || this.blocked.right; }
   _goDims() {
     var go = this.gameObject, sx = Math.abs(go.scaleX || 1), sy = Math.abs(go.scaleY || 1), w, h;
-    if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
+    // Mosaicos, 9-slice y texto bitmap tienen tamaño propio (_w/_h): su textura es solo el patrón que se repite
+    if (typeof go._w === 'number' && typeof go._h === 'number') { if (typeof go._layout === 'function') go._layout(); w = go._w; h = go._h; }
+    else if (go._texture && go._texture !== Texture.EMPTY) { w = go._texture.width; h = go._texture.height; }
     else if (go.zoneWidth !== undefined) { w = go.zoneWidth; h = go.zoneHeight; }
     else if (go.shapeWidth !== undefined) { w = go.shapeWidth; h = go.shapeHeight; }
-    else if (go._w !== undefined) { w = go._w; h = go._h; }
     else { var lb = go.getLocalBounds ? go.getLocalBounds() : null; w = lb && lb.width ? lb.width : 16; h = lb && lb.height ? lb.height : 16; }
     return { w: w, h: h, sx: sx, sy: sy };
   }
   _syncSize() {
-    var d = this._goDims();
+    var d = this._goDims(), go = this.gameObject;
     if (!this._customSize) { this.sourceWidth = d.w; this.sourceHeight = d.h; }
     if (this.isCircle) { this.width = this.height = this.radius * 2 * d.sx; }
     else { this.width = this.sourceWidth * d.sx; this.height = this.sourceHeight * d.sy; }
-    this._dims = d;
+    this._dims = d; this._lastSX = go.scaleX; this._lastSY = go.scaleY; this._lastTex = go._texture; this._lastW = go._w; this._lastH = go._h;
+    if (this.useWorldBounds) { var wb = this._worldBox(); this.width = wb.w; this.height = wb.h; }
   }
-  /** Coloca el cuerpo según la posición del objeto. */
+  /**
+   * Cuerpo ajustado a la caja que ocupa el objeto en el mundo: tiene en cuenta rotación, escala y grupos padre.
+   * Pensado para cuerpos estáticos (suelos y muros girados o dentro de un grupo); los dinámicos se mueven en x/y locales.
+   */
+  setWorldBounds(on) { this.useWorldBounds = on !== false; this.isCircle = this.isCircle && !this.useWorldBounds; this._syncSize(); this.resetFromGameObject(); if (this.world && this.isStatic) this.world._staticDirty = true; return this; }
+  _worldBox() {
+    var go = this.gameObject, d = this._dims || this._goDims(), shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = 0.5; if (ay === undefined) ay = 0.5;
+    var sw = this._customSize ? this.sourceWidth : d.w, sh = this._customSize ? this.sourceHeight : d.h;
+    // el volteo refleja el dibujo dentro de su rectángulo; la escala negativa ya va en la matriz
+    var ox = go.flipX ? d.w - this.offset.x - sw : this.offset.x, oy = go.flipY ? d.h - this.offset.y - sh : this.offset.y;
+    var x0 = -ax * d.w + ox, y0 = -ay * d.h + oy, x1 = x0 + sw, y1 = y0 + sh;
+    var m = go.getWorldMatrix ? go.getWorldMatrix(_worldM, 0, 0) : null;
+    if (!m) return { x: go.x + x0, y: go.y + y0, w: sw, h: sh, sig: '' };
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var k = 0; k < 4; k++) {
+      var lx = k & 1 ? x1 : x0, ly = k & 2 ? y1 : y0, wx = m.a * lx + m.c * ly + m.tx, wy = m.b * lx + m.d * ly + m.ty;
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx; if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, sig: m.a + ',' + m.b + ',' + m.c + ',' + m.d + ',' + m.tx + ',' + m.ty };
+  }
+  /** Punto de anclaje (0..1) del objeto: las formas usan originX/Y; sprites, textos y mosaicos, anchorX/Y. */
+  _anchor(out) {
+    var go = this.gameObject, shape = go.shapeWidth !== undefined;
+    var ax = shape ? go.originX : go.anchorX, ay = shape ? go.originY : go.anchorY;
+    if (ax === undefined) ax = go.originX !== undefined ? go.originX : 0.5;
+    if (ay === undefined) ay = go.originY !== undefined ? go.originY : 0.5;
+    // escala negativa: el objeto se dibuja reflejado alrededor de su ancla
+    if (go.scaleX < 0) ax = 1 - ax;
+    if (go.scaleY < 0) ay = 1 - ay;
+    out.x = ax; out.y = ay;
+    return out;
+  }
+  /** Coloca el cuerpo según la posición del objeto (respeta ancla, escala negativa y volteo del sprite). */
   resetFromGameObject() {
-    var go = this.gameObject, d = this._dims || this._goDims();
-    var ax = go.anchorX !== undefined ? go.anchorX : (go.originX !== undefined ? go.originX : 0.5), ay = go.anchorY !== undefined ? go.anchorY : (go.originY !== undefined ? go.originY : 0.5);
+    var go = this.gameObject, d = this._dims || this._goDims(), a = this._anchor(_anchorTmp);
+    if (this.useWorldBounds) {
+      var wb = this._worldBox();
+      this.position.x = wb.x; this.position.y = wb.y; this.width = wb.w; this.height = wb.h; this._wsig = wb.sig;
+      this.prev.copy(this.position); this._start.copy(this.position);
+      this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+      return;
+    }
     var dw = d.w * d.sx, dh = d.h * d.sy;
-    this.position.x = go.x - ax * dw + this.offset.x * d.sx;
-    this.position.y = go.y - ay * dh + this.offset.y * d.sy;
-    if (!this._customSize && !this.isCircle) { this.position.x = go.x - ax * dw + this.offset.x * d.sx; }
+    // con el sprite volteado (o escala negativa) un cuerpo desplazado debe reflejarse igual que el dibujo
+    var mx = (go.scaleX < 0) !== !!go.flipX, my = (go.scaleY < 0) !== !!go.flipY;
+    var ox = mx ? d.w - this.offset.x - this.sourceWidth : this.offset.x, oy = my ? d.h - this.offset.y - this.sourceHeight : this.offset.y;
+    this.position.x = go.x - a.x * dw + ox * d.sx;
+    this.position.y = go.y - a.y * dh + oy * d.sy;
     this.prev.copy(this.position); this._start.copy(this.position);
-    this._goX = go.x; this._goY = go.y;
+    this._goX = go.x; this._goY = go.y; this._flipX = !!go.flipX; this._flipY = !!go.flipY;
+  }
+  /** ¿Cambió algo del objeto (tamaño, escala, fotograma) que obligue a recalcular el cuerpo? */
+  _goChanged() {
+    var go = this.gameObject;
+    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY || go._texture !== this._lastTex || go._w !== this._lastW || go._h !== this._lastH) return true;
+    // en modo mundo también cuentan la rotación y el movimiento de los grupos padre
+    return !!this.useWorldBounds && this._worldBox().sig !== this._wsig;
   }
   setSize(w, h, center) {
     var d = this._goDims();
@@ -10282,6 +10353,8 @@ class Body {
   setFriction(x, y) { this.friction.set(x, y === undefined ? 0 : y); return this; }
   setCollideWorldBounds(v, bx, by, onWorldBounds) { this.collideWorldBounds = v !== false; if (bx !== undefined) this.worldBounce = new Vec2(bx, by === undefined ? bx : by); if (onWorldBounds !== undefined) this.onWorldBounds = !!onWorldBounds; return this; }
   setEnable(v) { this.enable = v !== false; return this; }
+  /** Plataforma de un sentido (se atraviesa desde abajo y por los lados) */
+  setOneWay(v) { this.oneWay = v !== false; return this; }
   setAngularVelocity(v) { this.angularVelocity = v; return this; }
   setAllowRotation(v) { this.allowRotation = v !== false; return this; }
   stop() { this.velocity.set(0, 0); this.acceleration.set(0, 0); this.angularVelocity = 0; return this; }
@@ -10302,8 +10375,14 @@ class Body {
     var go = this.gameObject;
     this.wasTouching.none = this.touching.none; this.wasTouching.up = this.touching.up; this.wasTouching.down = this.touching.down; this.wasTouching.left = this.touching.left; this.wasTouching.right = this.touching.right;
     resetDirs(this.touching, true); resetDirs(this.blocked, true);
-    if (!this._dims || go.scaleX !== this._lastSX || go.scaleY !== this._lastSY) { this._syncSize(); this._lastSX = go.scaleX; this._lastSY = go.scaleY; }
-    if (go.x !== this._goX || go.y !== this._goY) this.resetFromGameObject();
+    var reset = go.x !== this._goX || go.y !== this._goY || !!go.flipX !== this._flipX || !!go.flipY !== this._flipY;
+    if (this._goChanged()) {
+      var d0 = this._dims, sx0 = this._lastSX, sy0 = this._lastSY;
+      this._syncSize();
+      // cambio de escala o de tamaño (fotograma distinto): el cuerpo se recoloca alrededor del ancla
+      if (!d0 || d0.w !== this._dims.w || d0.h !== this._dims.h || sx0 !== go.scaleX || sy0 !== go.scaleY) reset = true;
+    }
+    if (reset) this.resetFromGameObject();
     this.prev.copy(this.position); this._start.copy(this.position);
     this._rot0 = go.rotation;
   }
@@ -10488,6 +10567,13 @@ class ArcadeWorld extends EventEmitter {
       b = bodies[i];
       if (!b.gameObject || b.gameObject.destroyed) { b.destroy(); continue; }
     }
+    // los cuerpos estáticos siguen a su objeto si alguien lo mueve, escala o voltea (tweens, scripts, editor)
+    var st = this.staticBodies;
+    for (i = st.length - 1; i >= 0; i--) {
+      b = st[i]; var sgo = b.gameObject;
+      if (!sgo || sgo.destroyed) { b.destroy(); continue; }
+      if (b.enable && (sgo.x !== b._goX || sgo.y !== b._goY || !!sgo.flipX !== b._flipX || !!sgo.flipY !== b._flipY || b._goChanged())) { b._syncSize(); b.resetFromGameObject(); this._staticDirty = true; }
+    }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.preUpdate(); }
     for (i = 0; i < bodies.length; i++) { b = bodies[i]; if (b.enable && b.gameObject.active !== false) b.update(dt); }
     var cols = this.colliders;
@@ -10574,6 +10660,7 @@ class ArcadeWorld extends EventEmitter {
     return b1.right > b2.left && b1.left < b2.right && b1.bottom > b2.top && b1.top < b2.bottom;
   }
   separate(b1, b2) {
+    if (b1.oneWay || b2.oneWay) return this._separateOneWay(b1, b2);
     if (b1.isCircle || b2.isCircle) return this._separateCircle(b1, b2);
     var ox1 = b1.prev.x + b1.width > b2.prev.x && b1.prev.x < b2.prev.x + b2.width;
     var oy1 = b1.prev.y + b1.height > b2.prev.y && b1.prev.y < b2.prev.y + b2.height;
@@ -10585,6 +10672,25 @@ class ArcadeWorld extends EventEmitter {
     return r;
   }
   _fixed(b) { return b.immovable || !b.pushable || !b.moves; }
+  /**
+   * Plataforma de un sentido (body.oneWay): solo sostiene a quien llega desde arriba; se atraviesa al saltar
+   * desde abajo o por los lados. Quien la pisa se coloca encima y la plataforma lo arrastra si se mueve.
+   */
+  _separateOneWay(b1, b2) {
+    var p = b1.oneWay ? b1 : b2, o = p === b1 ? b2 : b1;
+    if (o.oneWay || this._fixed(o)) return false;
+    var top = p.top, pTop = p.prev.y;
+    // venía de arriba: su base estaba por encima de la plataforma en el paso anterior (con margen por su movimiento)
+    if (o.prev.y + o.height > pTop + Math.max(0, p.position.y - p.prev.y) + 0.5) return false;
+    if (o.velocity.y < p.velocity.y - 0.01) return false; // subiendo: la atraviesa
+    var ov = o.bottom - top;
+    if (ov <= 0 || !o.checkCollision.down) return false;
+    o.position.y -= ov;
+    if (o.velocity.y > p.velocity.y) o.velocity.y = p.velocity.y - (o.velocity.y - p.velocity.y) * o.bounce.y;
+    if (p.moves && p.friction.x) o.position.x += p.deltaX() * p.friction.x;
+    o.blocked.down = true; o.blocked.none = false; o.touching.down = true; o.touching.none = false; p.touching.up = true; p.touching.none = false;
+    return true;
+  }
   _sepX(b1, b2) {
     var left = b1.centerX < b2.centerX;
     var ov = left ? b1.right - b2.left : b2.right - b1.left;
@@ -10883,8 +10989,9 @@ class ArcadePhysics {
     this.world = new ArcadeWorld(scene, config);
     var self = this, w = this.world;
     var mk = function (x, y, key, frame, isStatic) {
-      var s = new Sprite(x, y, key !== undefined ? key : '__WHITE', frame);
-      s.scene = scene; scene.world.addChild(s);
+      // la clave se resuelve con las texturas de ESTA escena (sin escena se usaría las del primer juego de la página)
+      var s = new Sprite(x, y, scene.textures.get(key !== undefined ? key : '__WHITE', frame));
+      s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s);
       w.enable(s, isStatic);
       return s;
     };
@@ -11076,6 +11183,20 @@ class RigidBody2D extends EventEmitter {
     if (g.parent && g.parent.worldTransform && g.parent !== (g.scene && g.scene.world)) { var p = g.parent.worldTransform.applyInverse(ox, oy, new Vec2()); g.x = p.x; g.y = p.y; }
     else { g.x = ox; g.y = oy; }
     if (!this.fixedRotation || this.angle) g.rotation = this.angle;
+    this._goX = g.x; this._goY = g.y; this._goRotation = g.rotation;
+  }
+  /** Scripts y tweens pueden mover el dibujo: incorporar ese cambio antes de simular, sin
+   * confundirlo con una posición escrita por la física en el fotograma anterior. */
+  _readObject() {
+    var g = this.gameObject; if (!g || g.destroyed || this._goX === undefined) return;
+    var moved = g.x !== this._goX || g.y !== this._goY;
+    if (Number.isFinite(g.rotation) && g.rotation !== this._goRotation) this.setAngle(g.rotation);
+    if (moved && Number.isFinite(g.x) && Number.isFinite(g.y)) {
+      var x = g.x, y = g.y;
+      if (g.parent && g.parent.worldTransform && g.parent !== (g.scene && g.scene.world)) { var p = g.parent.worldTransform.apply(x, y, new Vec2()); x = p.x; y = p.y; }
+      this.setPosition(x, y);
+    }
+    this._goX = g.x; this._goY = g.y; this._goRotation = g.rotation;
   }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.gameObject = null; }
 }
@@ -11224,16 +11345,30 @@ class RigidWorld2D extends EventEmitter {
   /** Cajas estáticas a partir de una capa de tilemap (fusiona tiles contiguos por filas). tiles: índices sólidos (por defecto todos > 0) */
   addTilemapLayer(layer, o) {
     o = o || {};
-    var data = layer.data || layer.layer && layer.layer.data, tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
-    if (!data) return out;
-    var ox = (layer.x || 0), oy = (layer.y || 0), solid = o.tiles ? new Set(o.tiles) : null;
-    for (var y = 0; y < data.length; y++) {
-      var row = data[y], x = 0;
-      while (x < row.length) {
-        var t = row[x], idx = t && typeof t === 'object' ? t.index : t, ok = solid ? solid.has(idx) : idx > 0;
-        if (!ok) { x++; continue; }
-        var x0 = x; while (x < row.length) { var t2 = row[x], i2 = t2 && typeof t2 === 'object' ? t2.index : t2; if (!(solid ? solid.has(i2) : i2 > 0)) break; x++; }
-        out.push(this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o));
+    var tw = layer.tileWidth || (layer.map && layer.map.tileWidth) || 32, th = layer.tileHeight || (layer.map && layer.map.tileHeight) || 32, out = [];
+    var solid = o.tiles ? new Set(o.tiles) : null, W, H, sx = 0, sy = 0, isSolid;
+    if (typeof layer.collidesAt === 'function' && layer.tileData) {
+      // TilemapLayer del motor: datos planos; sólido = colisión activada en la capa (o índices de o.tiles)
+      W = layer.layerWidth; H = layer.layerHeight; sx = layer.startX || 0; sy = layer.startY || 0;
+      isSolid = solid ? function (x, y) { return solid.has(layer.gidAt(x + sx, y + sy) & TILE_GID_MASK); } : function (x, y) { return layer.collidesAt(x + sx, y + sy) !== 0; };
+    } else {
+      // datos por filas (array de arrays de índices o de {index})
+      var data = layer.data || layer.layer && layer.layer.data; if (!data || !data.length || !Array.isArray(data[0]) && typeof data[0] !== 'object') return out;
+      H = data.length; W = 0; for (var r = 0; r < H; r++) W = Math.max(W, data[r] ? data[r].length : 0);
+      isSolid = function (x, y) { var row = data[y], t = row ? row[x] : 0, idx = t && typeof t === 'object' ? t.index : t; return solid ? solid.has(idx) : idx > 0; };
+    }
+    // posición y escala reales de la capa (puede estar dentro de un grupo desplazado o escalado)
+    var m = layer.getWorldMatrix ? layer.getWorldMatrix(new Matrix(), 0, 0) : null;
+    var ox = m ? m.tx : (layer.x || 0), oy = m ? m.ty : (layer.y || 0);
+    if (m) { tw *= Math.hypot(m.a, m.b) || 1; th *= Math.hypot(m.c, m.d) || 1; }
+    ox += sx * tw; oy += sy * th;
+    // tiles contiguos de cada fila en una sola caja (menos cuerpos y sin enganches entre tiles)
+    for (var y = 0; y < H && out.length < 20000; y++) {
+      var x = 0;
+      while (x < W) {
+        if (!isSolid(x, y)) { x++; continue; }
+        var x0 = x; while (x < W && isSolid(x, y)) x++;
+        var b = this.addStatic(ox + (x0 + x) / 2 * tw, oy + (y + 0.5) * th, (x - x0) * tw, th, o); if (b) out.push(b);
       }
     }
     return out;
@@ -11252,6 +11387,7 @@ class RigidWorld2D extends EventEmitter {
   /* ---------- paso ---------- */
   step(dt) {
     if (this.destroyed || this.paused || !(dt > 0)) return;
+    for (var oi = 0; oi < this.bodies.length; oi++) if (this.bodies[oi].enabled) this.bodies[oi]._readObject();
     this._acc += Math.min(dt, this.fixedStep * this.maxSubSteps);
     var n = 0;
     while (this._acc >= this.fixedStep - 1e-9 && n < this.maxSubSteps) { this._fixed(this.fixedStep); this._acc -= this.fixedStep; n++; }
@@ -11609,7 +11745,7 @@ class RigidPhysics2D {
     };
     this.add = {
       existing: function (obj, o) { if (!obj.parent) { obj.scene = scene; scene.world.addChild(obj); } return link(obj, o); },
-      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, key === undefined ? '__WHITE' : key, frame); s.scene = scene; scene.world.addChild(s); return link(s, o); },
+      sprite: function (x, y, key, frame, o) { if (frame && typeof frame === 'object') { o = frame; frame = undefined; } var s = new Sprite(x, y, scene.textures.get(key === undefined ? '__WHITE' : key, frame)); s.textureKey = typeof key === 'string' ? key : null; s.scene = scene; scene.world.addChild(s); return link(s, o); },
       image: function (x, y, key, frame, o) { return self.add.sprite(x, y, key, frame, o); },
       rectangle: function (x, y, wd, ht, color, o) { var r = new ShapeObject('rectangle', x, y, { width: wd, height: ht }, color === undefined ? 0xffd43b : color, 1); r.scene = scene; scene.world.addChild(r); return link(r, Object.assign({ width: wd, height: ht }, o || {})); },
       circle: function (x, y, rad, color, o) { var c = new ShapeObject('circle', x, y, { radius: rad, width: rad * 2, height: rad * 2 }, color === undefined ? 0x74c0fc : color, 1); c.scene = scene; scene.world.addChild(c); return link(c, Object.assign({ shape: 'circle', radius: rad, width: rad * 2, height: rad * 2 }, o || {})); },
@@ -13500,6 +13636,26 @@ function cloudTexture2D(textures, key, o) {
   });
   return key;
 }
+/** Bruma que se repite sin costuras en horizontal y en vertical (niebla 2D): ruido de valor periódico en los dos ejes */
+function fogTexture2D(textures, key) {
+  if (textures.exists(key)) return key;
+  var S = 256, rng = new RNG(key), perm = [];
+  for (var i = 0; i < 256; i++) perm[i] = rng.float();
+  var val = function (x, y, p) { var ix = ((x % p) + p) % p, iy = ((y % p) + p) % p; return perm[(ix * 37 + iy * 91 + ((ix * 7) ^ (iy * 13))) & 255]; };
+  var noise = function (x, y, p) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    var a = val(x0, y0, p), b = val(x0 + 1, y0, p), c = val(x0, y0 + 1, p), d = val(x0 + 1, y0 + 1, p); return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy; };
+  textures.generate(key, S, S, function (ctx) {
+    var img = ctx.createImageData(S, S), D = img.data;
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var s = 0, amp = 0.5, f = 3, norm = 0;
+      for (var oc = 0; oc < 4; oc++) { s += amp * noise(x / S * f, y / S * f, f); norm += amp; amp *= 0.5; f *= 2; }
+      s /= norm; var t = Math.max(0, Math.min(1, (s - 0.3) / 0.45)); t = t * t * (3 - 2 * t);
+      var o = (y * S + x) * 4; D[o] = D[o + 1] = D[o + 2] = 255; D[o + 3] = Math.round(t * 230);
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+  return key;
+}
 /**
  * Nubes en capas con parallax (fijas a la cámara y desplazadas según su scroll y el viento).
  * o: { y, height, layers (2), speed (px/s del viento), parallax (0.05..0.5), color, alpha, coverage, seed, depth }
@@ -13512,7 +13668,7 @@ class Clouds2D extends Container {
     var W = scene.game.width, n = Math.max(1, Math.min(5, o.layers || 2)), baseY = o.y === undefined ? 60 : o.y, hgt = o.height || 170;
     for (var i = 0; i < n; i++) {
       var key = cloudTexture2D(scene.textures, '__clouds2d:' + (o.seed || 'nubes') + ':' + i + ':' + (o.coverage === undefined ? 0.5 : o.coverage), { coverage: o.coverage, seed: (o.seed || 'nubes') + i });
-      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k)); ts.setTexture(key);
+      var k = (i + 1) / n, ts = new TilingSprite(W / 2, baseY + i * hgt * 0.35, W, hgt * (0.7 + 0.3 * k), scene.textures.get(key)); ts.textureKey = key;
       ts.tint = o.color === undefined ? 0xffffff : o.color; ts.alpha = (o.alpha === undefined ? 0.9 : o.alpha) * (0.55 + 0.45 * k);
       ts.tileScaleX = ts.tileScaleY = 0.8 + 0.5 * k; ts.setScrollFactor(0);
       this.addChild(ts);
@@ -13539,20 +13695,43 @@ GameObjectFactory.prototype.skyGradient = function (top, bottom, o) {
 var WEATHER2D = {
   rain: { tex: 'rain', freq: 12, qty: [2, 4], speedY: [760, 980], speedX: [-90, -40], life: 1100, scale: 1, alpha: 0.55 },
   storm: { tex: 'rain', freq: 6, qty: [4, 7], speedY: [900, 1150], speedX: [-220, -120], life: 950, scale: 1.2, alpha: 0.65, lightning: true },
-  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 }
+  snow: { tex: 'snow', freq: 40, qty: [1, 3], speedY: [40, 90], speedX: [-25, 25], life: 9000, scale: [0.4, 1.1], alpha: 0.9 },
+  // niebla: capas de bruma que se desplazan por delante del mundo (sin partículas)
+  fog: { mist: true }
 };
 class Weather2D {
-  /** scene.weather2d('rain' | 'storm' | 'snow' | 'clear', { intensity (0..2), onLightning }) */
-  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
+  /** scene.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', { intensity (0..2), onLightning, color (niebla), prewarm }) */
+  constructor(scene, kind, o) { this.scene = scene; this.emitter = null; this.mist = null; this.kind = null; this.destroyed = false; this.set(kind, o); }
   set(kind, o) {
     o = o || {};
     var s = this.scene, W = s.game.width, H = s.game.height, P = WEATHER2D[kind];
     if (this.emitter) { this.emitter.destroy(); this.emitter = null; }
+    if (this.mist) { if (!this.mist.destroyed) this.mist.destroy(); this.mist = null; }
     if (this._lt) { this._lt.remove(); this._lt = null; }
     this.kind = P ? kind : 'clear';
     if (!P) return this;
+    var k0 = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
+    if (P.mist) {
+      // niebla: un velo uniforme y dos capas de bruma a pantalla completa que se desplazan a distinta velocidad
+      var fk = fogTexture2D(s.textures, '__fog2d'), col = o.color === undefined ? 0xe3e9f0 : o.color, parts = [];
+      var veil = s.add.hud.rectangle(W / 2, H / 2, W, H, col, Math.min(0.6, 0.16 * k0)); veil.setScrollFactor(0); veil.depth = -501; parts.push(veil);
+      var layers = [[0.5, 1.7, 11, 2], [0.36, 2.9, 5, -1]].map(function (L) {
+        var ts = s.add.hud.tileSprite(W / 2, H / 2, W, H, fk); ts.setScrollFactor(0); ts.tint = col; ts.alpha = Math.min(0.95, L[0] * k0); ts.tileScaleX = ts.tileScaleY = L[1]; ts.depth = -500; parts.push(ts);
+        return { s: ts, vx: L[2] * k0, vy: L[3] };
+      });
+      var cam = s.cameras ? s.cameras.main : null, t0 = 0;
+      var tick = function (time, delta) {
+        t0 += (delta || 16) / 1000; var sx = cam ? cam.scrollX : 0, sy = cam ? cam.scrollY : 0;
+        for (var i = 0; i < layers.length; i++) { var L = layers[i]; if (L.s.destroyed) continue; L.s.tilePositionX = sx * 0.3 * (i + 1) + t0 * L.vx; L.s.tilePositionY = sy * 0.3 * (i + 1) + t0 * L.vy; }
+      };
+      s.events.on('update', tick);
+      this.mist = { parts: parts, destroyed: false, destroy: function () { if (this.destroyed) return; this.destroyed = true; s.events.off('update', tick); parts.forEach(function (p) { if (!p.destroyed) p.destroy(); }); } };
+      return this;
+    }
     var T = s.textures;
-    if (!T.exists('__rain2d')) T.generate('__rain2d', 2, 18, function (c) { var g = c.createLinearGradient(0, 0, 0, 18); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 2, 18); });
+    // la gota se dibuja a lo largo del eje X (cola transparente → cabeza brillante): angleAlign gira ese eje hacia la
+    // velocidad, así cae como una raya casi vertical (dibujada en vertical quedaba tumbada, horizontal)
+    if (!T.exists('__rain2d')) T.generate('__rain2d', 18, 2, function (c) { var g = c.createLinearGradient(0, 0, 18, 0); g.addColorStop(0, 'rgba(200,220,255,0)'); g.addColorStop(1, 'rgba(200,220,255,1)'); c.fillStyle = g; c.fillRect(0, 0, 18, 2); });
     if (!T.exists('__snow2d')) T.generate('__snow2d', 12, 12, function (c) { var g = c.createRadialGradient(6, 6, 0, 6, 6, 6); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 12, 12); });
     var k = o.intensity === undefined ? 1 : Math.max(0.05, Math.min(2, +o.intensity));
     this.emitter = s.add.hud.particles(P.tex === 'rain' ? '__rain2d' : '__snow2d', {
@@ -13560,6 +13739,8 @@ class Weather2D {
       quantity: P.qty, scale: P.scale, alpha: P.alpha, maxParticles: Math.round(1200 * k) + 50, angleAlign: P.tex === 'rain'
     });
     this.emitter.depth = -500;
+    // la pantalla empieza ya con lluvia o nieve (si no, la nieve tardaba varios segundos en bajar de arriba)
+    if (o.prewarm !== false) this.emitter.prewarm(P.tex === 'snow' ? Math.min(P.life, (H + 40) / P.speedY[0] * 1000) : (H + 80) / P.speedY[0] * 1000);
     if (P.lightning) {
       var self = this, strike = function () {
         if (self.destroyed || !s.cameras) return;
@@ -13572,10 +13753,10 @@ class Weather2D {
     }
     return this;
   }
-  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
+  destroy() { if (this.destroyed) return; this.destroyed = true; if (this.emitter && !this.emitter.destroyed) this.emitter.destroy(); this.emitter = null; if (this.mist && !this.mist.destroyed) this.mist.destroy(); this.mist = null; if (this._lt) this._lt.remove(); this._lt = null; this.scene = null; }
 }
 
-/** this.weather2d('rain' | 'storm' | 'snow' | 'clear', opciones) en cualquier escena */
+/** this.weather2d('rain' | 'storm' | 'snow' | 'fog' | 'clear', opciones) en cualquier escena */
 Scene.prototype.weather2d = function (kind, o) { var sys = this.sys; if (sys._weather2d && !sys._weather2d.destroyed) return sys._weather2d.set(kind, o); return (sys._weather2d = new Weather2D(this, kind, o)); };
 
 UG.Lights2D = Lights2D; UG.Light2D = Light2D; UG.LightLayer2D = LightLayer2D; UG.Clouds2D = Clouds2D; UG.Weather2D = Weather2D; UG.cloudTexture2D = cloudTexture2D;
@@ -18667,7 +18848,7 @@ UG.GLTFExporter = GLTFExporter; UG.encodePNG = encodePNG;
  * - Vehículo arcade: aceleración, frenado, derrape, suspensión por rayos, inclinación con el terreno.
  * - Rayos (disparos, línea de visión, picking), disparadores (zonas) y consultas de solapamiento. */
 
-var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4();
+var _p3a = new Vec3(), _p3b = new Vec3(), _p3c = new Vec3(), _p3d = new Vec3(), _p3n = new Vec3(), _p3m = new Mat4(), _p3o = new Vec3();
 
 /** Punto más cercano de un triángulo a p (Ericson, Real-Time Collision Detection 5.1.5) */
 function closestPtTriangle(px, py, pz, t, o, out) {
@@ -18826,12 +19007,14 @@ class Body3D extends EventEmitter {
     this.world = world; this.node = node || null; this.id = uid();
     this.shape = o.shape === 'box' ? 'box' : 'sphere';
     this.radius = o.radius || 0.5; this.half = o.half ? new Vec3(o.half.x, o.half.y, o.half.z) : new Vec3(0.5, 0.5, 0.5);
-    this.position = node ? node.getWorldPosition(new Vec3()) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
+    /** Desplazamiento del centro del cuerpo respecto al origen del nodo (modelos con el origen en la base) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : (o.position ? new Vec3(o.position.x, o.position.y, o.position.z) : new Vec3());
     this.velocity = new Vec3(); this.mass = o.mass === undefined ? 1 : Math.max(0, o.mass); this.invMass = this.mass > 0 ? 1 / this.mass : 0;
     this.restitution = o.restitution === undefined ? 0.2 : o.restitution; this.friction = o.friction === undefined ? 0.6 : o.friction;
     this.gravityScale = o.gravityScale === undefined ? 1 : o.gravityScale; this.linearDamping = o.damping === undefined ? 0.02 : o.damping;
     this.sleeping = false; this._still = 0; this.onGround = false; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
-    this.roll = o.roll !== false && this.shape === 'sphere'; // la malla de la esfera rueda visualmente
+    this.roll = o.roll !== false && this.shape === 'sphere' && this.offset.length() < 1e-3; // la malla de la esfera rueda visualmente
     this.userData = o.userData || {};
     this.min = new Vec3(); this.max = new Vec3(); this._aabb();
     this.destroyed = false;
@@ -18843,7 +19026,8 @@ class Body3D extends EventEmitter {
   wake() { this.sleeping = false; this._still = 0; return this; }
   _sync(dt) {
     var n = this.node; if (!n) return;
-    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position);
+    var wp = _p3o.subVectors(this.position, this.offset);
+    if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp);
     if (this.roll && dt > 0) { var vx = this.velocity.x, vz = this.velocity.z, sp = Math.hypot(vx, vz); if (sp > 1e-4 && this.onGround) { var ax = _p3n.set(vz / sp, 0, -vx / sp); n.rotateOnWorldAxis(ax, sp * dt / this.radius); } }
   }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
@@ -18859,7 +19043,9 @@ class CharacterController3D extends EventEmitter {
     this.stepHeight = o.stepHeight === undefined ? 0.4 : o.stepHeight; this.maxSlope = (o.maxSlope === undefined ? 50 : o.maxSlope) * DEG_TO_RAD;
     this.gravity = o.gravity === undefined ? null : o.gravity; this.jumpSpeed = o.jumpSpeed || 8; this.coyoteTime = o.coyoteTime === undefined ? 0.12 : o.coyoteTime;
     this.pushForce = o.pushForce === undefined ? 2 : o.pushForce;
-    this.position = node ? node.getWorldPosition(new Vec3()) : new Vec3();
+    /** Desplazamiento de los pies respecto al origen del nodo (p. ej. una cápsula con el origen en el centro) */
+    this.offset = o.offset ? new Vec3(+o.offset.x || 0, +o.offset.y || 0, +o.offset.z || 0) : new Vec3();
+    this.position = node ? node.getWorldPosition(new Vec3()).add(this.offset) : new Vec3();
     this.velocity = new Vec3(); this.onGround = false; this.groundNormal = new Vec3(0, 1, 0); this.hitCeiling = false; this.hitWall = false;
     this._move = new Vec3(); this._jump = false; this._air = 0; this.enabled = true; this.layer = o.layer || 1; this.mask = o.mask === undefined ? -1 : o.mask;
     this.userData = o.userData || {}; this.min = new Vec3(); this.max = new Vec3(); this._aabb(); this.destroyed = false;
@@ -18889,7 +19075,7 @@ class CharacterController3D extends EventEmitter {
   move(vx, vz) { this._move.set(vx || 0, 0, vz || 0); return this; }
   jump(speed) { if (this.onGround || this._air <= this.coyoteTime) { this._jump = speed || this.jumpSpeed; return true; } return false; }
   teleport(x, y, z) { if (typeof x === 'object') this.position.copy(x); else this.position.set(x, y, z); this.velocity.set(0, 0, 0); this.vaulting = null; this._aabb(); this._sync(); return this; }
-  _sync() { var n = this.node; if (!n) return; if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(this.position).applyMat4(_p3m); } else n.position.copy(this.position); }
+  _sync() { var n = this.node; if (!n) return; var wp = _p3o.subVectors(this.position, this.offset); if (n.parent) { n.parent.updateWorldMatrix(); _p3m.invertFrom(n.parent.matrixWorld); n.position.copy(wp).applyMat4(_p3m); } else n.position.copy(wp); }
   destroy() { if (this.destroyed) return; this.destroyed = true; if (this.world) this.world.remove(this); this.removeAllListeners(); this.node = null; }
 }
 
@@ -19830,8 +20016,8 @@ var PARTICLE3D_PRESETS = {
   magic: { rate: 40, life: [0.6, 1.4], speed: [0.2, 0.8], spread: 1, gravity: 0.8, size: [0.25, 0], color: [0x8ec5ff, 0xd07bff], alpha: [1, 0], blend: 'add', drag: 0.8, radius: 0.5 },
   blood: { rate: 0, burst: 24, life: [0.3, 0.7], speed: [2, 5], spread: 0.6, direction: [0, 1, 0], gravity: -16, size: [0.15, 0.05], color: [0xb3001b, 0x5a0010], alpha: [1, 0.6], blend: 'normal', drag: 0.5 },
   muzzle: { rate: 0, burst: 10, life: [0.04, 0.09], speed: [1, 4], spread: 0.25, direction: [0, 0, 1], gravity: 0, size: [0.35, 0.05], color: [0xfff4c2, 0xffa12e], alpha: [1, 0], blend: 'add' },
-  rain: { rate: 400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.05, 0.05], stretch: 12, color: [0xaec8e8, 0xaec8e8], alpha: [0.5, 0.5], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0] },
-  snow: { rate: 120, life: [5, 7], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.9, 0.9], blend: 'normal', box: [30, 0, 30], offset: [0, 12, 0], wobble: 0.6 },
+  rain: { rate: 1400, life: [0.8, 1.0], speed: [18, 22], spread: 0.02, direction: [0, -1, 0], gravity: 0, size: [0.045, 0.045], stretch: 16, color: [0xe3ecf7, 0xe3ecf7], alpha: [0.75, 0.75], blend: 'normal', box: [30, 0, 30], offset: [0, 15, 0], prewarm: 1 },
+  snow: { rate: 420, life: [7, 10], speed: [0.8, 1.4], spread: 0.3, direction: [0, -1, 0], gravity: 0, size: [0.12, 0.12], color: [0xffffff, 0xffffff], alpha: [0.95, 0.95], blend: 'normal', box: [30, 14, 30], offset: [0, 6, 0], wobble: 0.6, prewarm: 10 },
   coin: { rate: 0, burst: 16, life: [0.3, 0.6], speed: [2, 4], spread: 1, gravity: -4, size: [0.2, 0], color: [0xffe066, 0xffb700], alpha: [1, 0], blend: 'add' },
   trail: { rate: 50, life: [0.3, 0.5], speed: [0, 0.2], spread: 1, gravity: 0, size: [0.35, 0], color: [0x9be7ff, 0x3f8cff], alpha: [0.7, 0], blend: 'add' }
 };
@@ -19875,6 +20061,16 @@ class ParticleEmitter3D extends InstancedMesh3D {
   /** Emite n partículas ya (explosión, chispas, disparo). position y direction ([x,y,z]) opcionales (mundo) */
   burst(n, position, direction) { this._dirOverride = direction || null; for (var i = 0; i < n; i++) this._spawn(position); this._dirOverride = null; return this; }
   start() { this.emitting = true; this._t = 0; return this; }
+  /**
+   * Simula `seconds` de golpe para que un emisor continuo (lluvia, nieve, humo) empiece ya lleno en vez de ir
+   * apareciendo desde arriba. Usa la posición actual del emisor.
+   */
+  prewarm(seconds) {
+    var t = Math.max(0, Math.min(30, +seconds || 0)), h = 1 / 30;
+    if (this.worldSpace) this.updateWorldMatrix();
+    for (; t > 0; t -= h) this._step(Math.min(h, t));
+    return this;
+  }
   stop() { this.emitting = false; return this; }
   get alive() { return this._n; }
   _spawn(at) {
@@ -19955,6 +20151,7 @@ class ParticleEmitter3D extends InstancedMesh3D {
     this.visible = this._n > 0 || this.visible;
   }
   update(dt) {
+    if (this.cfg.prewarm > 0 && !this._warmed) { this._warmed = true; if (this.emitting) this.prewarm(this.cfg.prewarm); }
     this._step(dt);
     if (this.view && this.view.camera) this._build(this.view.camera);
     if (this.autoDestroy && !this.emitting && this._n === 0 && !this._pendingBurst) { this.destroy(); return false; }
@@ -20183,9 +20380,9 @@ var WEATHER_PRESETS = {
   cloudy: { clouds: { coverage: 0.62, color: 0xe9edf2, opacity: 0.95 }, fog: 0.8, particles: null, light: 0.8 },
   overcast: { clouds: { coverage: 0.9, color: 0xc4c9d1, opacity: 1, sharpness: 0.6 }, fog: 0.6, particles: null, light: 0.6 },
   rain: { clouds: { coverage: 0.85, color: 0x9aa3ae, opacity: 1, sharpness: 0.55 }, fog: 0.55, particles: 'rain', light: 0.55 },
-  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 900, light: 0.4, lightning: true },
+  storm: { clouds: { coverage: 0.97, color: 0x6c7480, opacity: 1, sharpness: 0.7, speed: 0.05 }, fog: 0.45, particles: 'rain', rate: 2600, light: 0.4, lightning: true },
   snow: { clouds: { coverage: 0.8, color: 0xdfe4ea, opacity: 1, sharpness: 0.5 }, fog: 0.5, particles: 'snow', light: 0.75 },
-  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.25, particles: null, light: 0.7 }
+  fog: { clouds: { coverage: 0.7, color: 0xd8dde3, opacity: 1, sharpness: 0.6 }, fog: 0.12, particles: null, light: 0.7 }
 };
 /** Clima de la vista: view.weather('rain' | 'storm' | 'snow' | 'cloudy' | 'overcast' | 'fog' | 'clear', { intensity, lightning, onLightning }) */
 class Weather3D {
@@ -20199,14 +20396,32 @@ class Weather3D {
     this.kind = WEATHER_PRESETS[kind] ? kind : 'clear'; this.intensity = o.intensity === undefined ? 1 : Math.max(0, Math.min(2, +o.intensity || 0));
     this.lightning = o.lightning !== undefined ? !!o.lightning : !!P.lightning; this.onLightning = typeof o.onLightning === 'function' ? o.onLightning : null;
     sc.setClouds(P.clouds);
-    // niebla: se guarda la original y se acerca según el clima
-    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.35 + 0.65 * P.fog); }
+    // cielo: los climas grises lo apagan hacia gris (se guardan los colores para volver a despejado). Con ciclo
+    // día/noche no se toca: ese control pinta el cielo en cada fotograma
+    var dnOn = v._dayNight && !v._dayNight.destroyed;
+    if (sc.sky && !dnOn) {
+      if (!this._sky0 || this._skyRef !== sc.sky) { this._sky0 = { top: sc.sky.top, horizon: sc.sky.horizon, bottom: sc.sky.bottom }; this._skyRef = sc.sky; }
+      var gm = Math.max(0, 1 - P.fog) * 0.85, grey = P.particles === 'snow' ? 0xdfe3e8 : 0xb9c0c8;
+      sc.sky.top = Color.lerp(this._sky0.top, grey, gm); sc.sky.horizon = Color.lerp(this._sky0.horizon, grey, gm * 0.7); sc.sky.bottom = Color.lerp(this._sky0.bottom, grey, gm * 0.4);
+    }
+    // niebla: se guarda la original y se acerca según el clima. Si la escena no tenía niebla y el clima la pide (lluvia,
+    // nieve, niebla…) se crea una del color del horizonte (antes «niebla» no hacía nada en una escena sin niebla);
+    // al volver a despejado se quita
+    if (!sc.fog && P.fog < 0.99) { var hz = sc.sky ? sc.sky.horizon : sc.background; /* horizonte ya ajustado al clima */ sc.setFog('linear', hz === undefined ? 0xc4ccd6 : hz, 20, 120); this._ownFog = sc.fog; this._fog0 = null; }
+    else if (this._ownFog && P.fog >= 0.99 && sc.fog === this._ownFog) { sc.fog = null; this._ownFog = null; this._fog0 = null; }
+    if (this._ownFog && sc.fog === this._ownFog && sc.sky) sc.fog.color = sc.sky.horizon; // la niebla propia sigue al horizonte
+    if (sc.fog && sc.fog.type === 'linear') { if (!this._fog0) this._fog0 = { near: sc.fog.near, far: sc.fog.far }; sc.fog.near = this._fog0.near * P.fog; sc.fog.far = this._fog0.far * (0.25 + 0.75 * P.fog); }
     this.lightScale = P.light;
     if (this._fx) { this._fx.destroy(); this._fx = null; }
     if (P.particles) {
       var base = PARTICLE3D_PRESETS[P.particles], rate = (P.rate || base.rate) * this.intensity;
-      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: [40, 0, 40], offset: [0, P.particles === 'snow' ? 14 : 18, 0], worldSpace: true });
+      // la nieve cae despacio: nace en toda la columna alrededor de la cámara; la lluvia, arriba (llega abajo en 1 s)
+      var snow = P.particles === 'snow';
+      this._fx = v.addParticles(P.particles, { rate: rate, capacity: Math.ceil(rate * base.life[1] * 1.4) + 32, box: snow ? [34, 16, 34] : [26, 0, 26], offset: [0, snow ? 7 : 18, 0], worldSpace: true, prewarm: 0 });
       this._fx.name = 'weather:' + P.particles;
+      // empieza ya lleno, centrado en la cámara (si no, la nieve tardaba varios segundos en verse)
+      if (v.camera) { v.camera.getWorldPosition(_wv); this._fx.position.set(_wv.x, _wv.y - 2, _wv.z); }
+      this._fx.prewarm(base.life[1]);
     }
     // luces que se atenúan con el clima (sol y cielo de la escena); la intensidad base se guarda una sola vez
     var base0 = this._base || (this._base = new Map());
@@ -20233,6 +20448,10 @@ class Weather3D {
   destroy() {
     if (this.destroyed) return; this.destroyed = true;
     if (this._fx && !this._fx.destroyed) this._fx.destroy(); this._fx = null;
+    if (this._ownFog && this.view && this.view.scene3d && this.view.scene3d.fog === this._ownFog) this.view.scene3d.fog = null;
+    this._ownFog = null;
+    if (this._sky0 && this.view && this.view.scene3d && this.view.scene3d.sky === this._skyRef) { var sk = this.view.scene3d.sky; sk.top = this._sky0.top; sk.horizon = this._sky0.horizon; sk.bottom = this._sky0.bottom; }
+    this._sky0 = null; this._skyRef = null;
     if (this._base) { this._base.forEach(function (b, l) { if (!l.destroyed) l.intensity = b; }); this._base.clear(); }
     var v = this.view; this.view = null; this.onLightning = null;
     if (v && v.controls) { var i = v.controls.indexOf(this); if (i >= 0) v.controls.splice(i, 1); }

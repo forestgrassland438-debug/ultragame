@@ -104,12 +104,16 @@
     <li><a href="#tweens">Tweens y tiempo</a></li>
     <li><a href="#entrada">Entrada</a></li>
     <li><a href="#fisica">Física Arcade</a></li>
+    <li><a href="#rigida">Física rígida 2D</a></li>
     <li><a href="#tiled">Tiled</a></li>
     <li><a href="#camaras">Cámaras</a></li>
     <li><a href="#particulas">Partículas</a></li>
+    <li><a href="#luces2d">Luces 2D y sombras</a></li>
+    <li><a href="#clima2d">Clima, nubes y cielo 2D</a></li>
     <li><a href="#efectos">Efectos (35)</a></li>
     <li><a href="#audio">Audio y música</a></li>
     <li><a href="#ui">Interfaz</a></li>
+    <li><a href="#web3">Web3: carteras y contratos</a></li>
     <li class="grp">3D</li>
     <li><a href="#d3">Primeros pasos en 3D</a></li>
     <li><a href="#d3-objetos">Objetos, materiales y luces</a></li>
@@ -118,6 +122,7 @@
     <li><a href="#d3-fisica">Física 3D</a></li>
     <li><a href="#d3-controles">Cámaras y controles 3D</a></li>
     <li><a href="#d3-extras">Partículas, niveles y sonido 3D</a></li>
+    <li><a href="#d3-mundo">Mundo 3D: clima, agua, hierba…</a></li>
     <li><a href="#d3-juegos">Juegos 3D de ejemplo</a></li>
     <li class="grp">Editor</li>
     <li><a href="#studio">UltraGame Studio</a></li>
@@ -391,6 +396,31 @@ this.physics.world.wrap(asteroides, 32);                                  // env
   <p>Cuerpo: <code>setVelocity(X/Y), setAcceleration, setDrag, setDamping, setBounce, setFriction, setMass, setImmovable, setPushable, setAllowGravity, setGravity, setCollideWorldBounds, setCircle, setSize, setOffset, reset, stop</code>; estado: <code>blocked, touching, onFloor(), onWall(), onCeiling(), speed, angle</code>. Mundo: <code>setBounds, setBoundsCollision, setGravity, setFPS, pause/resume, overlapRect, overlapCirc, closest, furthest, moveTo, accelerateTo, velocityFromAngle, wrap</code>. Tiles: <code>setCollision, setCollisionBetween, setCollisionByProperty, setCollisionByExclusion, setOneWayCollision</code>.</p>
 </section>
 
+<section id="rigida">
+  <h2>Física rígida 2D</h2>
+  <p>Para juegos de físicas (puzles, torres que se caen, catapultas, coches 2D, ragdolls) hay un motor de <b>cuerpos rígidos</b> con giro real: círculos, cajas, polígonos convexos y cóncavos (se trocean solos), cuerpos compuestos, fricción, rebote, densidad, pilas estables, cuerpos que se duermen y <b>uniones</b> (barra, muelle, bisagra con motor y límites, soldadura y ratón). Se activa solo al usar <code>this.rigid</code> y convive con la física Arcade.</p>
+<pre><code class="js">// config del juego o de la escena: physics: { rigid: { gravity: { x: 0, y: 980 }, iterations: 10, debug: false } }
+create() {
+  this.rigid.add.static(480, 530, 960, 20);                                 // suelo (x, y del centro, ancho, alto)
+  const caja = this.rigid.add.sprite(300, 100, 'caja', { friction: 0.6, restitution: 0.1 });
+  const bola = this.rigid.add.circle(420, 50, 18, 0x74c0fc, { density: 0.002, restitution: 0.6 });
+  this.rigid.add.polygon(600, 80, [0, -30, 40, 30, -40, 30], 0x63e6be);     // cóncavo o convexo
+  this.rigid.add.sprite(200, 200, 'heroe', { shape: 'circle', radius: 20, fixedRotation: true }); // personaje que no rueda
+  this.rigid.add.tilemap(capaSuelo);                                        // suelo desde una capa de Tiled (tiles fusionados)
+
+  const eje = this.rigid.add.static(700, 300, 10, 10, { sensor: true });
+  const rueda = this.rigid.add.circle(760, 300, 30).rbody;                   // el objeto visible guarda su cuerpo en .rbody
+  this.rigid.add.joint({ type: 'revolute', a: eje, b: rueda, anchorB: { x: -60, y: 0 }, motorSpeed: 3, maxMotorTorque: 5e6 });
+  this.rigid.add.joint({ type: 'spring', a: caja.rbody, b: bola.rbody, length: 120, stiffness: 3, damping: 0.3 });
+
+  this.rigid.drag(true);                                                    // arrastrar cuerpos con ratón o dedo
+  caja.rbody.on('collide', (otro, ev) =&gt; { if (ev.impulse &gt; 5000) golpe(); });
+  this.rigid.world.on('collisionstart', (ev) =&gt; {});                         // bodyA, bodyB, normal, points, impulse, sensor
+}</code></pre>
+  <p>Cuerpo (<code>obj.rbody</code>): <code>setVelocity, setAngularVelocity, applyForce(fx, fy, px, py), applyImpulse, applyTorque, setPosition, setAngle, velocityAt, wake</code>; opciones al crear: <code>isStatic</code> o <code>type: 'kinematic'</code>, <code>density, friction, restitution, sensor, fixedRotation, bullet, linearDamping, angularDamping, gravityScale, category, mask, group, label, userData</code>. Mundo (<code>this.rigid.world</code>): <code>raycast(x0, y0, x1, y1)</code> → <code>{ body, point, normal, fraction }</code>, <code>queryPoint, queryAABB, explode(x, y, radio, fuerza), gravity, paused, clear()</code>; eventos <code>collisionstart</code> y <code>collisionend</code> (y <code>collide</code>/<code>separate</code> en cada cuerpo). Uniones: <code>distance, spring, revolute, weld, mouse</code>. <code>this.rigid.debug(true)</code> dibuja formas, contactos y uniones. Unidades: píxeles, segundos y radianes.</p>
+  <div class="note">Paso fijo de 1/60 s con hasta 4 subpasos: el resultado no depende de los FPS. Límite de 4000 cuerpos por mundo (<code>maxBodies</code>) para que un nivel malicioso no bloquee el juego.</div>
+</section>
+
 <section id="tiled">
   <h2>Tiled</h2>
   <p>Compatible con los formatos del editor <a href="https://www.mapeditor.org/">Tiled</a>: <b>TMJ/JSON y TMX</b>, tilesets <b>embebidos o externos (TSJ/TSX)</b>, capas en <b>CSV, base64, base64+zlib y base64+gzip</b> (descompresor propio), <b>mapas infinitos</b> por bloques, <b>grupos</b> con desplazamiento/opacidad acumulados, <b>propiedades</b> tipadas (sin <em>prototype pollution</em>), <b>objetos</b> (rectángulos, puntos, elipses, polígonos, tiles), <b>tiles animados</b>, <b>volteos</b> H/V/diagonal, <code>tileoffset</code>, capas de imagen y orientaciones <b>ortogonal, isométrica, staggered y hexagonal</b>.</p>
@@ -436,7 +466,37 @@ chispas.setParticleTint([0x74c0fc, 0xffffff]);
 
 const nube = this.add.particleContainer();                    // hasta cientos de miles de sprites ligeros
 nube.addParticle(new UG.Particle(textura, x, y));</code></pre>
-  <p>Opciones: zonas de emisión (<code>emitZone: { source: rect|círculo|elipse, type: 'random'|'edge' }</code>), zonas de muerte, límites con rebote, rampas de color, rotación, estiramiento por velocidad, <code>onEmit/onDeath</code>. Con <code>UG.Wasm.init()</code> y <code>emitter.useWasm(true)</code> la integración corre en <b>WebAssembly SIMD</b> sobre memoria compartida con JS (sin copias): unas 4 veces más rápido que JS con 200 000 partículas en esta máquina (8,6 ms → 2,0 ms). Si no hay WASM SIMD, se usa JS automáticamente.</p>
+  <p>Opciones: zonas de emisión (<code>emitZone: { source: rect|círculo|elipse, type: 'random'|'edge' }</code>), zonas de muerte, límites con rebote, rampas de color, rotación, <code>angleAlign: true</code> (el eje X de la textura sigue la dirección de la velocidad: gotas, chispas, trazadoras) con <code>stretch</code> (se alarga con la velocidad), <code>onEmit/onDeath</code>. <code>emisor.prewarm(ms)</code> simula ese tiempo de golpe para que la lluvia, el humo o la nieve ya estén en pantalla al empezar. Con <code>UG.Wasm.init()</code> y <code>emitter.useWasm(true)</code> la integración corre en <b>WebAssembly SIMD</b> sobre memoria compartida con JS (sin copias): unas 4 veces más rápido que JS con 200 000 partículas en esta máquina (8,6 ms → 2,0 ms). Si no hay WASM SIMD, se usa JS automáticamente.</p>
+</section>
+
+<section id="luces2d">
+  <h2>Luces 2D y sombras</h2>
+  <p>Iluminación dinámica para escenas 2D: una capa de oscuridad ambiental sobre el mundo con luces de colores que proyectan <b>sombras</b> contra sprites, rectángulos, polígonos, capas de Tiled o cuerpos rígidos. Se calcula con polígonos de visibilidad a media resolución (ajustable), así que sirve en móviles.</p>
+<pre><code class="js">const L = this.lights2d.enable({ ambient: 0x1a1e30, resolution: 0.5 });   // color de la oscuridad, calidad (0.2..1)
+const antorcha = L.addLight(400, 300, 260, 0xffc078, 1.1, { flicker: 0.15 });   // x, y, radio, color, intensidad
+const linterna = L.addLight(0, 0, 320, 0xe7f5ff, 1, { follow: jugador, offsetY: -10 }); // sigue a un objeto
+L.addLight(800, 120, 180, 0x74c0fc, 0.8, { shadows: false });               // luz sin sombras
+
+L.addOccluder(pilar);                                    // un sprite o { x, y, width, height } tapa la luz
+L.addOccluder({ points: [100, 400, 160, 380, 150, 460] }); // polígono libre
+L.occludeTilemap(capaMuros, { tiles: [1, 2, 3] });       // muros de Tiled (sin tiles: todos los no vacíos)
+L.occludeRigid(this.rigid.world, { dynamic: true });     // cuerpos rígidos (también los que se mueven)
+antorcha.intensity = 0.5; antorcha.setPosition(420, 300); L.removeLight(linterna);
+L.disable();                                              // vuelve a la luz normal</code></pre>
+  <p>La capa de luz se dibuja con mezcla <code>multiply</code> encima del mundo y debajo de la interfaz. Todo se libera al cerrar la escena.</p>
+</section>
+
+<section id="clima2d">
+  <h2>Clima, nubes y cielo 2D</h2>
+<pre><code class="js">this.add.skyGradient(0x4dabf7, 0xd0ebff);                  // cielo en degradado detrás de todo, fijo a la cámara
+this.add.clouds({ layers: 3, coverage: 0.55, speed: 14, parallax: 0.2, y: 40, alpha: 0.9 });
+
+const clima = this.weather2d('rain', { intensity: 1 });   // 'rain' | 'storm' | 'snow' | 'fog' | 'clear'
+this.weather2d('storm', { intensity: 1.5, onLightning: () =&gt; trueno() }); // con relámpagos
+this.weather2d('snow');                                  // copos que caen despacio y se mecen
+this.weather2d('fog', { intensity: 1.2, color: 0xdfe6ee }); // bancos de niebla que se desplazan con la cámara
+this.weather2d('clear');                                 // quita el clima (también clima.destroy())</code></pre>
+  <p>La lluvia y la tormenta usan gotas alargadas alineadas con su velocidad (caen casi verticales, inclinadas por el viento) y empiezan con la pantalla ya llena (<code>prewarm: false</code> para que empiecen a caer desde arriba). <code>intensity</code> va de 0 a 2. Las partículas del clima van fijas a la pantalla; la niebla, además, se desplaza con parallax al mover la cámara. Las nubes son texturas de ruido generadas al momento (sin archivos) en capas con parallax y viento; <code>seed</code> cambia su forma.</p>
 </section>
 
 <section id="efectos">
@@ -474,6 +534,30 @@ this.sound.setBusVolume('sfx', 0.5); this.sound.toggleMute();</code></pre>
 <section id="ui">
   <h2>Interfaz</h2>
   <p><code>this.add.button(x, y, { text, width, height, color, onClick })</code> (estados normal/hover/pulsado/desactivado, teclado y táctil), <code>panel(x, y, w, h, { title })</code>, <code>progressBar</code>, <code>joystick</code> y <code>virtualButton</code>. Todo se puede poner en el HUD (<code>this.add.hud.button(…)</code>) para que no se mueva con la cámara.</p>
+</section>
+
+<section id="web3">
+  <h2>Web3: carteras y contratos</h2>
+  <p><code>UG.Web3</code> conecta el juego con carteras de navegador (MetaMask, Rabby, Coinbase Wallet… mediante EIP-1193 y el descubrimiento EIP-6963) y con contratos inteligentes, <b>sin dependencias</b>: codificación ABI, Keccak-256, direcciones EIP-55 y unidades con <code>BigInt</code> (sin errores de coma flotante). Nunca maneja claves privadas: firma siempre la cartera del usuario.</p>
+<pre><code class="js">const cartera = await UG.Web3.connect({ chainId: 11155111, chains: [11155111], maxValue: '0.05' }); // Sepolia; máx. 0.05 ETH por transacción
+cartera.account;                                      // '0xAbC…' (con mayúsculas EIP-55)
+cartera.on('accountsChanged', (cuentas) =&gt; {}); cartera.on('chainChanged', (id) =&gt; {});
+const saldo = await cartera.getBalance();            // BigInt en wei
+UG.Web3.formatUnits(saldo, 18);                      // '1.25'
+const firma = await cartera.signMessage('Entrar en Mi Juego · ' + nonce); // inicio de sesión sin contraseña (EIP-191)
+
+const token = cartera.contract('0x…', abi);          // ABI en JSON (Remix, Hardhat, Foundry, Etherscan) o lista
+const mios = await token.read('balanceOf', cartera.account);      // lectura gratuita (eth_call)
+const hash = await token.write('transfer', [destino, UG.Web3.parseUnits('1.5', 18)]); // el usuario confirma en su cartera
+const recibo = await cartera.waitForReceipt(hash);   // espera la confirmación ('txConfirmed' / 'txFailed')
+const pagos = await token.events('Transfer', { fromBlock: 0 });  // eventos decodificados
+await cartera.sendTransaction({ to: tienda, value: '0.01 eth' });
+
+// pruebas sin cartera ni blockchain: proveedor simulado con respuestas propias
+const falso = UG.Web3.mock({ chainId: 11155111, abi, calls: { balanceOf: 42n, owner: () =&gt; '0x' + '1'.repeat(40) } });
+const prueba = await UG.Web3.connect({ provider: falso });</code></pre>
+  <p>Utilidades: <code>isAddress, toChecksumAddress, shortAddress, parseUnits, formatUnits, keccak256, selector, signature, encodeCall('transfer(address,uint256)', args), encodeParams, decodeParams, decodeLog, normalizeABI, discover()</code> (lista de carteras instaladas) y <code>CHAINS</code> (redes conocidas con su explorador). Seguridad: solo se permiten los métodos RPC de <code>UG.Web3.ALLOWED_METHODS</code> (<code>eth_sign</code> está prohibido), se validan direcciones y redes (<code>chains</code>), hay un importe máximo por transacción (<code>maxValue</code>), un máximo de transacciones pendientes y un límite de peticiones por segundo.</p>
+  <div class="note">Lo que tiene valor (recompensas, NFTs, premios) debe decidirlo el contrato o tu servidor, nunca el cliente: consulta <a href="#seguridad">Seguridad y web3</a>. En el Studio, la pestaña Web3 genera contratos de ejemplo, el ABI y los eventos sin código.</div>
 </section>
 
 <section id="d3">
@@ -627,7 +711,35 @@ UG.Level3D.fromTiled(v, 'mapa', { cell: 2 });      // capas de tiles -> suelos/m
 
 v.playSfx('coin', moneda.position);                // sonido posicional (se oye desde donde está)
 v.playSound('motor', coche, { loop: true, refDistance: 4 });</code></pre>
-  <p>El oyente del audio sigue a la cámara de la vista automáticamente.</p>
+  <p>Opciones de <code>addParticles(preset, opciones)</code>: <code>rate, burst, life, speed, spread, direction, gravity, drag, size, color, alpha, blend, radius</code> (esfera de emisión) o <code>box: [ancho, alto, fondo]</code> con <code>offset</code> (volumen de emisión, como la lluvia sobre la cámara), <code>stretch</code> (alarga cada partícula en la dirección en que se mueve: gotas y chispas), <code>worldSpace</code>, <code>capacity</code> y <code>prewarm</code> (segundos simulados al empezar; también <code>emisor.prewarm(s)</code>). El oyente del audio sigue a la cámara de la vista automáticamente.</p>
+</section>
+
+<section id="d3-mundo">
+  <h2>Mundo 3D: clima, día y noche, agua, hierba, calcomanías y navegación</h2>
+<pre><code class="js">// clima: nubes, luz, niebla, cielo y partículas a la vez
+const clima = v.weather('rain', { intensity: 1 });   // 'clear' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'snow' | 'fog'
+v.weather('storm', { onLightning: () =&gt; trueno() });  // cambia el clima actual (con relámpagos)
+v.scene3d.setClouds({ coverage: 0.6, speed: 0.02, color: 0xffffff }); // nubes del cielo a mano
+
+// ciclo de día y noche: mueve el sol, cambia el cielo, la luz y la niebla; estrellas y luna de noche
+const ciclo = v.dayNight({ time: 7.5, speed: 0.2, sun: v.add.sunlight(), onHour: (h) =&gt; {} }); // speed en horas por segundo
+ciclo.setTime(21); ciclo.isNight; ciclo.daylight;   // 0 (noche) .. 1 (día)
+
+v.add.water(80, 80, { color: 0x1d5f93, waveHeight: 0.15, opacity: 0.85 }).position.y = -0.4; // agua con olas y reflejos
+v.add.grass({ area: [-30, -30, 30, 30], density: 4, height: [0.3, 0.7], wind: 0.1, heightAt: (x, z) =&gt; alturaTerreno(x, z) });
+v.add.scatter('pino', { area: [-40, -40, 40, 40], count: 120, minDistance: 3, scale: [0.8, 1.4], where: (x, z) =&gt; Math.hypot(x, z) &gt; 8 });
+v.add.instances('roca', [{ x: 2, y: 0, z: 5, ry: 0.4, s: 1.2 }, { x: -6, y: 0, z: 1 }]); // muchas copias de un modelo, una llamada por malla
+
+// calcomanías: impactos de bala, sangre, charcos, quemaduras y grietas sobre cualquier superficie
+const hit = ph.raycast(origen, direccion, 50);
+if (hit) v.addDecal('bullet', hit.point, hit.normal, { size: 0.12, life: 20 }); // 'bullet' | 'blood' | 'pool' | 'scorch' | 'crack'
+v.decals.clear('blood');
+
+// navegación para IA: rejilla sobre el suelo a partir de la física (A* con rutas suavizadas)
+const nav = UG.NavGrid3D.fromPhysics(ph, { area: [-50, -50, 50, 50], cell: 1, radius: 0.4 });
+const ruta = nav.findPath(enemigo.position, jugador.position);  // [Vec3…] o null
+nav.randomFree(rng, centro, 10); nav.coverPoints(enemigo.position, 12); nav.lineFree(ax, az, bx, bz);</code></pre>
+  <p>El clima 3D crea su propia niebla (o ajusta la que tengas), apaga el cielo hacia gris con lluvia y tormenta, y pone la lluvia o la nieve en una caja que sigue a la cámara, ya llena al empezar. Si hay ciclo de día y noche, el clima respeta sus colores del cielo. <code>clima.destroy()</code> lo deja todo como estaba. La hierba se divide en trozos que se descartan fuera de cámara; dispersión e instancias dibujan cada malla del modelo en una sola llamada. Con <code>seed</code> el resultado es siempre el mismo.</p>
 </section>
 
 <section id="d3-juegos">
@@ -732,17 +844,22 @@ console.log(UG.Debug.diff(antes, UG.Debug.snapshot()));   // lo que no volvió a
   <table>
     <tr><th>Página / comando</th><th>Qué cubre</th></tr>
     <tr><td><a href="../tests/index.html">tests/index.html</a></td><td>~290 pruebas: núcleo, seguridad, tweens, física, Tiled, audio, GIF, WASM, render píxel a píxel en cada backend (incluido WebGL1 sin instancing), entrada, escenas, pérdida de contexto, fugas por backend y benchmarks. Parámetros: <code>?only=</code>, <code>?backend=</code>, <code>?bench=0</code>, <code>?leaks=0</code>.</td></tr>
-    <tr><td><code>node tests/node-tests.js</code></td><td>83 pruebas sin navegador (CI): matemáticas, RNG, SHA-256 contra <code>crypto</code>, Inflate contra <code>zlib</code>, Tiled, física 2D y 3D determinista, tweens, reloj, GIF, 3D (escena, geometría, shaders, animación, glTF/GLB con archivos maliciosos, OBJ, exportador, PNG, niveles) y Studio (esquema, runtime, ZIP y seguridad del servidor local).</td></tr>
+    <tr><td><code>npm test</code></td><td>Compila y ejecuta todas las pruebas sin navegador (CI): matemáticas, RNG, SHA-256 contra <code>crypto</code>, Inflate contra <code>zlib</code>, Tiled, física 2D y 3D determinista, tweens, reloj, GIF, 3D (escena, geometría, shaders, animación, glTF/GLB con archivos maliciosos, OBJ, exportador, PNG, niveles), entrada, partidas 3D, exportación y Studio (esquema, runtime, eventos, paletas, Web3, ZIP y seguridad del servidor local). <code>npm run test:node</code> ejecuta solo el núcleo.</td></tr>
     <tr><td><a href="../tests/bench.html">tests/bench.html</a></td><td>Benchmarks aislados por backend.</td></tr>
     <tr><td><a href="../tests/smoke.html">tests/smoke.html</a></td><td>Escena de humo con <code>?r=webgpu|webgl2|webgl|canvas</code>.</td></tr>
     <tr><td><a href="../tests/capture-thumbs.html">tests/capture-thumbs.html</a></td><td>Juega un guion en cada minijuego y guarda su miniatura (servidor con <code>--allow-save</code>).</td></tr>
     <tr><td><a href="../tests/3d-basic.html">tests/3d-basic.html</a> · <a href="../tests/3d-models.html">3d-models.html</a></td><td>Render 3D comprobado por píxeles en cada backend (<code>?r=webgpu|webgl2|webgl</code>) y carga de los 22 modelos GLB.</td></tr>
-    <tr><td><a href="../tests/capture-thumbs3d.html?smoke=1">tests/capture-thumbs3d.html?smoke=1</a></td><td>Los 8 juegos 3D jugados por su bot en WebGPU, WebGL2 y WebGL, con comprobación de errores y de fugas. <code>?thumbs=1</code> regenera las miniaturas.</td></tr>
-    <tr><td><a href="../tests/studio-runtime.html?auto=1">tests/studio-runtime.html</a></td><td>Runtime del Studio: proyectos 2D y 3D generados en código, comportamientos, eventos, scripts con errores aislados y fugas.</td></tr>
+    <tr><td><a href="../tests/capture-thumbs3d.html?smoke=1">tests/capture-thumbs3d.html?smoke=1</a></td><td>Los 8 juegos 3D jugados por su bot en WebGPU, WebGL2 y WebGL, con comprobación de errores y de fugas. <code>?only=shooter,city</code> y <code>?r=webgl2</code> limitan juegos y backends; <code>?frames=300</code> acorta la partida (útil con renderizado por software). <code>?thumbs=1</code> regenera las miniaturas.</td></tr>
+    <tr><td><a href="../tests/rigid2d.html">tests/rigid2d.html</a> · <a href="../tests/lights2d.html">lights2d.html</a> · <a href="../tests/3d-world.html">3d-world.html</a></td><td>Física rígida 2D, luces 2D con sombras, nubes y clima 2D, y el mundo 3D (cielo, clima, calcomanías, hierba y agua).</td></tr>
+    <tr><td><a href="../tests/weather.html?auto=1">tests/weather.html?auto=1</a></td><td>Lluvia, tormenta, nieve y niebla en 2D y 3D, midiendo que las gotas caigan en vertical (<code>&amp;r=canvas</code> para Canvas).</td></tr>
+    <tr><td><a href="../tests/docs-examples.html">tests/docs-examples.html</a></td><td>Ejecuta los ejemplos de esta documentación (física rígida, luces y clima 2D, partículas, Web3 con cartera simulada y mundo 3D) y comprueba su efecto: si la API cambia y el texto no, falla.</td></tr>
+    <tr><td><a href="../tests/gameplay-input.html">tests/gameplay-input.html</a></td><td>Controles y continuidad de las partidas 3D (ratón, táctil, apuntar y disparar, cambio de escena).</td></tr>
+    <tr><td><a href="../tests/studio-runtime.html?auto=1">tests/studio-runtime.html</a> · <a href="../tests/studio-runtime2.html?auto=1">studio-runtime2.html</a></td><td>Runtime del Studio: proyectos 2D y 3D generados en código, comportamientos, eventos, scripts con errores aislados, puente, web3, backend y fugas.</td></tr>
+    <tr><td><a href="../tests/studio-physics.html?auto=1">tests/studio-physics.html</a></td><td>Física de los juegos del Studio: suelos, pendientes, plataformas, cuerpos rígidos, colisionadores 3D y su dibujo de depuración.</td></tr>
   </table>
 <pre><code class="sh">node tools/build.js                           # genera dist/ (UMD + ESM + tipos)
 node tools/server.js --port 8080 --allow-save   # servidor local estático (solo 127.0.0.1)
-node tests/node-tests.js
+npm test                                      # compila y ejecuta todas las pruebas sin navegador
 node tools/make-models.js                     # regenera los modelos GLB de ejemplo (assets3d/)
 npm run studio                                # abre UltraGame Studio</code></pre>
 </section>
