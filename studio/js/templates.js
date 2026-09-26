@@ -71,7 +71,7 @@ export const TEMPLATES = [
         '// Anima al héroe solo cuando se mueve (la hoja "hero-sheet" tiene 4 fotogramas).',
         '// "self" es el sprite y "api" la ayuda del Studio (ver referencia a la derecha).',
         'function onUpdate(dt) {',
-        '  var moving = Math.abs(self.body.velocity.x) > 10;',
+        '  var moving = Math.abs(api.velocity().x) > 10; // vale para física arcade y de cuerpos rígidos',
         '  if (moving && !self.isPlaying) self.play(api.animKey);',
         '  if (!moving && self.isPlaying) { self.stop(); self.setFrame(0); }',
         '}', ''].join('\n') });

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ejemplos de la documentación · UltraGame</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px system-ui, sans-serif; }
+  h1 { font-size: 15px; margin: 10px 14px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 420px); gap: 10px; padding: 0 14px 14px; }
+  .cell b { display: block; margin: 4px 0; }
+  .cell > div { width: 420px; height: 260px; background: #000; }
+  pre { padding: 0 14px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Ejemplos de docs/index.html (física rígida, luces 2D, clima 2D, Web3, mundo 3D): cada uno se ejecuta tal cual y se comprueba su efecto</h1>
+<div class="grid" id="grid"></div>
+<pre id="out"></pre>
+<script src="../dist/ultragame.js"></script>
+<script>
+'use strict';
+/* Los fragmentos de código de la documentación, copiados casi literalmente (solo se sustituyen las variables que el
+ * texto da por supuestas: jugador, capaSuelo…). Si la API cambia y la documentación no, esta página falla. */
+var out = document.getElementById('out'), grid = document.getElementById('grid'), results = [];
+function log(s) { out.textContent += s + '\n'; }
+function check(name, ok, info) { results.push({ name: name, ok: !!ok }); log((ok ? '✓ ' : '✗ ') + name + (info !== undefined ? '  ' + JSON.stringify(info) : '')); }
+function cell(label) { var c = document.createElement('div'); c.className = 'cell'; var b = document.createElement('b'); b.textContent = label; var host = document.createElement('div'); c.appendChild(b); c.appendChild(host); grid.appendChild(c); return host; }
+function steps(g, n) { for (var i = 0; i < n; i++) g.loop.step(16); }
+function boot(label, scene, extra) {
+  return new Promise(function (resolve, reject) {
+    var host = cell(label), done = false;
+    var cfg = Object.assign({ parent: host, width: 420, height: 260, renderer: new URLSearchParams(location.search).get('r') || 'auto', backgroundColor: 0x1b2233, scenes: [Object.assign({ key: 'doc' }, scene)] }, extra || {});
+    var g = new UG.Game(cfg);
+    var t = setInterval(function () { var s = g.scene && g.scene.getScene('doc'); if (s && s.sys.status === 'running') { clearInterval(t); g.loop.stop(); done = true; resolve({ g: g, s: s }); } }, 20);
+    setTimeout(function () { if (!done) { clearInterval(t); reject(new Error(label + ': la escena no arrancó')); } }, 15000);
+  });
+}
+var errors = [];
+window.addEventListener('error', function (e) { errors.push(e.message); });
+window.addEventListener('unhandledrejection', function (e) { errors.push(String(e.reason && e.reason.message || e.reason)); });
+
+async function run() {
+  /* ---------------------------------------------------------------- física rígida 2D */
+  try {
+    var R = await boot('Física rígida 2D', {
+      preload: function () {},
+      create: function () {
+        this.textures.generate('caja', 40, 40, function (c) { c.fillStyle = '#b07a3c'; c.fillRect(0, 0, 40, 40); });
+        this.textures.generate('heroe', 30, 40, function (c) { c.fillStyle = '#4dabf7'; c.fillRect(0, 0, 30, 40); });
+        var capaSuelo = { tileWidth: 30, tileHeight: 30, x: 0, y: 200, data: [new Array(14).fill(0), new Array(14).fill(1)] };
+        // --- del documento (física rígida 2D)
+        this.rigid.add.static(210, 250, 420, 20);
+        var caja = this.rigid.add.sprite(150, 60, 'caja', { friction: 0.6, restitution: 0.1 });
+        var bola = this.rigid.add.circle(200, 30, 18, 0x74c0fc, { density: 0.002, restitution: 0.6 });
+        this.rigid.add.polygon(300, 40, [0, -30, 40, 30, -40, 30], 0x63e6be);
+        this.rigid.add.sprite(100, 100, 'heroe', { shape: 'circle', radius: 20, fixedRotation: true });
+        this.rigid.add.tilemap(capaSuelo);
+        var eje = this.rigid.add.static(350, 120, 10, 10, { sensor: true });
+        var rueda = this.rigid.add.circle(390, 120, 30).rbody;
+        this.rigid.add.joint({ type: 'revolute', a: eje, b: rueda, anchorB: { x: -40, y: 0 }, motorSpeed: 3, maxMotorTorque: 5e6 });
+        this.rigid.add.joint({ type: 'spring', a: caja.rbody, b: bola.rbody, length: 120, stiffness: 3, damping: 0.3 });
+        this.rigid.drag(true);
+        var self = this; this.golpes = 0; this.inicios = 0;
+        caja.rbody.on('collide', function (otro, ev) { if (ev.impulse >= 0) self.golpes++; });
+        this.rigid.world.on('collisionstart', function (ev) { if (ev.bodyA && ev.bodyB) self.inicios++; });
+        this.caja = caja; this.rueda = rueda; this.y0 = caja.y;
+        this.rigid.debug(true);
+      }
+    });
+    steps(R.g, 120);
+    var s = R.s, hit = s.rigid.world.raycast(210, 0, 210, 300);
+    check('Rígida: la caja cae y choca', s.caja.y > s.y0 + 20 && s.golpes > 0 && s.inicios > 0, { y0: s.y0, y: Math.round(s.caja.y), golpes: s.golpes });
+    check('Rígida: el motor de la bisagra hace girar la rueda', Math.abs(s.rueda.angle) > 0.5, { angulo: +s.rueda.angle.toFixed(2) });
+    check('Rígida: raycast, queryPoint, queryAABB, explode', !!(hit && hit.body && hit.point && hit.normal) && Array.isArray(s.rigid.world.queryAABB(0, 0, 420, 260)) && Array.isArray(s.rigid.world.queryPoint(210, 250)) && (s.rigid.world.explode(210, 200, 200, 5000), true));
+  } catch (e) { check('Física rígida 2D', false, e.message); }
+
+  /* ---------------------------------------------------------------- luces 2D */
+  try {
+    var L2 = await boot('Luces 2D y sombras', {
+      create: function () {
+        this.add.rectangle(210, 130, 420, 260, 0x8c8f99);
+        var jugador = this.add.rectangle(100, 200, 20, 30, 0x4dabf7), pilar = this.add.rectangle(250, 130, 30, 90, 0x343a40);
+        var capaMuros = { tileWidth: 20, tileHeight: 20, x: 0, y: 0, data: [[1, 1, 0, 2, 3]] };
+        this.rigid.add.static(350, 230, 60, 20);
+        // --- del documento
+        var L = this.lights2d.enable({ ambient: 0x1a1e30, resolution: 0.5 });
+        var antorcha = L.addLight(200, 130, 260, 0xffc078, 1.1, { flicker: 0.15 });
+        var linterna = L.addLight(0, 0, 320, 0xe7f5ff, 1, { follow: jugador, offsetY: -10 });
+        L.addLight(380, 60, 180, 0x74c0fc, 0.8, { shadows: false });
+        L.addOccluder(pilar);
+        L.addOccluder({ points: [100, 100, 160, 80, 150, 160] });
+        this.nTiles = L.occludeTilemap(capaMuros, { tiles: [1, 2, 3] });
+        L.occludeRigid(this.rigid.world, { dynamic: true });
+        antorcha.intensity = 0.9; antorcha.setPosition(190, 130); L.removeLight(linterna);
+        this.L = L;
+      }
+    });
+    steps(L2.g, 20);
+    check('Luces 2D: luces, oclusores (sprite, polígono, Tiled, rígidos)', L2.s.L.enabled && L2.s.L.lights.length === 2 && L2.s.L.occluders.length >= 4 && L2.s.nTiles === 2, { luces: L2.s.L.lights.length, oclusores: L2.s.L.occluders.length, tiles: L2.s.nTiles });
+    L2.s.L.disable(); check('Luces 2D: disable()', !L2.s.L.enabled);
+    L2.s.L.enable(); steps(L2.g, 2);
+  } catch (e) { check('Luces 2D', false, e.message); }
+
+  /* ---------------------------------------------------------------- clima 2D */
+  try {
+    var W2 = await boot('Clima, nubes y cielo 2D', {
+      create: function () {
+        var self = this; this.rayos = 0;
+        this.add.skyGradient(0x4dabf7, 0xd0ebff);
+        this.nubes = this.add.clouds({ layers: 3, coverage: 0.55, speed: 14, parallax: 0.2, y: 40, alpha: 0.9 });
+        var clima = this.weather2d('rain', { intensity: 1 });
+        this.k1 = clima.kind;
+        this.weather2d('storm', { intensity: 1.5, onLightning: function () { self.rayos++; } });
+        this.k2 = clima.kind;
+        this.weather2d('snow'); this.k3 = clima.kind;
+        this.weather2d('fog', { intensity: 1.2, color: 0xdfe6ee }); this.k4 = clima.kind;
+        this.weather2d('storm', { intensity: 1.5, onLightning: function () { self.rayos++; } });
+        this.clima = clima;
+      }
+    });
+    steps(W2.g, 60 * 12);
+    var sc = W2.s;
+    check('Clima 2D: rain → storm → snow → fog (mismo objeto)', sc.k1 === 'rain' && sc.k2 === 'storm' && sc.k3 === 'snow' && sc.k4 === 'fog' && sc.clima.kind === 'storm', [sc.k1, sc.k2, sc.k3, sc.k4]);
+    check('Clima 2D: nubes en 3 capas y relámpagos', sc.nubes.layers.length === 3 && sc.rayos > 0, { capas: sc.nubes.layers.length, rayos: sc.rayos });
+    sc.weather2d('clear'); check('Clima 2D: clear lo quita', sc.clima.kind === 'clear' && !sc.clima.emitter);
+    sc.weather2d('rain'); steps(W2.g, 30);
+  } catch (e) { check('Clima 2D', false, e.message); }
+
+  /* ---------------------------------------------------------------- partículas: angleAlign, stretch, prewarm */
+  try {
+    var P2 = await boot('Partículas: angleAlign, stretch, prewarm', {
+      create: function () {
+        this.textures.generate('chispa', 12, 3, function (c) { c.fillStyle = '#fff'; c.fillRect(0, 0, 12, 3); });
+        this.em = this.add.particles('chispa', { x: 210, y: 20, speedY: { min: 300, max: 400 }, speedX: { min: -40, max: 40 }, lifespan: 900, frequency: 20, angleAlign: true, stretch: 0.4 });
+        this.em.prewarm(1000);
+      }
+    });
+    var n0 = P2.s.em.getAliveParticleCount ? P2.s.em.getAliveParticleCount() : P2.s.em.alive;
+    check('Partículas 2D: prewarm(ms) llena el emisor antes del primer fotograma', n0 > 20, n0);
+    steps(P2.g, 30);
+  } catch (e) { check('Partículas 2D', false, e.message); }
+
+  /* ---------------------------------------------------------------- Web3 (proveedor simulado) */
+  try {
+    var abi = [
+      { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+      { type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'address' }] },
+      { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
+      { type: 'event', name: 'Transfer', inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'value', type: 'uint256', indexed: false }] }
+    ];
+    var falso = UG.Web3.mock({ chainId: 11155111, abi: abi, calls: { balanceOf: 42n, owner: function () { return '0x' + '1'.repeat(40); } } });
+    var cartera = await UG.Web3.connect({ provider: falso, chainId: 11155111, chains: [11155111], maxValue: '0.05' });
+    var saldo = await cartera.getBalance();
+    var firma = await cartera.signMessage('Entrar en Mi Juego · 123');
+    var token = cartera.contract('0x' + '2'.repeat(40), abi);
+    var mios = await token.read('balanceOf', cartera.account);
+    var hash = await token.write('transfer', ['0x' + '3'.repeat(40), UG.Web3.parseUnits('1.5', 18)]);
+    var recibo = await cartera.waitForReceipt(hash, { interval: 20 });
+    var caro = null; try { await cartera.sendTransaction({ to: '0x' + '3'.repeat(40), value: '1 eth' }); } catch (e) { caro = e.message; }
+    await cartera.sendTransaction({ to: '0x' + '3'.repeat(40), value: '0.01 eth' });
+    check('Web3: connect, getBalance, signMessage, read, write, waitForReceipt', UG.Web3.isAddress(cartera.account) && typeof saldo === 'bigint' && /^0x/.test(firma) && mios === 42n && /^0x/.test(hash) && !!recibo, { cuenta: cartera.account, saldo: UG.Web3.formatUnits(saldo, 18), mios: String(mios) });
+    check('Web3: maxValue rechaza importes mayores', /máximo/.test(caro || ''), caro);
+    check('Web3: utilidades', UG.Web3.formatUnits(UG.Web3.parseUnits('1.25', 18), 18) === '1.25' && UG.Web3.encodeCall('transfer(address,uint256)', ['0x' + '3'.repeat(40), 1n]).slice(0, 10) === '0xa9059cbb' && UG.Web3.ALLOWED_METHODS.indexOf('eth_sign') < 0);
+    cartera.destroy();
+  } catch (e) { check('Web3', false, e.message); }
+
+  /* ---------------------------------------------------------------- mundo 3D */
+  try {
+    var W3 = await boot('Mundo 3D', {
+      create: function () {
+        var v = this.add.view3d({ fov: 60, shadows: true }), self = this; this.v = v; this.horas = 0; this.rayos = 0;
+        v.add.box(80, 1, 80, { color: 0x6a8a5a }).position.y = -0.5;
+        var ph = v.enablePhysics({ gravity: -20 }); ph.addGround(0);
+        var muro = v.add.box(2, 2, 10, 0x888888); muro.position.set(4, 1, 0); ph.addBoxFromNode(muro);
+        v.camera.position.set(0, 6, 16); v.camera.lookAt(new UG.Vec3(0, 0, 0));
+        // (la documentación dispersa un modelo cargado, 'pino'; aquí, sin archivos, una geometría)
+        // --- del documento
+        var clima = v.weather('rain', { intensity: 1 }); this.k1 = clima.kind;
+        v.weather('storm', { onLightning: function () { self.rayos++; } }); this.k2 = clima.kind;
+        v.scene3d.setClouds({ coverage: 0.6, speed: 0.02, color: 0xffffff });
+        var ciclo = v.dayNight({ time: 7.5, speed: 0.2, sun: v.add.sunlight(), onHour: function () { self.horas++; } });
+        ciclo.setTime(21); this.noche = ciclo.isNight; this.luz = ciclo.daylight; ciclo.setTime(7.5);
+        v.add.water(80, 80, { color: 0x1d5f93, waveHeight: 0.15, opacity: 0.85 }).position.y = -0.4;
+        this.hierba = v.add.grass({ area: [-30, -30, 30, 30], density: 4, height: [0.3, 0.7], wind: 0.1, heightAt: function () { return 0; } });
+        this.disp = v.add.scatter(UG.Geometry3D.cone(0.6, 2, 8), { area: [-40, -40, 40, 40], count: 120, minDistance: 3, scale: [0.8, 1.4], where: function (x, z) { return Math.hypot(x, z) > 8; } });
+        this.inst = v.add.instances('roca', [{ x: 2, y: 0, z: 5, ry: 0.4, s: 1.2 }, { x: -6, y: 0, z: 1 }]);
+        var hit = ph.raycast(new UG.Vec3(0, 1, 0), new UG.Vec3(1, 0, 0), 50);
+        this.hit = !!hit;
+        if (hit) this.decal = v.addDecal('bullet', hit.point, hit.normal, { size: 0.12, life: 20 });
+        ['blood', 'pool', 'scorch', 'crack'].forEach(function (t) { v.addDecal(t, new UG.Vec3(0, 0, 3), new UG.Vec3(0, 1, 0)); });
+        v.decals.clear('blood');
+        var nav = UG.NavGrid3D.fromPhysics(ph, { area: [-20, -20, 20, 20], cell: 1, radius: 0.4 });
+        this.ruta = nav.findPath(new UG.Vec3(0, 0, 0), new UG.Vec3(10, 0, 0));
+        this.libre = nav.randomFree(new UG.RNG('doc'), new UG.Vec3(0, 0, 0), 10); this.cubierta = nav.coverPoints(new UG.Vec3(4, 0, 0), 12); this.linea = nav.lineFree(0, 0, 10, 0);
+        this.clima = clima; this.ciclo = ciclo;
+      }
+    });
+    steps(W3.g, 60 * 10);
+    var t = W3.s;
+    check('Mundo 3D: v.weather rain → storm (mismo objeto) con relámpagos', t.k1 === 'rain' && t.k2 === 'storm' && t.rayos > 0, { rayos: t.rayos });
+    check('Mundo 3D: dayNight (setTime, isNight, daylight, onHour)', t.noche === true && t.luz < 0.2 && t.horas > 0, { noche: t.noche, luz: +t.luz.toFixed(2), horas: t.horas });
+    check('Mundo 3D: agua, hierba, dispersión e instancias', !!t.hierba && t.disp.transforms.length > 20 && !!t.inst, { copias: t.disp.transforms.length });
+    check('Mundo 3D: calcomanías (5 tipos) sobre un raycast', t.hit && t.decal >= 0 && Object.keys(t.v.decals.sets).length === 5 && t.v.decals.sets.blood.mesh.count === 0);
+    check('Mundo 3D: NavGrid3D rodea el muro', Array.isArray(t.ruta) && t.ruta.length >= 2 && !t.linea && !!t.libre && t.cubierta.length > 0, { puntos: t.ruta && t.ruta.length });
+    t.clima.destroy(); t.ciclo.destroy(); steps(W3.g, 2);
+    check('Mundo 3D: destroy() del clima y del ciclo sin errores', !errors.length, errors.slice(0, 2));
+  } catch (e) { check('Mundo 3D', false, e.message + ' ' + (e.stack || '').split('\n')[1]); }
+
+  var fails = results.filter(function (r) { return !r.ok; }).length;
+  log('\n' + (results.length - fails) + '/' + results.length + ' correctos' + (errors.length ? ' · errores: ' + errors.join(' | ') : ''));
+  window.__docs = window.__res = { done: true, pass: results.length - fails, fail: fails + errors.length, total: results.length };
+}
+run().catch(function (e) { log('ERROR ' + e.message); window.__docs = window.__res = { done: true, fail: 1, error: e.message }; });
+</script>
+</body>
+</html>

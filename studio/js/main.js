@@ -17,6 +17,9 @@ import { BackendPanel } from './backendpanel.js';
 import { Web3Panel } from './web3panel.js';
 import { PaintPanel } from './paint.js';
 import { validateAndTest } from './validate.js';
+import { navigationSettings } from './navigation.js';
+import { Recovery } from './recovery.js';
+import { DocumentsPanel } from './documents.js';
 
 const S = window.UGStudio.schema;
 const store = await openStore();
@@ -39,9 +42,14 @@ app.codeSources = [];
 app.backend = new BackendPanel(app, document.getElementById('backend-page'));
 app.web3 = new Web3Panel(app, document.getElementById('web3-page'));
 app.paint = new PaintPanel(app, document.getElementById('art-page'));
+app.documents = new DocumentsPanel(app, document.getElementById('documents-page'));
 app.code = new CodePanel(app, document.getElementById('code-page'));
 app.player = new Player(app);
 app.layout = new Layout(app);
+app.recovery = new Recovery(app);
+const recoveryState=h('button.btn.small#recovery-state',{type:'button',title:'Copias de recuperación',on:{click:()=>app.recovery.manager()}},'Recuperar trabajo');
+document.getElementById('vp-toolbar').append(h('button.btn.small',{type:'button',on:{click:navigationSettings}},'⚙ Rueda'),recoveryState);
+app.recovery.announce();
 app.openPaint = (assetId) => { selectTab('art'); if (assetId) app.paint.openAsset(assetId); };
 
 /* ================================================================ vista 2D/3D */
@@ -61,6 +69,7 @@ function ensureViewport(resetCam) {
   if (!kind) return;
   app.viewport = kind === '3d' ? new Viewport3D(app, vpHost) : new Viewport2D(app, vpHost);
   app.viewport.tool = currentTool; app.viewport.snap = document.getElementById('chk-snap').checked; app.viewport.snapStep = app.snapSteps[kind];
+  app.viewport.showColliders = document.getElementById('chk-colliders').checked;
   document.getElementById('inp-snap').value = String(app.snapSteps[kind]);
   document.getElementById('vp-hint').textContent = HINTS[kind];
   app.viewport.mount();
@@ -115,6 +124,7 @@ function selectTab(tab) {
   if (tab === 'events') app.events.render();
   if (tab === 'code') app.code.render();
   app.paint.setVisible(tab === 'art'); app.web3.setVisible(tab === 'web3'); app.backend.setVisible(tab === 'backend');
+  app.documents.setVisible(tab === 'documents');
   if (app.layout) app.layout.closeDrawers();
 }
 app.selectTab = selectTab;
@@ -135,6 +145,9 @@ function setTool(t) {
 }
 $$('#tool-seg button').forEach((b) => { b.onclick = () => setTool(b.dataset.tool); });
 document.getElementById('chk-snap').onchange = (e) => { if (app.viewport) app.viewport.snap = e.target.checked; };
+const chkColliders = document.getElementById('chk-colliders');
+try { if (localStorage.getItem('ugs-colliders') === '0') chkColliders.checked = false; } catch (e) { /* modo privado */ }
+chkColliders.onchange = () => { if (app.viewport) app.viewport.showColliders = chkColliders.checked; try { localStorage.setItem('ugs-colliders', chkColliders.checked ? '1' : '0'); } catch (e) { /* modo privado */ } };
 document.getElementById('inp-snap').onchange = (e) => { const v = Math.max(0.01, Math.min(1000, parseFloat(e.target.value) || 1)); e.target.value = String(v); if (app.viewport) { app.snapSteps[app.viewport.kind] = v; app.viewport.snapStep = v; } };
 document.getElementById('inp-snap').addEventListener('keydown', (e) => e.stopPropagation());
 document.getElementById('btn-focus').onclick = () => app.focusSelection();
@@ -303,6 +316,9 @@ app.createFromTemplate = createFromTemplate; app.templates = TEMPLATES; // (tamb
 /* ================================================================ menús */
 const MENUS = {
   'Archivo': () => [
+    { label: 'Recuperar trabajo…', icon: '↶', action: () => app.recovery.manager() },
+    { label: 'Abrir documento…', icon: '📄', action: () => { selectTab('documents'); app.documents.pick(); } },
+    { label: 'Velocidad de la rueda…', icon: '⚙', action: navigationSettings },
     { label: 'Proyectos…', icon: '📂', key: 'Ctrl+O', action: () => projectManager(false) },
     { label: 'Nuevo proyecto…', icon: '＋', action: () => projectManager(true) },
     { label: 'Guardar', icon: '💾', key: 'Ctrl+S', disabled: !editor.project, action: () => editor.save() },
@@ -360,7 +376,8 @@ const MENUS = {
     { label: 'Acerca de UltraGame Studio', icon: 'ℹ', action: () => dialog('UltraGame Studio', (b) => { b.appendChild(h('p', 'Editor de juegos 2D y 3D para el motor UltraGame ' + (window.UG ? window.UG.VERSION : '') + '.')); b.appendChild(h('p.help', 'Almacenamiento: ' + store.label)); b.appendChild(h('p.help', 'Los juegos se prueban en un iframe aislado (sandbox) y se exportan como HTML5 con una política de seguridad de contenido estricta.')); }) }
   ]
 };
-async function run(fn) { try { await fn(); } catch (e) { toast(e.message, 'error'); console.error(e); } }
+// errores esperados (404/403 del servidor: algo que el usuario puede resolver) solo como aviso; los demás también en la consola
+async function run(fn) { try { await fn(); } catch (e) { const expected = e && (e.status === 404 || e.status === 403 || e.status === 409); toast(e.message, expected ? 'warn' : 'error', expected ? 6000 : undefined); if (!expected) console.error(e); } }
 const menubar = document.getElementById('menubar');
 // móvil: un solo botón ☰ con todos los menús agrupados
 document.getElementById('btn-hamburger').onclick = (e) => { const items = []; Object.keys(MENUS).forEach((name) => { items.push({ group: name }); MENUS[name]().forEach((it) => { if (it && !it.group) items.push(it); }); }); showMenu(items, e.currentTarget); };
@@ -377,6 +394,7 @@ function shortcutsDialog() {
 /* ================================================================ atajos de teclado */
 function typing(e) { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable); }
 document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented) return; // Arte ya consumió el atajo (p. ej. guardar/deshacer la imagen).
   if (e.key === ' ') app.keys.add(' ');
   if (document.getElementById('overlay').hidden === false) return; // hay un diálogo abierto
   const k = e.key, ctrl = e.ctrlKey || e.metaKey;
@@ -409,7 +427,7 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keyup', (e) => { if (e.key === ' ') app.keys.delete(' '); });
 window.addEventListener('blur', () => app.keys.clear());
-window.addEventListener('beforeunload', (e) => { if (editor.dirty || editor.saving) { editor.autosave.flush(); e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if (editor.dirty || editor.saving || app.paint.doc?.dirty || app.documents.current?.dirty) { editor.autosave.flush(); e.preventDefault(); e.returnValue = ''; } });
 
 /* ================================================================ inicio */
 const sm = document.getElementById('storage-mode');

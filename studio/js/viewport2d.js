@@ -1,5 +1,6 @@
 /* UltraGame Studio · vista de edición 2D. Usa el propio motor (mismo aspecto que en juego) con los objetos
  * construidos por el runtime en modo edición (sin comportamientos, scripts ni física). */
+import { wheelSpeed } from './navigation.js';
 const S = window.UGStudio.schema, RT = window.UGStudio.runtime, UG = window.UG;
 const HANDLE = 7;
 
@@ -8,6 +9,7 @@ export class Viewport2D {
     this.app = app; this.host = host; this.kind = '2d'; this.game = null; this.scene = null; this.built = null; this.loaded = new Map();
     this.tool = 'select'; this.snap = true; this.snapStep = 16; this.drag = null; this.hover = null; this.destroyed = false;
     this.cam = { x: 0, y: 0, zoom: 1, inited: false };
+    this.showColliders = true;
   }
   mount() {
     const self = this, w = Math.max(64, this.host.clientWidth), h = Math.max(64, this.host.clientHeight);
@@ -48,7 +50,7 @@ export class Viewport2D {
       if (this.destroyed || !this.scene) return;
       if (sc.textures.exists(a.id)) { this.clearBuilt(); sc.textures.remove(a.id); } // sustituir: primero se retiran los objetos que la usan
       if (a.type === 'image') { if (a.frameWidth > 0) L.spritesheet(a.id, url, { frameWidth: a.frameWidth, frameHeight: a.frameHeight || a.frameWidth }); else if (/\.svg$/i.test(a.file)) L.svg(a.id, url); else L.image(a.id, url); }
-      else if (!sc.cache.tilemap.exists(a.id)) L.tilemapTiledJSON(a.id, url);
+      else { if (sc.cache.tilemap.has(a.id)) { this.clearBuilt(); sc.cache.tilemap.delete(a.id); } L.tilemapTiledJSON(a.id, url); }
       this.loaded.set(a.id, sig); queued++;
     }
     if (queued) { L.once('complete', () => this.rebuild()); L.start(); } else if (force) this.rebuild();
@@ -107,7 +109,7 @@ export class Viewport2D {
   }
   onWheel(p, dy) {
     const before = this.toWorld(p.x, p.y);
-    this.cam.zoom = Math.max(0.03, Math.min(16, this.cam.zoom * Math.exp(-dy * 0.0015)));
+    this.cam.zoom = Math.max(0.03, Math.min(16, this.cam.zoom * Math.exp(-dy * 0.0015 * wheelSpeed('scene2d'))));
     this.applyCam();
     const after = this.toWorld(p.x, p.y);
     this.cam.x += before.x - after.x; this.cam.y += before.y - after.y; this.applyCam();
@@ -254,6 +256,7 @@ export class Viewport2D {
     g.lineStyle(2 / z, 0x6d83ff, 0.9).strokeRect(0, 0, P.width, P.height);
     // selección y asas (en pantalla)
     o.clear();
+    if (this.showColliders) this.drawColliders(o);
     for (const id of ed.selection) {
       const e = this.built && this.built.byNode[id]; if (!e || !e.obj || e.obj.destroyed) continue;
       const c = this.corners(e).map((q) => this.toScreen(q.x, q.y));
@@ -274,6 +277,22 @@ export class Viewport2D {
     }
     const d = this.drag;
     if (d && d.mode === 'box') o.fillStyle(0x6d83ff, 0.12).fillRect(Math.min(d.sx, d.ex), Math.min(d.sy, d.ey), Math.abs(d.ex - d.sx), Math.abs(d.ey - d.sy)).lineStyle(1, 0x6d83ff, 0.9).strokeRect(Math.min(d.sx, d.ex), Math.min(d.sy, d.ey), Math.abs(d.ex - d.sx), Math.abs(d.ey - d.sy));
+  }
+  /** Cuerpos de colisión tal como los usará el juego: naranja = estático, azul = cinemático, amarillo = dinámico */
+  drawColliders(o) {
+    const ed = this.app.editor, rt = this.built && this.built.rt; if (!rt || !rt.colliderShape2D) return;
+    for (const e of this.entities()) {
+      const ph = e.node.physics; if (!ph || ph.type === 'none' || e.node.hud || e.obj.destroyed) continue;
+      let s = null; try { s = rt.colliderShape2D(e); } catch (x) { s = null; }
+      if (!s) continue;
+      const sel = ed.selection.includes(e.node.id), col = ph.type === 'static' ? 0xff922b : ph.type === 'kinematic' ? 0x74c0fc : 0xffd43b;
+      o.lineStyle(sel ? 2 : 1.25, col, sel ? 1 : 0.75);
+      if (s.kind === 'circle') { const c = this.toScreen(s.x, s.y); o.strokeCircle(c.x, c.y, s.r * this.cam.zoom); continue; }
+      const pts = (s.kind === 'poly' ? s.pts : [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }]).map((q) => this.toScreen(q.x, q.y));
+      o.strokePoints(pts, true);
+      // plataforma de un sentido: el borde que sostiene, más grueso
+      if (ph.oneWay && ph.type !== 'dynamic' && pts.length === 4) o.lineStyle(4, col, 1).lineBetween(pts[0].x, pts[0].y, pts[1].x, pts[1].y);
+    }
   }
   /* ---------------------------------------------------------------- DOM: soltar recursos, teclado */
   bindDom() {

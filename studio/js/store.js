@@ -6,7 +6,7 @@
 const API_HEADERS = { 'X-UG-Studio': '1' };
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, opts || {}, { headers: Object.assign({}, API_HEADERS, (opts && opts.headers) || {}) }));
-  if (!r.ok) { let msg = r.status + ' ' + r.statusText; try { const j = await r.json(); if (j && j.error) msg = j.error; } catch (e) { /* sin cuerpo */ } throw new Error(msg); }
+  if (!r.ok) { let msg = r.status + ' ' + r.statusText; try { const j = await r.json(); if (j && j.error) msg = j.error; } catch (e) { /* sin cuerpo */ } throw Object.assign(new Error(msg), { status: r.status }); }
   return r;
 }
 const q = (o) => Object.keys(o).map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(o[k])).join('&');

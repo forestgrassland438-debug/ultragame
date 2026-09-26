@@ -13,22 +13,41 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 
+/** DOM mínimo para cargar studio/js/play.js tal cual (sin navegador) y contar los iframes vivos */
+function fakeDOM(sent) {
+  const frames = [];
+  const el = (tag) => ({ tag, children: [], style: {}, dataset: {}, className: '', textContent: '', parentNode: null, removed: false, clientWidth: 800, clientHeight: 600,
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    appendChild(c) { if (c && typeof c === 'object') { if (c.parentNode && c.parentNode !== this) c.parentNode.children.splice(c.parentNode.children.indexOf(c), 1); c.parentNode = this; this.children.push(c); } return c; },
+    remove() { if (this.parentNode) { const i = this.parentNode.children.indexOf(this); if (i >= 0) this.parentNode.children.splice(i, 1); this.parentNode = null; } this.removed = true; },
+    get firstChild() { return this.children[0] || null; }, querySelector() { return null; }, querySelectorAll() { return []; }, setAttribute() {}, addEventListener() {}, removeEventListener() {}, focus() {} });
+  const h = (tag, ...args) => {
+    const e = el(String(tag).split(/[.#]/)[0]);
+    if (e.tag === 'iframe') { e.contentWindow = { postMessage: (m) => sent.push(m) }; frames.push(e); }
+    const add = (a) => { if (Array.isArray(a)) a.forEach(add); else if (a && typeof a === 'object' && a.appendChild) e.appendChild(a); };
+    args.forEach(add);
+    return e;
+  };
+  const clear = (x) => { x.children.slice().forEach((c) => c.remove()); };
+  return { h, clear, frames, host: el('div'), live: () => frames.filter((f) => !f.removed && f.src !== 'about:blank') };
+}
 function playerHarness(assets = [], assetData = async () => new ArrayBuffer(1)) {
-  const listeners = new Map(), frames = [], sent = [], logs = [], timers = new Map();
-  const host = { appendChild(f) { frames.push(f); } };
+  const listeners = new Map(), sent = [], logs = [], timers = new Map(), dom = fakeDOM(sent);
   const window = { UGStudio: { runtime: { wrapScript: () => '' } },
     addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn); },
     removeEventListener(type, fn) { listeners.get(type)?.delete(fn); }
   };
-  const document = { getElementById: () => host, createElement: () => ({ setAttribute() {}, contentWindow: { postMessage: (m) => sent.push(m) }, focus() {}, remove() { frames.splice(frames.indexOf(this), 1); } }) };
-  const app = { editor: { projectId: 'one', project: { name: 'One', scripts: [], scenes: [], assets }, assetVersion: {}, sceneId: 'first', scene: { name: 'First' }, store: { assetData } },
+  const document = { getElementById: () => dom.host, createElement: (t) => dom.h(t) };
+  const app = { editor: { projectId: 'one', project: { name: 'One', scripts: [], scenes: [], assets, web3: { enabled: false }, backend: { enabled: false } }, assetVersion: {}, sceneId: 'first', scene: { name: 'First' }, store: { assetData } },
     code: { commit: { flush() {} }, errors: new Map() }, console: { clear() {}, log(...a) { logs.push(a); } }, setPlaying() {}, rendererChoice: () => 'canvas' };
-  const context = { window, document, location: { origin: 'http://127.0.0.1:5210' }, toast() {},
-    setTimeout(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); } };
-  const src = fs.readFileSync(path.join(ROOT, 'studio/js/play.js'), 'utf8').replace(/^import .*;\r?\n/m, '').replace('export class Player', 'class Player');
+  const context = { window, document, location: { origin: 'http://127.0.0.1:5210' }, toast() {}, h: dom.h, clear: dom.clear, dialog: async () => null, encodeURIComponent, JSON,
+    setTimeout(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); },
+    setInterval(fn) { const id = timers.size + 1; timers.set(id, fn); return id; }, clearInterval(id) { timers.delete(id); }, prompt: async () => null };
+  // play.js es un módulo ES: se quitan import/export para evaluarlo como script con sus dependencias simuladas
+  const src = fs.readFileSync(path.join(ROOT, 'studio/js/play.js'), 'utf8').replace(/^import .*;\r?\n/mg, '').replace(/^export /mg, '');
   vm.runInNewContext(src + '\nglobalThis.Player = Player;', context);
   const player = new context.Player(app);
-  return { player, app, frames, sent, listeners, message(m) { for (const fn of listeners.get('message') || []) fn({ source: player.frame.contentWindow, data: m }); } };
+  return { player, app, sent, listeners, logs, get frames() { return dom.live(); }, message(m) { for (const fn of listeners.get('message') || []) fn({ source: player.frame.contentWindow, data: m }); } };
 }
 
 test('Studio: Detener cancela la carga pendiente antes de crear el iframe', async () => {
@@ -128,7 +147,8 @@ test('Servidores: los enlaces y junctions no permiten salir de sus carpetas', as
   const app = path.join(base, 'app'), ws = path.join(base, 'projects'), outside = path.join(base, 'outside');
   fs.mkdirSync(path.join(app, 'tools'), { recursive: true }); fs.mkdirSync(path.join(app, 'assets')); fs.mkdirSync(path.join(app, 'docs'));
   fs.mkdirSync(path.join(ws, 'normal', 'assets'), { recursive: true }); fs.mkdirSync(outside);
-  for (const name of ['studio-server.js', 'server.js', 'path-safety.js']) fs.copyFileSync(path.join(ROOT, 'tools', name), path.join(app, 'tools', name));
+  // el servidor del Studio necesita sus módulos locales (se copian todos los .js de tools/)
+  for (const name of fs.readdirSync(path.join(ROOT, 'tools')).filter((n) => n.endsWith('.js'))) fs.copyFileSync(path.join(ROOT, 'tools', name), path.join(app, 'tools', name));
   const proj = { format: 'ultragame-project', name: 'Normal', scenes: [] };
   fs.writeFileSync(path.join(ws, 'normal', 'project.json'), JSON.stringify(proj));
   fs.writeFileSync(path.join(outside, 'project.json'), JSON.stringify(proj)); fs.writeFileSync(path.join(outside, 'proof.png'), 'PRIVATE');

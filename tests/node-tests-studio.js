@@ -87,6 +87,14 @@ module.exports = async function (UG, h) {
     const cyc = {}; cyc.a = cyc; A.eq(R.saveData(ctx, 'ciclo', cyc), false);
   });
 
+  test('Variables: una dirección 0x… o un importe en wei no se convierten en número (perdían el valor)', () => {
+    const addr = '0x' + 'aB'.repeat(20);
+    A.eq(R.toValue(addr), addr); A.eq(R.toValue('0xff'), '0xff');
+    A.eq(R.toValue('250000000000000000000'), '250000000000000000000', 'entero enorme: texto exacto');
+    A.eq(R.toValue('12'), 12); A.eq(R.toValue(' -3.5 '), -3.5); A.eq(R.toValue('1e3'), 1000);
+    A.eq(R.toValue('true'), true); A.eq(R.toValue('hola'), 'hola'); A.eq(R.toValue(''), '');
+  });
+
   section('Studio: exportación ZIP');
   await testAsync('makeZip produce un ZIP con CRC-32 correctos', async () => {
     globalThis.window = globalThis.window || { UGStudio: globalThis.UGStudio };
@@ -103,6 +111,93 @@ module.exports = async function (UG, h) {
       const ln = buf.readUInt16LE(lo + 26), data = buf.slice(lo + 30 + ln, lo + 30 + ln + f.data.length); A.ok(Buffer.from(f.data).equals(data));
       off += 46 + n;
     }
+  });
+
+  section('Studio: editor de imágenes (paletas)');
+  await testAsync('parsePalette lee .hex, .gpl, JASC .pal, Paint.NET .txt y texto libre; sin repetidos y con tope', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    A.eq(P.parsePalette('ff0000\n00FF00\n\n0000ff\nff0000\n').join(','), '#ff0000,#00ff00,#0000ff');
+    A.eq(P.parsePalette('GIMP Palette\nName: x\nColumns: 4\n#\n255   0   0\tRojo\n  0 128 255 Azul\n').join(','), '#ff0000,#0080ff');
+    A.eq(P.parsePalette('JASC-PAL\r\n0100\r\n2\r\n1 2 3\r\n250 251 252\r\n').join(','), '#010203,#fafbfc');
+    A.eq(P.parsePalette(';paint.net Palette File\n;Colores: 2\nFF112233\n80445566\n').join(','), '#112233,#445566');
+    A.eq(P.parsePalette(':root { --a: #abc; --b: #102030; }').join(','), '#aabbcc,#102030');
+    A.eq(P.parsePalette(Array.from({ length: 400 }, (_, i) => (i * 40503).toString(16).padStart(6, '0').slice(-6)).join('\n')).length, 256);
+    A.eq(P.parsePalette('nada que ver\n12345\n').length, 0);
+  });
+  await testAsync('colorRamp: extremos exactos en rgb/hsl y sombras→luces ordenadas por luminosidad', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    const rgb = P.colorRamp('#000000', '#ffffff', 5, 'rgb'); A.eq(rgb[0], '#000000'); A.eq(rgb[4], '#ffffff'); A.eq(rgb[2], '#808080');
+    const hsl = P.colorRamp('#ff0000', '#0000ff', 3, 'hsl'); A.eq(hsl[0], '#ff0000'); A.eq(hsl[2], '#0000ff'); A.eq(hsl[1], '#ff00ff', 'por el camino corto del círculo (magenta)');
+    const sh = P.colorRamp('#3a7d44', null, 7, 'shades', 25), lum = sh.map((c) => { const [r, g, b] = P.hexToRgb(c); return r * 0.299 + g * 0.587 + b * 0.114; });
+    A.eq(sh.length, 7); A.ok(lum.every((v, i) => i === 0 || v > lum[i - 1]), 'de oscuro a claro');
+    A.eq(P.colorRamp('#123456', '#654321', 99, 'rgb').length, 32);
+  });
+
+  await testAsync('scalePixels: Scale2x/Scale3x suavizan una diagonal sin inventar colores', async () => {
+    const P = await import(pathToFileURL(path.join(ROOT, 'studio/js/paintcore.js')).href);
+    const hadID = 'ImageData' in globalThis;
+    if (!hadID) globalThis.ImageData = class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); } };
+    try {
+      // diagonal de 3 píxeles negros sobre blanco
+      const src = new ImageData(3, 3); src.data.fill(255);
+      [[0, 0], [1, 1], [2, 2]].forEach(([x, y]) => { const i = (y * 3 + x) * 4; src.data[i] = src.data[i + 1] = src.data[i + 2] = 0; });
+      const px = (img, x, y) => img.data[(y * img.width + x) * 4]; // canal rojo: 0 negro, 255 blanco
+      const x2 = P.scalePixels(src, 2); A.eq(x2.width, 6); A.eq(x2.height, 6);
+      const row = (img, y) => Array.from({ length: img.width }, (_, x) => (px(img, x, y) ? '.' : '#')).join('');
+      // la escalera de bloques 2×2 se convierte en una diagonal continua (las filas interiores no tienen huecos ni
+      // escalones); en las puntas, pegadas al borde de la imagen, Scale2x recorta la esquina (reglas EPX estándar)
+      A.eq([0, 1, 2, 3, 4, 5].map((y) => row(x2, y)).join('|'), '##....|#.#...|.###..|..###.|...#.#|....##');
+      const colors = new Set(); for (let i = 0; i < x2.data.length; i += 4) colors.add(x2.data[i] + ',' + x2.data[i + 1] + ',' + x2.data[i + 2] + ',' + x2.data[i + 3]);
+      A.eq(colors.size, 2, 'solo los colores originales');
+      const x3 = P.scalePixels(src, 3); A.eq(x3.width, 9);
+      const x4 = P.scalePixels(src, 4); A.eq(x4.width, 12); A.eq(x4.height, 12);
+      // un píxel suelto (sin vecinos iguales) solo crece: bloque n×n
+      const dot = new ImageData(3, 3); dot.data.fill(255); dot.data[16] = dot.data[17] = dot.data[18] = 0;
+      A.eq([0, 1, 2, 3, 4, 5].map((y) => row(P.scalePixels(dot, 2), y)).join('|'), '......|......|..##..|..##..|......|......');
+    } finally { if (!hadID) delete globalThis.ImageData; }
+  });
+
+  section('Studio: web3, eventos y backend generado');
+  test('cleanWeb3: la red principal siempre es una de las permitidas y sin redes repetidas', () => {
+    const w = S.cleanWeb3({ enabled: true, mode: 'wallet', chains: [84532, 84532, 'x', 11155111], defaultChain: 1, maxValue: '0.1', contracts: [] });
+    A.eq(w.chains.join(','), '84532,11155111'); A.eq(w.defaultChain, 84532);
+    A.eq(S.cleanWeb3({ chains: [], defaultChain: 999 }).defaultChain, 11155111);
+    A.eq(S.cleanWeb3({ chains: [10, 8453], defaultChain: 8453 }).defaultChain, 8453);
+  });
+  test('Eventos con id repetido en un proyecto importado reciben ids únicos', () => {
+    const p = S.createProject('P'), sc = S.createScene('2d'); p.scenes.push(sc); p.startScene = sc.id;
+    const ev = { id: 'e1', enabled: true, conditions: [{ type: 'start', params: {} }], actions: [] };
+    sc.events = [ev, Object.assign({}, ev), Object.assign({}, ev, { id: 'e2' })];
+    const ids = S.cleanProject(JSON.parse(JSON.stringify(p))).scenes[0].events.map((e) => e.id);
+    A.eq(ids.length, 3); A.eq(new Set(ids).size, 3); A.eq(ids[0], 'e1'); A.eq(ids[2], 'e2');
+  });
+  test('Solidity: muchas cabeceras «contract x» sin llaves no congelan el análisis (antes O(n²))', () => {
+    require(path.join(ROOT, 'studio/shared/solidity.js')); const SOL = globalThis.UGStudio.solidity;
+    const t0 = Date.now(); const r = SOL.parse('contract a '.repeat(27000)); const ms = Date.now() - t0;
+    A.eq(r.contracts.length, 0); A.ok(ms < 1500, 'tardó ' + ms + ' ms');
+    const abi = SOL.abiFor('contract Fwd; interface I { function f() external; } contract C is I { uint public x; }', 'C').abi;
+    A.eq(abi.map((f) => f.name).sort().join(','), 'f,x');
+  });
+  await testAsync('Backend generado: UG_TRUST_PROXY aplica el límite por la IP real (X-Forwarded-For)', async () => {
+    const Bk = require(path.join(ROOT, 'studio/shared/backend.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ugs-be-'));
+    const project = { name: 'P', backend: { routes: [{ id: 'r1', method: 'POST', path: '/api/p', rateLimit: 1, auth: false, code: 'return { ip: ctx.ip };' }], cors: [] } };
+    Bk.files(project).forEach((f) => { fs.mkdirSync(path.dirname(path.join(dir, f.path)), { recursive: true }); fs.writeFileSync(path.join(dir, f.path), f.text); });
+    const run = async (env) => {
+      const c = spawn(process.execPath, ['server.js'], { cwd: dir, env: Object.assign({}, process.env, { PORT: '0', HOST: '127.0.0.1' }, env), stdio: ['ignore', 'pipe', 'ignore'] });
+      const port = await new Promise((res, rej) => { let out = ''; const t = setTimeout(() => rej(new Error('el backend no arrancó')), 8000); c.stdout.on('data', (d) => { out += d; const m = /UG_BACKEND_READY (\{.*\})/.exec(out); if (m) { clearTimeout(t); res(JSON.parse(m[1]).port); } }); });
+      const post = (xff) => new Promise((res) => { const r = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/api/p', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff } }, (x) => { let t = ''; x.on('data', (d) => (t += d)); x.on('end', () => res({ status: x.statusCode, body: t })); }); r.end('{}'); });
+      const out = [await post('1.1.1.1'), await post('2.2.2.2'), await post('9.9.9.9, 3.3.3.3')];
+      c.kill(); return out;
+    };
+    try {
+      const direct = await run({});
+      A.eq(direct.map((r) => r.status).join(','), '200,429,429', 'sin proxy de confianza la cabecera se ignora');
+      A.eq(JSON.parse(direct[0].body).ip, '127.0.0.1');
+      const proxied = await run({ UG_TRUST_PROXY: '1' });
+      A.eq(proxied.map((r) => r.status).join(','), '200,200,200');
+      A.eq(proxied.map((r) => JSON.parse(r.body).ip).join(','), '1.1.1.1,2.2.2.2,3.3.3.3', 'la IP que añadió el proxy (la última)');
+    } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* temporal */ } }
   });
 
   section('Studio: servidor local (seguridad)');

@@ -9,6 +9,20 @@ const S = window.UGStudio.schema, SOL = window.UGStudio.solidity, RT = window.UG
 const enc = new TextEncoder();
 const chainName = (id) => (W3.CHAINS[id] ? W3.CHAINS[id].name : 'Red ' + id);
 function parseABI(c) { try { return W3.normalizeABI(c.abi); } catch (e) { return []; } }
+/** Texto legible de unos datos EIP-712 (lo que el juego pide firmar con eth_signTypedData_v4) */
+function describeTypedData(raw) {
+  let d = raw;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return 'Datos no legibles: ' + d.slice(0, 300); } }
+  if (!d || typeof d !== 'object') return 'Datos vacíos';
+  const dom = d.domain && typeof d.domain === 'object' ? d.domain : {};
+  const lines = [];
+  if (dom.name) lines.push('Aplicación: ' + String(dom.name).slice(0, 80));
+  if (dom.chainId !== undefined) lines.push('Red: ' + chainName(Number(dom.chainId)));
+  if (dom.verifyingContract) lines.push('Contrato: ' + String(dom.verifyingContract).slice(0, 60));
+  lines.push('Tipo: ' + String(d.primaryType || '?').slice(0, 60));
+  let body = ''; try { body = JSON.stringify(d.message === undefined ? null : d.message, null, 1); } catch (e) { body = '(no se puede mostrar)'; }
+  return lines.join('\n') + '\nContenido: ' + body;
+}
 function fmtVal(v) { if (typeof v === 'bigint') return v.toString(); if (Array.isArray(v)) return '[' + v.map(fmtVal).join(', ') + ']'; if (v instanceof Uint8Array) return W3.bytesToHex(v); if (v && typeof v === 'object') return '{' + Object.keys(v).map((k) => k + ': ' + fmtVal(v[k])).join(', ') + '}'; return String(v); }
 
 /* ================================================================ cartera real (página del Studio) */
@@ -37,7 +51,9 @@ export class Web3Host {
   emit(event, data) { if (this.frame) { try { this.frame.postMessage({ type: 'web3-event', event, data: JSON.parse(JSON.stringify(data === undefined ? null : data)) }, '*'); } catch (e) { /* juego cerrado */ } } }
   /** Petición del juego -> validada -> cartera. Devuelve el resultado o lanza {code, message} */
   async handle(method, params) {
-    const P = (this.project || this.app.editor.project).web3;
+    const frame = this.frame, P = (this.project || this.app.editor.project).web3;
+    // tras cada espera (confirmación, cartera): si el juego se detuvo o se reinició, la petición ya no sigue
+    const alive = () => { if (this.frame !== frame) throw { code: 4100, message: 'El juego se detuvo antes de terminar la petición' }; };
     if (!P.enabled || P.mode !== 'wallet') throw { code: 4100, message: 'Web3 con cartera real no está activado en este proyecto' };
     if (typeof method !== 'string' || W3.ALLOWED_METHODS.indexOf(method) < 0) throw { code: 4200, message: 'Método no permitido por seguridad: ' + String(method).slice(0, 40) };
     if (!Array.isArray(params)) params = [];
@@ -53,18 +69,30 @@ export class Web3Host {
       if (!tx || typeof tx !== 'object' || !W3.isAddress(String(tx.to || ''))) throw { code: 4200, message: 'Transacción no válida (el juego no puede desplegar contratos)' };
       let value; try { value = BigInt(tx.value || '0x0'); } catch (e) { throw { code: 4200, message: 'Importe no válido' }; }
       if (value > W3.parseUnits(P.maxValue, 18)) throw { code: 4200, message: 'Importe por encima del máximo del proyecto (' + P.maxValue + ' ETH)' };
-      const fn = this.describeCall(tx, P);
-      const ok = await confirm('El juego quiere enviar una transacción', 'Contrato: ' + tx.to + (fn ? '\nFunción: ' + fn : '') + '\nPago: ' + W3.formatUnits(value, 18) + ' ETH\n\nSi aceptas, tu cartera te la mostrará para que la confirmes.', 'Pasar a la cartera');
+      if (value < BigInt(0)) throw { code: 4200, message: 'Importe no válido' };
+      const fn = this.describeCall(tx, P), known = this.isProjectContract(tx.to, P);
+      const ok = await confirm('El juego quiere enviar una transacción', 'Contrato: ' + tx.to + (known ? '' : '\n⚠ Esta dirección no es de ningún contrato del proyecto.') + (fn ? '\nFunción: ' + fn : '') + '\nPago: ' + W3.formatUnits(value, 18) + ' ETH\n\nSi aceptas, tu cartera te la mostrará para que la confirmes.', 'Pasar a la cartera');
       if (!ok) throw { code: 4001, message: 'Cancelado en el Studio' };
+      alive();
     }
     if (method === 'personal_sign' || method === 'eth_signTypedData_v4') {
-      let msg = String(params[0] || '');
-      if (method === 'personal_sign' && /^0x[0-9a-f]*$/i.test(msg)) { try { msg = new TextDecoder().decode(W3.hexToBytes(msg)); } catch (e) { /* binario */ } }
-      const ok = await confirm('El juego quiere que firmes un mensaje', '«' + msg.slice(0, 600) + '»\n\nFirmar no mueve dinero, pero solo firma mensajes en los que confíes.', 'Pasar a la cartera');
+      // personal_sign: [mensaje, cuenta] · eth_signTypedData_v4: [cuenta, datos tipados]: se enseña siempre lo que se firma
+      let msg;
+      if (method === 'personal_sign') {
+        msg = String(params[0] || '');
+        if (/^0x[0-9a-f]*$/i.test(msg)) { try { msg = new TextDecoder('utf-8', { fatal: true }).decode(W3.hexToBytes(msg)); } catch (e) { /* binario: se muestra en hexadecimal */ } }
+      } else msg = describeTypedData(params[1]);
+      const ok = await confirm('El juego quiere que firmes ' + (method === 'personal_sign' ? 'un mensaje' : 'datos estructurados (EIP-712)'), '«' + msg.slice(0, 900) + (msg.length > 900 ? '…' : '') + '»\n\nFirmar no mueve dinero por sí solo, pero una firma puede autorizar acciones: firma solo lo que entiendas y en lo que confíes.', 'Pasar a la cartera');
       if (!ok) throw { code: 4001, message: 'Cancelado en el Studio' };
+      alive();
     }
     const prov = await this.ensure();
+    alive();
     return prov.request({ method, params });
+  }
+  isProjectContract(to, P) {
+    const t = String(to || '').toLowerCase();
+    return P.contracts.some((c) => Object.values(c.addresses).some((a) => String(a).toLowerCase() === t));
   }
   describeCall(tx, P) {
     const data = String(tx.data || ''); if (data.length < 10) return '';
@@ -83,13 +111,14 @@ export class Web3Panel {
     this.app = app; this.host = host; this.sel = null; this.wallet = null; this.results = new Map();
     this.hostProxy = new Web3Host(app);
     const ed = app.editor;
-    ed.on('project', () => { this.sel = null; this.results.clear(); if (this.visible) this.render(); });
-    ed.on('change', (d) => { if ((d.kind === 'all' || d.kind === 'web3') && this.visible && !this.typing) this.render(); });
+    ed.on('project', () => { this.sel = null; this.results.clear(); this._mockW = null; this._mockVer = null; if (this.visible) this.render(); });
+    // cualquier cambio de web3 (también los de este panel: renombrar, borrar, modo, redes…) se ve al momento
+    ed.on('change', (d) => { if ((d.kind === 'all' || d.kind === 'web3') && this.visible) this.render(); });
     (app.codeSources || (app.codeSources = [])).push(() => this.codeSources());
   }
   get w3() { const p = this.app.editor.project; return p ? p.web3 : null; }
   setVisible(on) { this.visible = on; if (on) this.render(); }
-  edit(label, fn) { this.typing = true; try { this.app.editor.edit(label, (p) => fn(p.web3), 'web3'); } finally { this.typing = false; } }
+  edit(label, fn) { this.app.editor.edit(label, (p) => fn(p.web3), 'web3'); }
   contract(id) { return this.w3 ? this.w3.contracts.find((c) => c.id === id) || null : null; }
   codeSources() {
     const ed = this.app.editor, w = this.w3; if (!w) return [];
@@ -125,6 +154,7 @@ export class Web3Panel {
   }
   studioWallet() {
     if (!this.wallet) this.wallet = new W3.Wallet({ chains: this.w3.chains, maxValue: '1000000' });
+    this.wallet.chains = this.w3.chains.map(Number); // redes del proyecto abierto (pueden cambiar tras crear la cartera)
     return this.wallet;
   }
   async connectStudio() {
@@ -146,7 +176,9 @@ export class Web3Panel {
     return this.studioWallet();
   }
   async callFn(c, f, args, value) {
-    const key = c.id + ':' + W3.signature(f);
+    const key = c.id + ':' + W3.signature(f), ro = f.stateMutability === 'view' || f.stateMutability === 'pure';
+    // al volver a pulsar se ve que está pendiente (antes el resultado anterior seguía ahí y parecía la respuesta nueva)
+    this.results.set(key, { ok: true, pending: true, text: ro ? 'Leyendo…' : 'Enviando…' }); this.renderResults();
     try {
       const w = this.testWallet(), mock = this.w3.mode === 'mock';
       if (!w.provider) throw new Error('Conecta tu cartera primero (arriba)');
@@ -159,10 +191,13 @@ export class Web3Panel {
       if (f.stateMutability === 'view' || f.stateMutability === 'pure') out = await k.read.apply(k, [W3.signature(f)].concat(parsed));
       else {
         const hash = await k.write(W3.signature(f), parsed, { value: value ? W3.parseUnits(value, 18) : BigInt(0) });
-        this.results.set(key, { ok: true, text: 'Enviada: ' + hash + ' · esperando confirmación…' }); this.renderResults();
+        this.results.set(key, { ok: true, pending: true, text: 'Enviada: ' + hash + ' · esperando confirmación…' }); this.renderResults();
         const rc = await w.waitForReceipt(hash); out = 'Confirmada en el bloque ' + parseInt(rc.blockNumber, 16);
       }
-      this.results.set(key, { ok: true, text: fmtVal(out) });
+      // saldos e importes de tokens en wei: también en unidades (lo habitual en ERC-20 son 18 decimales)
+      let txt = fmtVal(out);
+      if (typeof out === 'bigint' && out >= BigInt(1e15) && /balance|supply|allowance|price|amount|value|reward|saldo|precio|premio/i.test(f.name)) txt += '   (≈ ' + W3.formatUnits(out, 18, 6) + ' con 18 decimales)';
+      this.results.set(key, { ok: true, text: txt });
     } catch (e) { this.results.set(key, { ok: false, text: e.message }); }
     this.renderResults();
   }
@@ -198,7 +233,11 @@ export class Web3Panel {
 
   /* ---------------------------------------------------------------- interfaz */
   render() {
-    const host = this.host, ed = this.app.editor; clear(host);
+    const host = this.host, ed = this.app.editor;
+    // al redibujar se conservan las secciones abiertas y el desplazamiento (si no, cada cambio las cerraba)
+    const opened = new Set(Array.from(host.querySelectorAll('details')).filter((d) => d.open).map((d) => ((d.querySelector('summary') || {}).textContent || '').replace(/\d+/g, '#')));
+    const scrolls = Array.from(host.querySelectorAll('.pane-col')).map((c) => c.scrollTop), top = host.scrollTop;
+    clear(host);
     if (!ed.project) return;
     const w = this.w3;
     if (this.sel && !this.contract(this.sel)) this.sel = null;
@@ -228,6 +267,11 @@ export class Web3Panel {
     const left = h('div.pane-col.narrow', h('div.card', h('div.card-head', h('b.grow', 'Contratos'), add), list), settings, walletBox, this.helpCard());
     const right = h('div.pane-col', this.sel ? this.contractView(this.contract(this.sel)) : h('div.empty', 'Crea un contrato desde una plantilla: ERC-20 (monedas), ERC-721 (NFT únicos), ERC-1155 (inventario), clasificación, tienda o recompensas firmadas.'));
     host.appendChild(h('div.pane', head, h('div.pane-cols', left, right)));
+    if (this._renderedSel === this.sel) {
+      host.querySelectorAll('details').forEach((d) => { const t = ((d.querySelector('summary') || {}).textContent || '').replace(/\d+/g, '#'); if (opened.has(t)) d.open = true; });
+      host.querySelectorAll('.pane-col').forEach((c, i) => { if (scrolls[i]) c.scrollTop = scrolls[i]; }); host.scrollTop = top;
+    }
+    this._renderedSel = this.sel;
     this.renderResults();
   }
   helpCard() {
@@ -278,6 +322,6 @@ export class Web3Panel {
     return [head, addrs, tests, deploy, adv, events];
   }
   renderResults() {
-    this.host.querySelectorAll('.fn-out').forEach((el) => { const r = this.results.get(el.dataset.key); el.textContent = r ? r.text : ''; el.className = 'fn-out' + (r ? (r.ok ? ' ok' : ' bad') : ''); });
+    this.host.querySelectorAll('.fn-out').forEach((el) => { const r = this.results.get(el.dataset.key); el.textContent = r ? r.text : ''; el.className = 'fn-out' + (r ? (r.pending ? ' pending' : r.ok ? ' ok' : ' bad') : ''); });
   }
 }

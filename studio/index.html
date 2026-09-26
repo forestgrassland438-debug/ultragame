@@ -9,6 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="studio.css">
 <link rel="stylesheet" href="studio-pro.css">
+<link rel="stylesheet" href="office.css">
 </head>
 <body>
 <noscript>UltraGame Studio necesita JavaScript.</noscript>
@@ -60,6 +61,7 @@
         <button role="tab" data-tab="events">⚡ Eventos</button>
         <button role="tab" data-tab="code">{ } Código</button>
         <button role="tab" data-tab="art">🎨 Arte</button>
+        <button role="tab" data-tab="documents">📄 Documentos</button>
         <button role="tab" data-tab="web3">⛓ Web3</button>
         <button role="tab" data-tab="backend">🌐 Backend</button>
         <button role="tab" data-tab="game" id="tab-game" hidden>🎮 Juego</button>
@@ -75,6 +77,7 @@
               <button data-tool="scale" title="Escalar (R)">⤢ Escalar</button>
             </div>
             <label class="chk" title="Ajustar a la rejilla (G)"><input type="checkbox" id="chk-snap" checked> Rejilla</label>
+            <label class="chk" title="Mostrar los cuerpos de colisión: lo que choca en el juego (naranja: estático · azul: cinemático o personaje · amarillo: dinámico · rosa: zona)"><input type="checkbox" id="chk-colliders" checked> Colisiones</label>
             <label class="inline">Paso <input type="number" id="inp-snap" value="16" min="0.01" step="1"></label>
             <button class="btn small" id="btn-focus" title="Centrar en la selección (F)">⌖ Centrar</button>
             <button class="btn small" id="btn-home" title="Ver toda la escena (H)">⌂ Vista</button>
@@ -86,6 +89,7 @@
         <div class="page" data-page="events"><div class="events" id="events"></div></div>
         <div class="page" data-page="code"><div class="code-page" id="code-page"></div></div>
         <div class="page" data-page="art"><div class="art-page" id="art-page"></div></div>
+        <div class="page" data-page="documents"><div class="office-page" id="documents-page"></div></div>
         <div class="page" data-page="web3"><div class="pane-page" id="web3-page"></div></div>
         <div class="page" data-page="backend"><div class="pane-page" id="backend-page"></div></div>
         <div class="page" data-page="game"><div class="game-host" id="game-host"></div></div>

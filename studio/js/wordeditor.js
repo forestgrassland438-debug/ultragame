@@ -1,0 +1,37 @@
+import {h,clear,dialog} from './dom.js';
+import {all,first,attr,NS} from './office-core.js';
+import {insertOfficeImage,imagePicker} from './office-images.js';
+export class WordEditor {
+  constructor(owner,model,host,toolbar){this.owner=owner;this.model=model;this.host=host;this.nodes=new Map();this.drawings=new Map();this.nextId=0;
+    const command=(label,cmd,arg)=>h('button.btn.small',{type:'button',on:{mousedown:e=>e.preventDefault(),click:()=>{if(this.range){const s=getSelection();s.removeAllRanges();s.addRange(this.range);}document.execCommand(cmd,false,arg);this.sync();owner.changed();}}},label);
+    toolbar.append(command('Negrita','bold'),command('Cursiva','italic'),command('Subrayado','underline'),command('Tachado','strikeThrough'),command('← Alinear','justifyLeft'),command('Centrar','justifyCenter'),command('Alinear →','justifyRight'),command('Justificar','justifyFull'));
+    const color=h('input',{type:'color',value:'#222222','aria-label':'Color del texto',on:{input:e=>{if(this.range){const s=getSelection();s.removeAllRanges();s.addRange(this.range);}document.execCommand('foreColor',false,e.target.value);this.sync();owner.changed();}}});toolbar.append(color);
+    const size=h('select',{'aria-label':'Tamaño de texto',on:{change:e=>{if(this.range){const s=getSelection();s.removeAllRanges();s.addRange(this.range);}document.execCommand('fontSize',false,e.target.value);this.sync();owner.changed();}}},[1,2,3,4,5,6,7].map((n,i)=>h('option',{value:n,selected:n===3},[8,10,12,14,18,24,36][i]+' pt')));toolbar.append(size);
+    toolbar.append(h('button.btn.small',{on:{click:()=>{model.appendParagraph('Nuevo párrafo');this.render();owner.changed();}}},'＋ Párrafo'),h('button.btn.small',{on:{click:()=>this.tableDialog()}},'▦ Tabla'),h('button.btn.small',{on:{click:()=>this.find()}},'Buscar / reemplazar'));
+    toolbar.append(h('button.btn.small',{on:{click:()=>imagePicker(owner,async file=>{this.sync();await insertOfficeImage(model,file);this.render();owner.changed();})}},'＋ Imagen'));
+    this.render();
+  }
+  paragraph(node){const id=String(++this.nextId);this.nodes.set(id,node);const p=h('div.office-paragraph',{contenteditable:'true',role:'textbox','aria-label':'Párrafo '+id,dataset:{paragraph:id},spellcheck:'true'});
+    const props=[...node.children].find(n=>n.localName==='pPr');if(props){const jc=attr(first(props,'jc'),'val');if(['left','right','center','justify','both'].includes(jc))p.style.textAlign=jc==='both'?'justify':jc;const style=attr(first(props,'pStyle'),'val');if(/heading[1-6]/i.test(style)){p.style.fontSize=(26-(Number(style.slice(-1))*2))+'px';p.style.fontWeight='bold';}if(first(props,'numPr')){p.classList.add('office-list-item');}}
+    for(const run of all(node,'r')){
+      const drawing=first(run,'drawing');if(drawing){const blip=first(drawing,'blip'),src=this.model.images.get(blip?.getAttributeNS(NS.r,'embed'));if(src){const rid='drawing-'+this.drawings.size;this.drawings.set(rid,run);const ext=first(drawing,'extent');p.append(h('img',{src,dataset:{drawing:rid},alt:'Imagen del documento',contenteditable:'false',style:{width:Math.min(650,+(ext?.getAttribute('cx')||1905000)/9525)+'px',maxWidth:'100%'}}));}continue;}
+      const rp=[...run.children].find(n=>n.localName==='rPr'),span=h('span');span.textContent=[...run.children].map(n=>n.localName==='t'?n.textContent:n.localName==='br'?'\n':n.localName==='tab'?'\t':'').join('');
+      if(rp){if(first(rp,'b')&&attr(first(rp,'b'),'val')!=='0')span.style.fontWeight='bold';if(first(rp,'i'))span.style.fontStyle='italic';if(first(rp,'u'))span.style.textDecoration='underline';if(first(rp,'strike'))span.style.textDecoration+=' line-through';const col=attr(first(rp,'color'),'val');if(/^[a-f0-9]{6}$/i.test(col))span.style.color='#'+col;const sz=+attr(first(rp,'sz'),'val');if(sz>=12&&sz<=400)span.style.fontSize=(sz/2)+'pt';}
+      p.append(span);
+    }
+    if(!p.childNodes.length)p.append(h('br'));
+    const remember=()=>{const s=getSelection();if(s?.rangeCount&&p.contains(s.anchorNode))this.range=s.getRangeAt(0).cloneRange();};
+    p.addEventListener('keyup',remember);p.addEventListener('mouseup',remember);p.addEventListener('input',()=>{p.dataset.edited='1';this.sync();this.owner.changed();remember();});
+    p.addEventListener('paste',e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData.getData('text/plain'));});
+    p.addEventListener('drop',e=>e.preventDefault());
+    return p;
+  }
+  render(){this.range=null;clear(this.host);this.nodes.clear();this.drawings.clear();this.nextId=0;const page=h('div.office-word-page');
+    const renderBlock=(node,parent)=>{if(node.localName==='p')parent.append(this.paragraph(node));else if(node.localName==='tbl'){const table=h('table.office-word-table');for(const tr of [...node.children].filter(n=>n.localName==='tr')){const row=h('tr');for(const tc of [...tr.children].filter(n=>n.localName==='tc')){const cell=h('td');for(const child of [...tc.children])renderBlock(child,cell);row.append(cell);}table.append(row);}parent.append(table);}};
+    for(const node of [...this.model.body.children])renderBlock(node,page);this.host.append(page);
+  }
+  sync(){for(const p of this.host.querySelectorAll('[data-paragraph]')){if(!p.dataset.edited&&document.activeElement!==p&&!p.contains(getSelection()?.anchorNode))continue;const runs=[];
+    const walk=(node,style={})=>{if(node.nodeType===3){runs.push({...style,text:node.textContent});return;}if(node.nodeType!==1)return;if(node.dataset.drawing){const drawing=this.drawings.get(node.dataset.drawing);if(drawing)runs.push({drawing});return;}if(node.tagName==='BR'){runs.push({...style,text:'\n'});return;}const css=getComputedStyle(node),size=parseFloat(css.fontSize)*.75,color=css.color.match(/\d+/g);const next={...style,bold:Number(css.fontWeight)>=600,italic:css.fontStyle==='italic',underline:css.textDecorationLine.includes('underline'),strike:css.textDecorationLine.includes('line-through'),size,color:color?'#'+color.slice(0,3).map(n=>Number(n).toString(16).padStart(2,'0')).join(''):undefined};for(const c of node.childNodes)walk(c,next);if(['DIV','P','LI'].includes(node.tagName)&&node!==p&&node.nextSibling)runs.push({...next,text:'\n'});};walk(p);this.model.setParagraph(this.nodes.get(p.dataset.paragraph),runs,p.style.textAlign==='justify'?'both':p.style.textAlign);delete p.dataset.edited;}}
+  async tableDialog(){let rows,cols;const ok=await dialog('Insertar tabla',b=>{rows=h('input',{type:'number',value:3,min:1,max:40,'aria-label':'Filas'});cols=h('input',{type:'number',value:3,min:1,max:20,'aria-label':'Columnas'});b.append(h('label','Filas',rows),h('label','Columnas',cols));},[{label:'Cancelar',value:false},{label:'Insertar',value:true,kind:'primary'}]);if(ok){this.model.addTable(+rows.value,+cols.value);this.render();this.owner.changed();}}
+  async find(){let needle,replacement;const ok=await dialog('Buscar y reemplazar',b=>{needle=h('input',{'aria-label':'Buscar',placeholder:'Buscar texto'});replacement=h('input',{'aria-label':'Reemplazar por',placeholder:'Texto nuevo'});b.append(needle,replacement);},[{label:'Cancelar',value:false},{label:'Reemplazar todo',value:true,kind:'primary'}]);if(ok&&needle.value){for(const p of this.host.querySelectorAll('[data-paragraph]')){const walker=document.createTreeWalker(p,NodeFilter.SHOW_TEXT);let n;while((n=walker.nextNode()))n.textContent=n.textContent.split(needle.value).join(replacement.value);p.dataset.edited='1';}this.sync();this.owner.changed();}}
+}

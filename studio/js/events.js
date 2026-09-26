@@ -3,7 +3,8 @@ import { h, clear, showMenu, confirm } from './dom.js';
 import { field } from './fields.js';
 
 const S = window.UGStudio.schema;
-const NEGATABLE = { keyDown: 1, compare: 1, noneLeft: 0, random: 1 };
+// condiciones que admiten «no» (las de objetos, como colisión o clic, no: sin objetos no hay a quién aplicar las acciones)
+const NEGATABLE = { keyDown: 1, compare: 1, random: 1, web3Connected: 1, isNight: 1 };
 
 export class EventSheet {
   constructor(app, host) {
@@ -15,7 +16,10 @@ export class EventSheet {
   visible() { return this.host.closest('.page').classList.contains('on'); }
   renderSoon() { clearTimeout(this._t); this._t = setTimeout(() => this.render(), 20); }
   ctx() { return { editor: this.app.editor, importFor: (type, cb) => this.app.importFiles(type, cb) }; }
-  mutate(label, fn) { const sc = this.app.editor.scene; this.app.editor.edit(label, () => fn(sc.events), 'events'); }
+  mutate(label, fn) { const sc = this.app.editor.scene; if (!sc) return; this.app.editor.edit(label, () => fn(sc.events), 'events'); }
+  /** Igual que mutate, pero localiza el evento por id en el momento del cambio (tras un confirm o un deshacer, el índice
+   * con el que se dibujó la tarjeta puede apuntar ya a otro evento) */
+  mutateAt(label, id, fn) { this.mutate(label, (l) => { const k = l.findIndex((x) => x.id === id); if (k >= 0) fn(l, k); }); }
   render() {
     const ed = this.app.editor, host = this.host, top = host.scrollTop; clear(host);
     const sc = ed.scene; if (!sc) { host.appendChild(h('div.empty', 'Abre un proyecto.')); return; }
@@ -29,7 +33,7 @@ export class EventSheet {
   }
   addEvent() {
     const ev = { id: S.uid('e'), enabled: true, once: false, comment: '', conditions: [{ type: 'start', not: false, params: {} }], actions: [] };
-    this.mutate('Nuevo evento', (list) => list.push(ev));
+    this.mutate('Nuevo evento', (list) => { if (list.length < 500) list.push(ev); });
   }
   renderEvent(sc, ev, i) {
     const ctx = this.ctx();
@@ -52,10 +56,10 @@ export class EventSheet {
     const addAct = h('button.btn.small', { type: 'button', disabled: ev.actions.length >= 24 }, '＋ Acción');
     addAct.onclick = () => showMenu(Object.keys(S.ACTIONS).map((k) => ({ label: S.ACTIONS[k].label, icon: S.ACTIONS[k].icon, action: () => upd('Añadir acción', (e) => { e.actions.push({ type: k, params: S.defaultsOf(S.ACTIONS[k].params) }); }) })), addAct);
     const tools = h('div.tools',
-      h('button.icon', { type: 'button', title: 'Subir', disabled: i === 0, on: { click: () => this.mutate('Mover evento', (l) => { l.splice(i - 1, 0, l.splice(i, 1)[0]); }) } }, '▲'),
-      h('button.icon', { type: 'button', title: 'Bajar', disabled: i === sc.events.length - 1, on: { click: () => this.mutate('Mover evento', (l) => { l.splice(i + 1, 0, l.splice(i, 1)[0]); }) } }, '▼'),
-      h('button.icon', { type: 'button', title: 'Duplicar', on: { click: () => this.mutate('Duplicar evento', (l) => { const c = JSON.parse(JSON.stringify(ev)); c.id = S.uid('e'); l.splice(i + 1, 0, c); }) } }, '⧉'),
-      h('button.icon', { type: 'button', title: 'Borrar', on: { click: async () => { if (await confirm('Borrar evento', '¿Borrar este evento?', 'Borrar', true)) this.mutate('Borrar evento', (l) => { l.splice(i, 1); }); } } }, '🗑'));
+      h('button.icon', { type: 'button', title: 'Subir', disabled: i === 0, on: { click: () => this.mutateAt('Mover evento', ev.id, (l, k) => { if (k > 0) l.splice(k - 1, 0, l.splice(k, 1)[0]); }) } }, '▲'),
+      h('button.icon', { type: 'button', title: 'Bajar', disabled: i === sc.events.length - 1, on: { click: () => this.mutateAt('Mover evento', ev.id, (l, k) => { if (k < l.length - 1) l.splice(k + 1, 0, l.splice(k, 1)[0]); }) } }, '▼'),
+      h('button.icon', { type: 'button', title: 'Duplicar', on: { click: () => this.mutateAt('Duplicar evento', ev.id, (l, k) => { if (l.length >= 500) return; const c = JSON.parse(JSON.stringify(l[k])); c.id = S.uid('e'); delete c._st; l.splice(k + 1, 0, c); }) } }, '⧉'),
+      h('button.icon', { type: 'button', title: 'Borrar', on: { click: async () => { if (await confirm('Borrar evento', '¿Borrar este evento?', 'Borrar', true)) this.mutateAt('Borrar evento', ev.id, (l, k) => { l.splice(k, 1); }); } } }, '🗑'));
     const card = h('div.ev' + (ev.enabled ? '' : '.off'),
       h('input', { type: 'checkbox', checked: ev.enabled, title: 'Activado', 'aria-label': 'Evento activado', on: { change: (e) => upd(e.target.checked ? 'Activar evento' : 'Desactivar evento', (x) => { x.enabled = e.target.checked; }) } }),
       h('div.col', h('div.col-title', 'Cuando'), conds.length ? conds : h('div.help', 'Sin condiciones: se cumple en cada fotograma.'), h('div.row-actions', addCond, h('label.chk', { title: 'Solo la primera vez que se cumpla' }, h('input', { type: 'checkbox', checked: ev.once, on: { change: (e) => upd('Una vez', (x) => { x.once = e.target.checked; }) } }), 'Solo una vez'))),

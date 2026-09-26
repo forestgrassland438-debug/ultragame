@@ -7,8 +7,12 @@
  *     animación, hoja de sprites y GIF animado.
  * Guarda en el proyecto (sustituye el recurso o crea uno nuevo) y exporta PNG/JPG/WebP/GIF. Táctil: pellizcar = zoom. */
 import { h, clear, toast, showMenu, dialog, confirm, downloadBlob, safeFileName } from './dom.js';
+import { makeZip } from './export.js';
+import { encodePaintDocument, decodePaintDocument } from './paintfile.js';
+import { wheelSpeed, wheelPixels, navigationSettings } from './navigation.js';
+import {vectorDesigner} from './vector.js';
 import { PaintDoc, PALETTES, BLENDS, FILTERS, makeCanvas, ctx2d, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, floodMask, maskToCanvas, combineSelection, invertSelection,
-  selectionBounds, selectionEdges, maskBlend, encodeGIF, bresenham, pixelEllipse, bayer, blur as blurImg } from './paintcore.js';
+  selectionBounds, selectionEdges, maskBlend, encodeGIF, bresenham, pixelEllipse, bayer, blur as blurImg, parsePalette, imageColors, colorRamp } from './paintcore.js';
 
 const TOOLS = {
   move: { icon: '✥', label: 'Mover (V)', key: 'v', modes: 'both' },
@@ -17,14 +21,14 @@ const TOOLS = {
   lasso: { icon: '➰', label: 'Lazo (L)', key: 'l', modes: 'both' },
   wand: { icon: '🪄', label: 'Varita mágica (W)', key: 'w', modes: 'both' },
   crop: { icon: '⛶', label: 'Recortar (C)', key: 'c', modes: 'both' },
-  brush: { icon: '🖌', label: 'Pincel (B)', key: 'b', modes: 'photo' },
+  brush: { icon: '🖌', label: 'Pincel (B)', key: 'b', modes: 'both' },
   pencil: { icon: '✏', label: 'Lápiz (N)', key: 'n', modes: 'both' },
   eraser: { icon: '🧽', label: 'Borrador (E)', key: 'e', modes: 'both' },
   bucket: { icon: '🪣', label: 'Bote de pintura (G)', key: 'g', modes: 'both' },
   gradient: { icon: '🌈', label: 'Degradado', modes: 'photo' },
   dither: { icon: '▦', label: 'Tramado (D con Mayús)', modes: 'pixel' },
   shade: { icon: '◐', label: 'Sombrear / iluminar', modes: 'pixel' },
-  replace: { icon: '⇄', label: 'Reemplazar color (todo el lienzo)', modes: 'pixel' },
+  replace: { icon: '⇄', label: 'Reemplazar color', modes: 'pixel' },
   clone: { icon: '⎘', label: 'Tampón de clonar (S; Alt+clic = origen)', key: 's', modes: 'photo' },
   smudge: { icon: '👆', label: 'Dedo (difuminar)', modes: 'photo' },
   blurBrush: { icon: '💧', label: 'Desenfocar / enfocar (Alt)', modes: 'photo' },
@@ -39,25 +43,71 @@ const TOOLS = {
 };
 const SIZES = [[16, 16], [32, 32], [48, 48], [64, 64], [128, 128], [256, 256], [320, 180], [512, 512], [1024, 1024], [1280, 720], [1920, 1080], [2048, 2048]];
 
+const PREF_RANGES = { size: [1, 500], pxSize: [1, 64], pxBrushSize: [1, 64], hardness: [0, 1], opacity: [0.02, 1], flow: [0.02, 1], spacing: [0.02, 1], tol: [0, 255], ditherLevel: [1, 15], shadeAmt: [1, 40], strokeW: [0, 60], fontSize: [4, 1000], strength: [0.05, 1] };
+const PREF_INT = ['size', 'pxSize', 'pxBrushSize', 'tol', 'ditherLevel', 'shadeAmt', 'strokeW', 'fontSize'];
+const FONTS = ['system-ui', 'Georgia', 'Impact', 'Courier New', 'Comic Sans MS', 'Trebuchet MS', 'Verdana', 'Arial Black'];
+const PREF_CHOICES = { gradType: ['linear', 'radial'], selMode: ['new', 'add', 'sub', 'inter'], font: FONTS };
+
 export class PaintPanel {
   constructor(app, host) {
     this.app = app; this.host = host; this.doc = null; this.tool = 'brush'; this.visible = false;
     this.primary = '#1b1e2b'; this.secondary = '#ffffff'; this.alpha = 1; this.recent = [];
-    this.o = { size: 12, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: true, symX: false, symY: false,
-      ditherLevel: 8, ditherTransparent: false, shadeAmt: 8, shapeFill: false, strokeW: 2, gradType: 'linear', font: 'system-ui', fontSize: 32, bold: false, textAA: true, selMode: 'new', strength: 0.5 };
+    this.o = { size: 12, pxSize: 1, pxBrushSize: 4, pxRound: false, hardness: 0.8, opacity: 1, flow: 1, spacing: 0.15, pressure: true, tol: 24, contiguous: true, sampleAll: false, pixelPerfect: false, symX: false, symY: false, wrap: false,
+      ditherLevel: 8, ditherTransparent: false, replaceAllFrames: false, shadeAmt: 8, shapeFill: false, strokeW: 2, gradType: 'linear', font: 'system-ui', fontSize: 32, bold: false, textAA: true, selMode: 'new', strength: 0.5 };
     this.view = { z: 1, x: 0, y: 0 }; this.show = { grid: false, pixelGrid: true, tile: false, onion: false, gridSize: 16 }; this.palette = PALETTES.pico8.list.slice(); this.paletteKey = 'pico8';
     this.dirtyView = true; this.playing = false; this.edges = null; this.ant = 0;
-    try { const s = JSON.parse(localStorage.getItem('ugs-paint') || '{}'); Object.assign(this.o, s.o || {}); if (s.primary) this.primary = s.primary; if (s.secondary) this.secondary = s.secondary; if (Array.isArray(s.recent)) this.recent = s.recent.slice(0, 16); } catch (e) { /* modo privado */ }
-    app.editor.on('project', () => { this.doc = null; if (this.visible) this.render(); });
+    this.sections = {}; this.sideOpen = false;
+    try {
+      // preferencias guardadas: solo claves conocidas, del mismo tipo y dentro del rango de la interfaz (un valor
+      // dañado, p. ej. pxSize = 1e9, colgaría la pestaña al calcular la punta)
+      const s = JSON.parse(localStorage.getItem('ugs-paint') || '{}') || {}, so = s.o && typeof s.o === 'object' ? s.o : {};
+      Object.keys(this.o).concat(['gradTransparent']).forEach((k) => {
+        const v = so[k], d = this.o[k];
+        if (d === undefined ? typeof v !== 'boolean' : typeof v !== typeof d) return;
+        if (typeof v === 'number') { const R = PREF_RANGES[k]; if (!isFinite(v) || !R) return; const c = Math.max(R[0], Math.min(R[1], v)); this.o[k] = PREF_INT.includes(k) ? Math.round(c) : c; }
+        else if (typeof v === 'string') { const A = PREF_CHOICES[k]; if (A ? A.includes(v) : v.length <= 80) this.o[k] = v; }
+        else this.o[k] = v;
+      });
+      // Antes era un ajuste automático: ahora la limpieza de esquinas se activa expresamente.
+      if (s.version !== 2) this.o.pixelPerfect = false;
+      if (s.sections && typeof s.sections === 'object') for (const k of ['options', 'colors', 'preview', 'palette', 'layers', 'frames', 'draw', 'select', 'retouch', 'shapes', 'navigate']) {
+        if (typeof s.sections[k] === 'boolean') this.sections[k] = s.sections[k];
+      }
+      const col = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+      if (col(s.primary)) this.primary = s.primary; if (col(s.secondary)) this.secondary = s.secondary;
+      if (Array.isArray(s.recent)) this.recent = s.recent.filter(col).slice(0, 16);
+      // paleta: las predefinidas por su nombre; la personalizada (importada, rampas…) con sus colores
+      if (typeof s.palKey === 'string' && Object.prototype.hasOwnProperty.call(PALETTES, s.palKey)) { this.palette = PALETTES[s.palKey].list.slice(); this.paletteKey = s.palKey; }
+      else if (s.palKey === '__custom' && Array.isArray(s.pal)) { const l = Array.from(new Set(s.pal.filter(col).map((c) => c.toLowerCase()))).slice(0, 256); if (l.length) { this.palette = l; this.paletteKey = '__custom'; } }
+    } catch (e) { /* modo privado o datos dañados */ }
+    app.editor.on('project', () => { if(this.doc?.dirty)app.recovery?.capture('art');this.doc = null; if (this.visible) this.render(); });
+    for(const type of ['input','change','click'])host.addEventListener(type,()=>{if(this.doc?.dirty)app.recovery?.schedule('art');});
     document.addEventListener('keydown', (e) => this.onKey(e));
+    document.addEventListener('keyup', (e) => { if (e.key === ' ') this.space = false; });
+    // al cambiar de ventana no llega el keyup: sin esto, Espacio quedaba pulsado y el lápiz solo desplazaba la vista
+    window.addEventListener('blur', () => { this.space = false; if (this.stroke) this.endStroke(); });
     document.addEventListener('paste', (e) => this.onPaste(e));
+    host.addEventListener('dragover',e=>{if(e.dataTransfer?.types.some(t=>t==='Files'||t==='application/x-ugs-asset')){e.preventDefault();e.stopPropagation();host.classList.add('art-drop');}});
+    host.addEventListener('dragleave',e=>{if(!host.contains(e.relatedTarget))host.classList.remove('art-drop');});
+    host.addEventListener('drop',async e=>{
+      e.preventDefault();e.stopPropagation();host.classList.remove('art-drop');
+      const files=[...(e.dataTransfer?.files||[])];
+      for(const file of files)await this.importFile(file,{asLayer:!!this.doc});
+      const id=e.dataTransfer?.getData('application/x-ugs-asset');
+      if(id){const a=app.editor.assetById(id);if(a?.type==='image')try{const img=await loadImage(await app.editor.assetURL(a));if(this.doc)this.pasteImage(img,a.name);else await this.openAsset(id);}catch(err){toast(err.message,'error');}}
+    });
   }
-  savePrefs() { try { localStorage.setItem('ugs-paint', JSON.stringify({ o: this.o, primary: this.primary, secondary: this.secondary, recent: this.recent })); } catch (e) { /* modo privado */ } }
+  savePrefs() {
+    const custom = this.paletteKey === '__custom' || this.paletteKey === '__doc';
+    try { localStorage.setItem('ugs-paint', JSON.stringify({ version: 2, sections: this.sections, o: this.o, primary: this.primary, secondary: this.secondary, recent: this.recent, palKey: custom ? '__custom' : this.paletteKey, pal: custom ? this.palette.slice(0, 256) : undefined })); } catch (e) { /* modo privado */ }
+  }
+  /** Cambia la paleta y la recuerda (también entre sesiones) */
+  setPalette(list, key) { this.palette = list.slice(0, 256); this.paletteKey = key; this.savePrefs(); this.renderPalette(); }
   get pixel() { return this.doc && this.doc.mode === 'pixel'; }
   setVisible(on) { this.visible = on; if (on) { if (!this.el) this.render(); this.loop(); } else { cancelAnimationFrame(this.raf); this.raf = 0; this.stopAnim(); } }
 
   /* ================================================================ documentos */
-  async confirmDiscard() { return !this.doc || !this.doc.dirty || confirm('Cambios sin guardar', 'La imagen «' + this.doc.name + '» tiene cambios sin guardar en el proyecto. ¿Descartarlos?', 'Descartar', true); }
+  async confirmDiscard() { if(!this.doc?.dirty)return true;await this.app.recovery?.capture('art');return confirm('Cambiar de imagen', 'La imagen «' + this.doc.name + '» tiene cambios. Su copia queda disponible en Recuperar trabajo. ¿Continuar?', 'Continuar'); }
   async newDialog(mode) {
     if (!(await this.confirmDiscard())) return;
     let wI, hI, mSel, bgSel;
@@ -75,7 +125,6 @@ export class PaintPanel {
   setDoc(doc) {
     this.stopAnim(); this.doc = doc; doc.dirty = false; this.edges = null;
     if (doc.mode === 'pixel' && TOOLS[this.tool].modes === 'photo') this.tool = 'pencil';
-    if (doc.mode === 'pixel' && this.o.size > 8) this.o.size = 1;
     if (doc.mode === 'photo' && TOOLS[this.tool].modes === 'pixel') this.tool = 'brush';
     this.render(); requestAnimationFrame(() => this.fit());
   }
@@ -102,13 +151,29 @@ export class PaintPanel {
       toast('Editando «' + a.name + '»' + (doc.frames.length > 1 ? ' (' + doc.frames.length + ' fotogramas)' : ''), 'ok');
     } catch (e) { toast('No se pudo abrir: ' + e.message, 'error'); }
   }
-  async importFile(file) {
+  async importFile(file, opts = {}) {
+    if (file && /\.ugart(?:\.json)?$/i.test(file.name)) {
+      try {
+        const loaded = await decodePaintDocument(file);
+        if (!(await this.confirmDiscard())) return;
+        this.setDoc(loaded.doc); if (loaded.palette.length) this.setPalette(loaded.palette, '__custom');
+        toast('Documento abierto con sus capas y fotogramas', 'ok');
+      } catch (e) { toast('No se pudo abrir: ' + e.message, 'error'); }
+      return;
+    }
     if (!file || !/^image\//.test(file.type)) { toast('Elige una imagen (PNG, JPG, WebP, GIF)', 'warn'); return; }
     if (file.size > 64 * 1024 * 1024) { toast('Imagen demasiado grande', 'warn'); return; }
     const url = URL.createObjectURL(file);
     try {
       const img = await loadImage(url);
-      if (this.doc && await confirm('Importar imagen', '¿Añadirla como capa nueva en la imagen actual? (Cancelar = abrirla como imagen nueva)', 'Como capa')) this.pasteImage(img, file.name);
+      // con una imagen abierta se pregunta con botones claros (antes «Cancelar» significaba «abrir como imagen nueva»)
+      let how = this.doc && opts.asLayer ? 'layer' : 'new';
+      if (this.doc && !opts.asLayer) {
+        how = await dialog('Abrir «' + file.name.slice(0, 60) + '»', (bd) => bd.appendChild(h('p', img.width + '×' + img.height + ' px. ¿Abrirla como imagen nueva o añadirla como capa a la imagen actual?')),
+          [{ label: 'Cancelar', value: null }, { label: '🖼 Imagen nueva', value: 'new' }, { label: '➕ Como capa', kind: 'primary', value: 'layer' }]);
+        if (!how) return;
+      }
+      if (how === 'layer') this.pasteImage(img, file.name);
       else { if (!(await this.confirmDiscard())) return; const doc = new PaintDoc(img.width, img.height, { mode: img.width <= 256 && img.height <= 256 ? 'pixel' : 'photo', background: false, name: file.name.replace(/\.[^.]+$/, '') }); ctx2d(doc.cel).drawImage(img, 0, 0); this.setDoc(doc); }
     } catch (e) { toast('No se pudo leer la imagen', 'error'); }
     finally { URL.revokeObjectURL(url); }
@@ -116,8 +181,9 @@ export class PaintPanel {
   pasteImage(img, name) {
     const d = this.doc; d.pushDoc('Pegar'); d.addLayer(name || 'Pegado');
     const g = ctx2d(d.cel), b = d.selection ? selectionBounds(d.selection) : null;
-    g.drawImage(img, b ? b.x : Math.round((d.w - img.width) / 2), b ? b.y : Math.round((d.h - img.height) / 2));
-    this.tool = 'move'; this.changed(true);
+    const scale=Math.min(1,d.w/img.width,d.h/img.height),w=Math.max(1,Math.round(img.width*scale)),hh=Math.max(1,Math.round(img.height*scale));g.imageSmoothingEnabled=!this.pixel;
+    g.drawImage(img, b ? b.x : Math.round((d.w - w) / 2), b ? b.y : Math.round((d.h - hh) / 2),w,hh);
+    this.setTool(this.pixel ? 'pencil' : 'brush'); this.changed(true);
   }
   /** Imagen final: un fotograma = PNG; varios = hoja de sprites horizontal */
   output() {
@@ -125,7 +191,8 @@ export class PaintPanel {
     return { canvas: sheet ? d.spritesheet(cols) : d.composite(), frameWidth: sheet ? d.w : 0, frameHeight: sheet ? d.h : 0 };
   }
   async saveToProject(asNew) {
-    const ed = this.app.editor, d = this.doc; if (!d || !ed.project) return;
+    const ed = this.app.editor, d = this.doc; if (!d) return;
+    if (!ed.project) { toast('Abre un proyecto para guardar como recurso. Puedes descargar la imagen desde Archivo → PNG.', 'warn'); return; }
     const out = this.output(), blob = await canvasBlob(out.canvas, 'image/png');
     try {
       if (d.assetId && !asNew && ed.assetById(d.assetId)) {
@@ -141,6 +208,11 @@ export class PaintPanel {
       d.dirty = false; this.renderBar();
     } catch (e) { toast('No se pudo guardar: ' + e.message, 'error'); }
   }
+  saveEditable() {
+    const d = this.doc; if (!d) return;
+    try { downloadBlob(encodePaintDocument(d, this.palette), safeFileName(d.name || 'imagen') + '.ugart'); d.dirty = false; this.renderBar(); toast('Documento editable descargado: conserva capas, fotogramas y paleta.', 'ok'); }
+    catch (e) { toast('No se pudo guardar: ' + e.message, 'error'); }
+  }
   async exportAs(kind) {
     const d = this.doc; if (!d) return;
     const base = safeFileName(d.name || 'imagen');
@@ -149,7 +221,12 @@ export class PaintPanel {
       downloadBlob(new Blob([encodeGIF(frames, d.w, d.h, true)], { type: 'image/gif' }), base + '.gif'); return;
     }
     if (kind === 'sheet') { downloadBlob(await canvasBlob(d.spritesheet(d.frames.length), 'image/png'), base + '-hoja.png'); return; }
-    if (kind === 'frames') { for (let i = 0; i < d.frames.length; i++) downloadBlob(await canvasBlob(d.composite(d.frames[i]), 'image/png'), base + '-' + String(i + 1).padStart(2, '0') + '.png'); return; }
+    if (kind === 'frames') {
+      // un solo .zip con un PNG por fotograma (varias descargas seguidas el navegador las bloquea o pregunta)
+      const files = [];
+      for (let i = 0; i < d.frames.length; i++) files.push({ path: base + '-' + String(i + 1).padStart(2, '0') + '.png', data: new Uint8Array(await (await canvasBlob(d.composite(d.frames[i]), 'image/png')).arrayBuffer()) });
+      downloadBlob(makeZip(files), base + '-fotogramas.zip'); toast(d.frames.length + ' fotogramas en ' + base + '-fotogramas.zip', 'ok'); return;
+    }
     let scale = 1;
     if (kind === 'png-x') { const v = await pick('Exportar ampliado', 'Escala (píxeles nítidos)', ['2', '4', '8', '16']); if (!v) return; scale = +v; kind = 'png'; }
     const src = d.composite(), c = scale > 1 ? makeCanvas(d.w * scale, d.h * scale) : src;
@@ -160,7 +237,7 @@ export class PaintPanel {
   }
 
   /* ================================================================ cambios y vista */
-  changed(structure) { if (this.doc) this.doc.dirty = true; this.dirtyView = true; if (structure) { this.renderLayers(); this.renderFrames(); } else this.thumbsSoon(); this.renderBar(); }
+  changed(structure) { if (this.doc) this.doc.dirty = true; this.dirtyView = true; if (structure) { this.renderLayers(); this.renderFrames(); } else this.thumbsSoon(); this.renderBar(); this.app.recovery?.schedule('art'); }
   thumbsSoon() { clearTimeout(this._th); this._th = setTimeout(() => { this.renderLayers(); this.renderFrames(); }, 250); }
   loop() {
     cancelAnimationFrame(this.raf);
@@ -173,28 +250,55 @@ export class PaintPanel {
     };
     this.raf = requestAnimationFrame(tick);
   }
+  /** Tamaño visible del área de dibujo (en px CSS) */
+  viewSize() { const host = this.canvas && this.canvas.parentElement; return host ? { W: Math.floor(host.clientWidth), H: Math.floor(host.clientHeight) } : { W: 0, H: 0 }; }
+  /**
+   * En pixel art la vista se alinea a píxeles físicos de la pantalla (también con escalado 125 %, 150 %…):
+   * cada píxel de la imagen ocupa un número entero de píxeles de pantalla, sin bordes borrosos ni tamaños desiguales.
+   */
+  snapView() {
+    if (!this.pixel) return;
+    const v = this.view, dpr = window.devicePixelRatio || 1;
+    if (v.z * dpr >= 1) v.z = Math.max(1, Math.round(v.z * dpr)) / dpr;
+    v.x = Math.round(v.x * dpr) / dpr; v.y = Math.round(v.y * dpr) / dpr;
+  }
   fit() {
     const d = this.doc, c = this.canvas; if (!d || !c) return;
-    const W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
+    const { W, H } = this.viewSize(); if (!W || !H) return;
+    const dpr = window.devicePixelRatio || 1;
     let z = Math.min((W - 40) / d.w, (H - 40) / d.h);
-    if (this.pixel) z = Math.max(1, Math.floor(z)); else z = z >= 1 ? Math.min(8, Math.floor(z)) : z;
+    if (this.pixel) z = z * dpr >= 1 ? Math.max(1, Math.floor(z * dpr)) / dpr : z; else z = z >= 1 ? Math.min(8, Math.floor(z)) : z;
     this.view.z = Math.max(0.01, Math.min(64, z)); this.view.x = Math.round((W - d.w * this.view.z) / 2); this.view.y = Math.round((H - d.h * this.view.z) / 2);
-    this.dirtyView = true; this.renderStatus();
+    this.snapView(); this.dirtyView = true; this.renderStatus();
   }
   zoomAt(k, sx, sy) {
     const v = this.view, z0 = v.z; let z = Math.max(0.02, Math.min(80, z0 * k));
-    if (this.pixel && z >= 1) z = k > 1 ? Math.ceil(z) : Math.floor(z) || 1;
-    if (sx === undefined) { sx = this.canvas.clientWidth / 2; sy = this.canvas.clientHeight / 2; }
+    if (this.pixel) {
+      // pasos enteros de píxeles de pantalla: siempre avanza al menos uno
+      const dpr = window.devicePixelRatio || 1, zd0 = Math.round(z0 * dpr), zd = z * dpr;
+      if (zd >= 1) z = Math.max(1, Math.min(80 * dpr, k > 1 ? Math.max(Math.ceil(zd), zd0 + 1) : Math.min(Math.floor(zd), zd0 - 1))) / dpr;
+    }
+    if (sx === undefined) { const vs = this.viewSize(); sx = vs.W / 2; sy = vs.H / 2; }
     v.x = sx - (sx - v.x) * z / z0; v.y = sy - (sy - v.y) * z / z0; v.z = z;
-    this.dirtyView = true; this.renderStatus();
+    this.snapView(); this.dirtyView = true; this.renderStatus();
   }
-  zoomTo(z) { this.zoomAt(z / this.view.z); }
+  /** Zoom exacto (1:1, pellizco) manteniendo quieto el punto (sx, sy) */
+  zoomTo(z, sx, sy) {
+    const v = this.view, z0 = v.z; z = Math.max(0.02, Math.min(80, z));
+    if (sx === undefined) { const vs = this.viewSize(); sx = vs.W / 2; sy = vs.H / 2; }
+    v.z = z; this.snapView(); z = v.z;
+    v.x = sx - (sx - v.x) * z / z0; v.y = sy - (sy - v.y) * z / z0;
+    this.snapView(); this.dirtyView = true; this.renderStatus();
+  }
   toDoc(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX - r.left - this.view.x) / this.view.z, y: (e.clientY - r.top - this.view.y) / this.view.z, sx: e.clientX - r.left, sy: e.clientY - r.top }; }
   draw() {
     const c = this.canvas, d = this.doc; if (!c) return;
-    const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+    const dpr = window.devicePixelRatio || 1, { W, H } = this.viewSize(); if (!W || !H) return;
+    // tamaño CSS entero y mapa de bits exacto: si no, el navegador reescala el lienzo y el pixel art se ve borroso
+    if (c._cssW !== W || c._cssH !== H) { c.style.width = W + 'px'; c.style.height = H + 'px'; c._cssW = W; c._cssH = H; }
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const snap = (u) => Math.round(u * dpr) / dpr + 0.5 / dpr; // línea de 1 px físico centrada en un píxel de pantalla
     g.fillStyle = getComputedStyle(c).getPropertyValue('--paint-bg') || '#1a1d29'; g.fillRect(0, 0, W, H);
     if (!d) return;
     const v = this.view, dw = d.w * v.z, dh = d.h * v.z;
@@ -210,9 +314,10 @@ export class PaintPanel {
     }
     g.drawImage(this.playing ? d.composite(d.frames[this.animFrame || 0]) : comp, v.x, v.y, dw, dh);
     // rejillas
-    if (this.pixel && this.show.pixelGrid && v.z >= 6) { g.strokeStyle = 'rgba(0,0,0,0.13)'; g.lineWidth = 1; g.beginPath(); for (let x = 0; x <= d.w; x++) { const X = Math.round(v.x + x * v.z) + 0.5; g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y++) { const Y = Math.round(v.y + y * v.z) + 0.5; g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
-    if (this.show.grid && this.show.gridSize * v.z >= 4) { const s = this.show.gridSize; g.strokeStyle = 'rgba(80,120,255,0.45)'; g.beginPath(); for (let x = 0; x <= d.w; x += s) { const X = Math.round(v.x + x * v.z) + 0.5; g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y += s) { const Y = Math.round(v.y + y * v.z) + 0.5; g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
-    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(Math.round(v.x) - 0.5, Math.round(v.y) - 0.5, Math.round(dw) + 1, Math.round(dh) + 1);
+    g.lineWidth = 1 / dpr;
+    if (this.pixel && this.show.pixelGrid && v.z * dpr >= 6) { g.strokeStyle = 'rgba(0,0,0,0.16)'; g.beginPath(); for (let x = 0; x <= d.w; x++) { const X = snap(v.x + x * v.z); g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y++) { const Y = snap(v.y + y * v.z); g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
+    if (this.show.grid && this.show.gridSize * v.z >= 4) { const s = this.show.gridSize; g.strokeStyle = 'rgba(80,120,255,0.55)'; g.beginPath(); for (let x = 0; x <= d.w; x += s) { const X = snap(v.x + x * v.z); g.moveTo(X, v.y); g.lineTo(X, v.y + dh); } for (let y = 0; y <= d.h; y += s) { const Y = snap(v.y + y * v.z); g.moveTo(v.x, Y); g.lineTo(v.x + dw, Y); } g.stroke(); }
+    g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(Math.round(v.x) - 0.5, Math.round(v.y) - 0.5, Math.round(dw) + 1, Math.round(dh) + 1);
     // simetría
     if (this.pixel && (this.o.symX || this.o.symY)) { g.strokeStyle = 'rgba(255,80,200,0.8)'; g.setLineDash([4, 4]); g.beginPath(); if (this.o.symX) { g.moveTo(v.x + dw / 2, v.y); g.lineTo(v.x + dw / 2, v.y + dh); } if (this.o.symY) { g.moveTo(v.x, v.y + dh / 2); g.lineTo(v.x + dw, v.y + dh / 2); } g.stroke(); g.setLineDash([]); }
     // selección
@@ -227,7 +332,17 @@ export class PaintPanel {
     if (this.hoverPt && ['brush', 'eraser', 'clone', 'smudge', 'blurBrush', 'dodge', 'pencil', 'dither', 'shade'].includes(this.tool)) {
       const s = this.brushSize(), p = this.hoverPt;
       g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1;
-      if (this.pixel || this.tool === 'pencil') { const x0 = Math.floor(p.x - (s - 1) / 2), y0 = Math.floor(p.y - (s - 1) / 2); g.strokeRect(v.x + x0 * v.z + 0.5, v.y + y0 * v.z + 0.5, s * v.z - 1, s * v.z - 1); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeRect(v.x + x0 * v.z - 0.5, v.y + y0 * v.z - 0.5, s * v.z + 1, s * v.z + 1); }
+      if (this.pixel || this.tool === 'pencil') {
+        const [x0, y0] = this.tipOrigin(Math.floor(p.x), Math.floor(p.y), s), boxes = [[x0, y0]];
+        if (this.pixel && this.o.symX) boxes.push([d.w - s - x0, y0]); if (this.pixel && this.o.symY) boxes.push([x0, d.h - s - y0]); if (this.pixel && this.o.symX && this.o.symY) boxes.push([d.w - s - x0, d.h - s - y0]);
+        boxes.forEach(([bx, by], i) => {
+          const X = Math.round((v.x + bx * v.z) * dpr) / dpr, Y = Math.round((v.y + by * v.z) * dpr) / dpr, S = Math.round(s * v.z * dpr) / dpr;
+          g.globalAlpha = i ? 0.5 : 1; g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.65)'; g.strokeRect(X - 0.5, Y - 0.5, S + 1, S + 1); g.strokeStyle = 'rgba(255,255,255,0.95)'; g.strokeRect(X + 0.5, Y + 0.5, Math.max(0, S - 1), Math.max(0, S - 1));
+          // vista previa del color en el píxel (lápiz y tramado)
+          if (i === 0 && (this.tool === 'pencil' || this.tool === 'dither') && s * v.z >= 3) { g.globalAlpha = 0.45 * this.alpha; g.fillStyle = this.primary; if (this.pixel && this.o.pxRound && s > 2) { const tip = this.tipOffsets(s); for (let k = 0; k < tip.length; k += 2) g.fillRect(X + tip[k] * v.z, Y + tip[k + 1] * v.z, v.z, v.z); } else g.fillRect(X + 1, Y + 1, Math.max(0, S - 2), Math.max(0, S - 2)); }
+          g.globalAlpha = 1;
+        });
+      }
       else { g.beginPath(); g.arc(v.x + p.x * v.z, v.y + p.y * v.z, Math.max(1.5, s / 2 * v.z), 0, Math.PI * 2); g.stroke(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(v.x + p.x * v.z, v.y + p.y * v.z, Math.max(1.5, s / 2 * v.z) + 1, 0, Math.PI * 2); g.stroke(); }
     }
     if (this.cloneSrc && this.tool === 'clone') { const p = this.cloneSrc; g.strokeStyle = '#ff6'; g.beginPath(); g.moveTo(v.x + p.x * v.z - 6, v.y + p.y * v.z); g.lineTo(v.x + p.x * v.z + 6, v.y + p.y * v.z); g.moveTo(v.x + p.x * v.z, v.y + p.y * v.z - 6); g.lineTo(v.x + p.x * v.z, v.y + p.y * v.z + 6); g.stroke(); }
@@ -235,7 +350,9 @@ export class PaintPanel {
   }
 
   /* ================================================================ herramientas */
-  brushSize() { return Math.max(1, Math.round(this.pixel && this.tool !== 'eraser' && this.o.size > 64 ? 1 : this.o.size)); }
+  /** Tamaño de la punta: en pixel art tiene el suyo (por defecto 1 px), independiente del pincel de foto */
+  brushSize() { return Math.max(1, Math.round(this.o[this.sizeKey()])) || 1; }
+  sizeKey() { return this.pixel ? (this.tool === 'brush' ? 'pxBrushSize' : 'pxSize') : 'size'; }
   colorWithAlpha(hex, a) { const [r, g, b] = hexToRgb(hex); return 'rgba(' + r + ',' + g + ',' + b + ',' + (a === undefined ? this.alpha : a) + ')'; }
   pushRecent(c) { this.recent = [c].concat(this.recent.filter((x) => x !== c)).slice(0, 16); this.savePrefs(); this.renderColors(); }
   locked() { if (this.doc.curLayer.locked) { toast('La capa está bloqueada 🔒', 'warn'); return true; } if (!this.doc.curLayer.visible) { toast('La capa está oculta', 'warn'); return true; } return false; }
@@ -249,7 +366,7 @@ export class PaintPanel {
     if (this.tool === 'picker' || (alt && ['brush', 'pencil', 'bucket', 'dither'].includes(this.tool))) { this.pick(p, right); this.drag = { kind: 'pick', right }; return; }
     const selTool = ['marquee', 'ellipseSel', 'lasso', 'wand', 'crop'].includes(this.tool);
     if (!selTool && this.tool !== 'hand' && this.locked()) return;
-    const mode = e.shiftKey ? 'add' : alt ? 'sub' : (e.ctrlKey || e.metaKey) && e.shiftKey ? 'inter' : this.o.selMode;
+    const mode = (e.ctrlKey || e.metaKey) && e.shiftKey ? 'inter' : alt ? 'sub' : e.shiftKey ? 'add' : this.o.selMode;
     const color = right ? this.secondary : this.primary;
     this.stroke = null;
     switch (this.tool) {
@@ -279,7 +396,7 @@ export class PaintPanel {
       let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; if (!evs || !evs.length) evs = [e];
       evs.forEach((ev) => this.strokeTo(this.toDoc(ev), ev)); this.dirtyView = true; return;
     }
-    if (dr.kind === 'pan') { this.view.x = dr.vx + p.sx - dr.sx; this.view.y = dr.vy + p.sy - dr.sy; this.dirtyView = true; return; }
+    if (dr.kind === 'pan') { this.view.x = dr.vx + p.sx - dr.sx; this.view.y = dr.vy + p.sy - dr.sy; this.snapView(); this.dirtyView = true; return; }
     if (dr.kind === 'pick') { this.pick(p, dr.right); return; }
     if (dr.kind === 'moving') { this.moveTo(p, e.shiftKey); return; }
     dr.p1 = p; if (dr.kind === 'lasso') dr.pts.push(p);
@@ -295,6 +412,8 @@ export class PaintPanel {
     if (!dr) return;
     if (dr.kind === 'pick' && dr.right === false) this.pushRecent(this.primary);
     if (dr.kind === 'moving') { this.endMove(); return; }
+    // cuentagotas y desplazar la vista no tienen rectángulo (antes seguían y lanzaban un error en cada uso)
+    if (dr.kind === 'pick' || dr.kind === 'pan' || !dr.p0 || !dr.p1) { this.renderStatus(); return; }
     const d = this.doc, r = normRect(dr.p0, dr.p1, this.pixel);
     const tiny = Math.abs(dr.p1.x - dr.p0.x) < 1 && Math.abs(dr.p1.y - dr.p0.y) < 1;
     switch (dr.kind) {
@@ -316,7 +435,7 @@ export class PaintPanel {
     d.pushCel(TOOLS[t].label.replace(/ \(.*/, ''));
     const base = makeCanvas(d.w, d.h); ctx2d(base).drawImage(d.cel, 0, 0);
     this.stroke = { tool: t, color, alt, base, buf: makeCanvas(d.w, d.h), last: null, dist: 0, plotted: new Set(), pts: [], dirty: null };
-    if (t === 'brush' || t === 'eraser' || t === 'clone') this.stroke.tip = this.makeTip(color, t === 'eraser' || t === 'clone');
+    if (!this.pixel && (t === 'brush' || t === 'eraser' || t === 'clone')) this.stroke.tip = this.makeTip(color, t === 'eraser' || t === 'clone');
     if (t === 'clone') { if (!this.cloneOff) this.cloneOff = { x: this.cloneSrc.x - p.x, y: this.cloneSrc.y - p.y }; }
     this.strokeTo(p, e, true);
   }
@@ -330,6 +449,7 @@ export class PaintPanel {
     return c;
   }
   strokeTo(p, e, first) {
+    this.app.recovery?.schedule('art');
     const st = this.stroke, d = this.doc, t = st.tool;
     const pr = e && e.pointerType === 'pen' && this.o.pressure ? Math.max(0.05, e.pressure || 0.5) : 1;
     if (this.pixel || t === 'pencil' || t === 'dither' || t === 'shade') { this.pixelStroke(p, first); return; }
@@ -358,13 +478,13 @@ export class PaintPanel {
   grow(st, x, y, w, hh) { const r = st.dirty; if (!r) st.dirty = { x0: x, y0: y, x1: x + w, y1: y + hh }; else { r.x0 = Math.min(r.x0, x); r.y0 = Math.min(r.y0, y); r.x1 = Math.max(r.x1, x + w); r.y1 = Math.max(r.y1, y + hh); } }
   /** Cel = base + trazo (con la opacidad del trazo, recortado a la selección y respetando el bloqueo de alfa) */
   composeStroke() {
-    const st = this.stroke, d = this.doc, r = st.dirty; if (!r) return;
+    const st = this.stroke, d = this.doc, r = st.dirty; if (!r || (st.tool === 'eraser' && d.curLayer.alphaLock)) return;
     const x = Math.max(0, Math.floor(r.x0)), y = Math.max(0, Math.floor(r.y0)), w = Math.min(d.w, Math.ceil(r.x1)) - x, hh = Math.min(d.h, Math.ceil(r.y1)) - y; if (w <= 0 || hh <= 0) return;
     let src = st.buf;
     if (d.selection) { const tmp = this._tmp = this._tmp && this._tmp.width === d.w && this._tmp.height === d.h ? this._tmp : makeCanvas(d.w, d.h), tg = ctx2d(tmp); tg.clearRect(x, y, w, hh); tg.drawImage(st.buf, x, y, w, hh, x, y, w, hh); tg.globalCompositeOperation = 'destination-in'; tg.drawImage(d.selection, x, y, w, hh, x, y, w, hh); tg.globalCompositeOperation = 'source-over'; src = tmp; }
     const g = ctx2d(d.cel);
     g.save(); g.beginPath(); g.rect(x, y, w, hh); g.clip(); g.clearRect(x, y, w, hh); g.drawImage(st.base, 0, 0);
-    g.globalAlpha = this.o.opacity; g.globalCompositeOperation = st.tool === 'eraser' ? 'destination-out' : d.curLayer.alphaLock ? 'source-atop' : 'source-over';
+    g.globalAlpha = this.o.opacity * (st.tool === 'brush' ? this.alpha : 1); g.globalCompositeOperation = st.tool === 'eraser' ? 'destination-out' : d.curLayer.alphaLock ? 'source-atop' : 'source-over';
     g.drawImage(src, 0, 0); g.restore();
   }
   cloneStamp(st, q, s) {
@@ -380,7 +500,9 @@ export class PaintPanel {
     const tmp = makeCanvas(s + 2, s + 2), tg = ctx2d(tmp);
     tg.drawImage(d.cel, prev.x - r - 1, prev.y - r - 1, s + 2, s + 2, 0, 0, s + 2, s + 2);
     tg.globalCompositeOperation = 'destination-in'; tg.drawImage(tip, 0, 0, s + 2, s + 2);
-    g.save(); if (d.selection) { g.beginPath(); const b = selectionBounds(d.selection); if (b) g.rect(b.x, b.y, b.w, b.h); g.clip(); }
+    // Recortar a la máscara real, incluidos los agujeros de lazo/varita; su rectángulo no basta.
+    if (d.selection) tg.drawImage(d.selection, -(q.x - r - 1), -(q.y - r - 1));
+    g.save();
     g.globalAlpha = this.o.strength; g.globalCompositeOperation = d.curLayer.alphaLock ? 'source-atop' : 'source-over'; g.drawImage(tmp, q.x - r - 1, q.y - r - 1); g.restore();
   }
   filterStamp(q, s, kind) {
@@ -396,59 +518,87 @@ export class PaintPanel {
       const p = (j * w + i) * 4, wgt = (1 - dist * dist) * k * (sel ? sel[p + 3] / 255 : 1);
       if (kind === 'dodge' || kind === 'burn') { for (let c = 0; c < 3; c++) { const v = orig[p + c], t = kind === 'dodge' ? v + (255 - v) * 0.25 : v * 0.75; o[p + c] = v + (t - v) * wgt; } o[p + 3] = orig[p + 3]; }
       else for (let c = 0; c < 4; c++) o[p + c] = orig[p + c] + (o[p + c] - orig[p + c]) * wgt;
+      if (d.curLayer.alphaLock) o[p + 3] = orig[p + 3];
     }
     g.putImageData(out, x, y);
   }
+  /** Posiciones de la punta (cuadrada o redonda) respecto a su esquina: se calcula una vez por trazo */
+  tipOffsets(s) {
+    // círculo de píxeles: 3 → cruz, 4 → sin esquinas, 5+ → círculo (como en los editores de pixel art)
+    const out = [], round = this.pixel && this.o.pxRound && s > 2, r = s / 2, lim = r * r - 0.25;
+    for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) { if (round && (i + 0.5 - r) ** 2 + (j + 0.5 - r) ** 2 >= lim) continue; out.push(i, j); }
+    return out;
+  }
+  /** Esquina superior izquierda de la punta para el píxel (cx, cy): la misma cuenta para pintar y para el cursor */
+  tipOrigin(cx, cy, s) { return [cx - Math.floor((s - 1) / 2), cy - Math.floor((s - 1) / 2)]; }
   /** Lápiz, borrador, tramado y sombreado en modo píxel (con simetría y píxel perfecto) */
   pixelStroke(p, first) {
     const st = this.stroke, d = this.doc, g = ctx2d(d.cel), t = st.tool, s = this.brushSize(), sel = d.selection ? ctx2d(d.selection) : null;
     const selData = sel ? (st.selData || (st.selData = sel.getImageData(0, 0, d.w, d.h).data)) : null;
     const baseData = st.baseData || (st.baseData = ctx2d(st.base).getImageData(0, 0, d.w, d.h).data);
-    const [pr, pg, pb] = hexToRgb(st.color), [sr, sg, sb] = hexToRgb(this.secondary);
+    if (!st.px) {
+      // valores fijos durante todo el trazo (color, alfa y forma de la punta)
+      const [pr, pg, pb] = hexToRgb(st.color), [sr, sg, sb] = hexToRgb(this.secondary), a = Math.max(0, Math.min(1, this.alpha * this.o.opacity));
+      st.px = { pr, pg, pb, sr, sg, sb, a, fill: 'rgba(' + pr + ',' + pg + ',' + pb + ',' + a + ')', fill2: 'rgba(' + sr + ',' + sg + ',' + sb + ',' + a + ')', tip: this.tipOffsets(s), square: !(this.o.pxRound && s > 2) };
+    }
+    const P = st.px, perfect = this.pixel && t === 'pencil' && s === 1 && this.o.pixelPerfect;
+    const visits = perfect ? (st.visits || (st.visits = new Map())) : null;
+    let stepKeys;
+    // mosaico continuo: lo que sale por un borde entra por el opuesto (texturas que se repiten sin costuras)
+    const wrap = !!this.o.wrap, W = d.w, Hh = d.h, wx = (x) => ((x % W) + W) % W, wy = (y) => ((y % Hh) + Hh) % Hh;
     const plot1 = (x, y) => {
+      if (wrap) { x = wx(x); y = wy(y); }
       if (x < 0 || y < 0 || x >= d.w || y >= d.h) return;
       if (selData && selData[(y * d.w + x) * 4 + 3] < 128) return;
-      const key = y * d.w + x; if (st.plotted.has(key) && t !== 'eraser') return; st.plotted.add(key);
+      const key = y * d.w + x;
+      if (visits && !stepKeys.has(key)) { stepKeys.add(key); visits.set(key, (visits.get(key) || 0) + 1); }
+      if (st.plotted.has(key)) return; st.plotted.add(key);
       const bi = key * 4;
       if (d.curLayer.alphaLock && baseData[bi + 3] === 0) return;
-      if (t === 'eraser') { g.clearRect(x, y, 1, 1); return; }
-      let col;
-      if (t === 'dither') { const on = bayer(x, y) < this.o.ditherLevel / 16; if (!on && this.o.ditherTransparent) { return; } col = on ? [pr, pg, pb] : [sr, sg, sb]; }
-      else if (t === 'shade') { if (!baseData[bi + 3]) return; col = this.shadeColor(baseData[bi], baseData[bi + 1], baseData[bi + 2], st.alt); }
-      else col = [pr, pg, pb];
-      if (t === 'shade') { g.clearRect(x, y, 1, 1); g.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + baseData[bi + 3] / 255 + ')'; }
-      else g.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + this.alpha * this.o.opacity + ')';
-      g.fillRect(x, y, 1, 1);
+      if (t === 'eraser') { if (d.curLayer.alphaLock) return; g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = 'rgba(0,0,0,' + this.o.opacity + ')'; g.fillRect(x, y, 1, 1); g.restore(); return; }
+      g.globalCompositeOperation = d.curLayer.alphaLock ? 'source-atop' : 'source-over';
+      if (t === 'dither') { const on = bayer(x, y) < this.o.ditherLevel / 16; if (!on && this.o.ditherTransparent) return; g.fillStyle = on ? P.fill : P.fill2; g.fillRect(x, y, 1, 1); return; }
+      if (t === 'shade') { if (!baseData[bi + 3]) return; const col = this.shadeColor(baseData[bi], baseData[bi + 1], baseData[bi + 2], st.alt); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi] + (col[0] - baseData[bi]) * P.a, baseData[bi + 1] + (col[1] - baseData[bi + 1]) * P.a, baseData[bi + 2] + (col[2] - baseData[bi + 2]) * P.a, baseData[bi + 3]]), 1, 1), x, y); return; }
+      g.fillStyle = P.fill; g.fillRect(x, y, 1, 1);
     };
-    // bloque entero de una vez (lápiz/borrador grandes sin selección ni bloqueo): mucho más rápido que píxel a píxel
-    const fast = (t === 'pencil' || t === 'eraser') && s > 1 && !selData && !d.curLayer.alphaLock;
+    // bloque entero de una vez (punta cuadrada opaca sin selección ni bloqueo): mucho más rápido que píxel a píxel.
+    // Con color semitransparente se pinta píxel a píxel para no acumular alfa donde se solapan los sellos.
+    const fast = ['brush', 'pencil', 'eraser'].includes(t) && s > 1 && P.square && !selData && !d.curLayer.alphaLock && (t === 'eraser' ? this.o.opacity >= 1 : P.a >= 1) && !wrap;
     const plotBrush = (cx, cy) => {
-      const x0 = Math.floor(cx - (s - 1) / 2), y0 = Math.floor(cy - (s - 1) / 2);
+      stepKeys = visits ? new Set() : null;
+      const [x0, y0] = this.tipOrigin(cx, cy, s);
       const pts = [[x0, y0]];
       if (this.o.symX) pts.push([d.w - s - x0, y0]);
       if (this.o.symY) pts.push([x0, d.h - s - y0]);
       if (this.o.symX && this.o.symY) pts.push([d.w - s - x0, d.h - s - y0]);
       pts.forEach(([ax, ay]) => {
-        if (fast) { if (t === 'eraser') g.clearRect(ax, ay, s, s); else { g.fillStyle = 'rgba(' + pr + ',' + pg + ',' + pb + ',' + this.alpha * this.o.opacity + ')'; g.fillRect(ax, ay, s, s); } return; }
-        for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) plot1(ax + i, ay + j);
+        if (fast) { if (t === 'eraser') g.clearRect(ax, ay, s, s); else { g.fillStyle = P.fill; g.fillRect(ax, ay, s, s); } return; }
+        for (let k = 0; k < P.tip.length; k += 2) plot1(ax + P.tip[k], ay + P.tip[k + 1]);
       });
+      g.globalCompositeOperation = 'source-over';
+      return stepKeys;
     };
     const cur = { x: Math.floor(p.x), y: Math.floor(p.y) };
-    if (first || !st.lastPx) { plotBrush(cur.x, cur.y); st.lastPx = cur; st.pts = [cur]; return; }
+    if (first || !st.lastPx) { cur.keys = plotBrush(cur.x, cur.y); st.lastPx = cur; st.pts = [cur]; return; }
     const prev = st.lastPx; if (prev.x === cur.x && prev.y === cur.y) return;
     bresenham(prev.x, prev.y, cur.x, cur.y, (x, y) => {
       const L = st.pts[st.pts.length - 1]; if (L && L.x === x && L.y === y) return;
       // píxel perfecto: quita las esquinas en L (se restaura el píxel de debajo)
-      if (this.o.pixelPerfect && s === 1 && t !== 'eraser' && st.pts.length >= 2) {
+      if (perfect && st.pts.length >= 2) {
         const A = st.pts[st.pts.length - 2], B = L;
         if (Math.abs(A.x - x) === 1 && Math.abs(A.y - y) === 1 && ((B.x === A.x && B.y === y) || (B.y === A.y && B.x === x))) {
-          const keys = [[B.x, B.y]];
-          if (this.o.symX) keys.push([d.w - 1 - B.x, B.y]); if (this.o.symY) keys.push([B.x, d.h - 1 - B.y]); if (this.o.symX && this.o.symY) keys.push([d.w - 1 - B.x, d.h - 1 - B.y]);
-          keys.forEach(([kx, ky]) => { const k = ky * d.w + kx, bi = k * 4; st.plotted.delete(k); g.clearRect(kx, ky, 1, 1); g.putImageData(new ImageData(new Uint8ClampedArray([baseData[bi], baseData[bi + 1], baseData[bi + 2], baseData[bi + 3]]), 1, 1), kx, ky); });
+          // Retirar solo esta contribución; nunca borrar una visita anterior del mismo trazo,
+          // ni contar dos veces un píxel que coincide con su reflejo o con el borde del mosaico.
+          B.keys.forEach((k) => {
+            const n = visits.get(k) - 1; visits.set(k, n); if (n > 0) return;
+            const bi = k * 4; st.plotted.delete(k);
+            g.putImageData(new ImageData(new Uint8ClampedArray(baseData.slice(bi, bi + 4)), 1, 1), k % d.w, Math.floor(k / d.w));
+          });
           st.pts.pop();
         }
       }
-      plotBrush(x, y); st.pts.push({ x, y });
+      const keys = plotBrush(x, y); st.pts.push({ x, y, keys });
+      if (st.pts.length > 4) st.pts.splice(0, st.pts.length - 4); // solo hacen falta los últimos
     });
     st.lastPx = cur;
   }
@@ -477,7 +627,8 @@ export class PaintPanel {
     const [r, gg, b] = hexToRgb(color), a = Math.round(255 * this.alpha * this.o.opacity), D = img.data, lock = d.curLayer.alphaLock;
     for (let i = 0; i < m.length; i++) {
       if (!m[i]) continue; const q = i * 4; if (sel && sel[q + 3] < 128) continue; if (lock && !D[q + 3]) continue;
-      if (a >= 255) { D[q] = r; D[q + 1] = gg; D[q + 2] = b; D[q + 3] = 255; }
+      if (lock) { const k = a / 255; D[q] += (r - D[q]) * k; D[q + 1] += (gg - D[q + 1]) * k; D[q + 2] += (b - D[q + 2]) * k; }
+      else if (a >= 255) { D[q] = r; D[q + 1] = gg; D[q + 2] = b; D[q + 3] = 255; }
       else { const k = a / 255, oa = D[q + 3] / 255, na = k + oa * (1 - k); D[q] = (r * k + D[q] * oa * (1 - k)) / (na || 1); D[q + 1] = (gg * k + D[q + 1] * oa * (1 - k)) / (na || 1); D[q + 2] = (b * k + D[q + 2] * oa * (1 - k)) / (na || 1); D[q + 3] = na * 255; }
     }
     g.putImageData(img, 0, 0); this.pushRecent(color); this.changed();
@@ -485,8 +636,9 @@ export class PaintPanel {
   replaceColor(p, color) {
     const d = this.doc, x = Math.floor(p.x), y = Math.floor(p.y); if (x < 0 || y < 0 || x >= d.w || y >= d.h) return;
     const px = ctx2d(d.cel).getImageData(x, y, 1, 1).data, from = rgbToHex(px[0], px[1], px[2]);
-    d.pushDoc('Reemplazar color');
-    d.frames.forEach((fr) => { const g = ctx2d(fr.cels[d.layer]), img = g.getImageData(0, 0, d.w, d.h); FILTERS.replace.apply(img, { from, to: color, t: this.o.tol / 3 }); g.putImageData(img, 0, 0); });
+    if (this.o.replaceAllFrames) d.pushDoc('Reemplazar color'); else d.pushCel('Reemplazar color');
+    const frames = this.o.replaceAllFrames ? d.frames : [d.frames[d.frame]];
+    frames.forEach((fr) => { const g = ctx2d(fr.cels[d.layer]), before = g.getImageData(0, 0, d.w, d.h), img = new ImageData(new Uint8ClampedArray(before.data), d.w, d.h); FILTERS.replace.apply(img, { from, to: color, t: this.o.tol / 3 }); if (d.selection) maskBlend(before, img, d.selection); g.putImageData(img, 0, 0); });
     this.changed(true);
   }
   pick(p, secondary) {
@@ -534,11 +686,12 @@ export class PaintPanel {
   drawShape(g, dr) {
     const d = this.doc, col = this.colorWithAlpha(dr.color, this.alpha * this.o.opacity), fillCol = this.colorWithAlpha(this.secondary, this.alpha * this.o.opacity);
     if (this.pixel) {
-      g.fillStyle = col; const plot = (x, y) => g.fillRect(x, y, 1, 1);
+      const plotted = new Set();
+      g.fillStyle = col; const plot = (x, y) => { const key = y * d.w + x; if (x < 0 || y < 0 || x >= d.w || y >= d.h || plotted.has(key)) return; plotted.add(key); g.clearRect(x, y, 1, 1); g.fillRect(x, y, 1, 1); };
       const x0 = Math.floor(dr.p0.x), y0 = Math.floor(dr.p0.y), x1 = Math.floor(dr.p1.x), y1 = Math.floor(dr.p1.y);
       if (dr.kind === 'line') bresenham(x0, y0, x1, y1, plot);
       else if (dr.kind === 'rect') { const X0 = Math.min(x0, x1), X1 = Math.max(x0, x1), Y0 = Math.min(y0, y1), Y1 = Math.max(y0, y1); if (this.o.shapeFill) { g.fillStyle = fillCol; g.fillRect(X0, Y0, X1 - X0 + 1, Y1 - Y0 + 1); g.fillStyle = col; } for (let x = X0; x <= X1; x++) { plot(x, Y0); plot(x, Y1); } for (let y = Y0; y <= Y1; y++) { plot(X0, y); plot(X1, y); } }
-      else { if (this.o.shapeFill) { g.fillStyle = fillCol; pixelEllipse(x0, y0, x1, y1, true, plot); g.fillStyle = col; } pixelEllipse(x0, y0, x1, y1, false, plot); }
+      else { if (this.o.shapeFill) { g.fillStyle = fillCol; pixelEllipse(x0, y0, x1, y1, true, plot); g.fillStyle = col; plotted.clear(); } pixelEllipse(x0, y0, x1, y1, false, plot); }
       return;
     }
     const r = normRect(dr.p0, dr.p1, false);
@@ -558,7 +711,7 @@ export class PaintPanel {
     const d = this.doc; d.pushCel('Degradado');
     const tmp = makeCanvas(d.w, d.h), g = ctx2d(tmp), p0 = dr.p0, p1 = dr.p1;
     const gr = this.o.gradType === 'radial' ? g.createRadialGradient(p0.x, p0.y, 0, p0.x, p0.y, Math.hypot(p1.x - p0.x, p1.y - p0.y)) : g.createLinearGradient(p0.x, p0.y, p1.x, p1.y);
-    gr.addColorStop(0, this.colorWithAlpha(this.primary)); gr.addColorStop(1, this.o.gradTransparent ? this.colorWithAlpha(this.primary, 0) : this.colorWithAlpha(this.secondary, 1));
+    gr.addColorStop(0, this.colorWithAlpha(this.primary, this.alpha * this.o.opacity)); gr.addColorStop(1, this.colorWithAlpha(this.secondary, this.o.gradTransparent ? 0 : this.alpha * this.o.opacity));
     g.fillStyle = gr; g.fillRect(0, 0, d.w, d.h);
     this.commitLayer(tmp);
   }
@@ -574,13 +727,13 @@ export class PaintPanel {
     const ok = await dialog('Texto', (b) => {
       ta = h('textarea', { rows: 3, placeholder: 'Escribe el texto', on: { keydown: (e) => e.stopPropagation() } });
       sz = h('input', { type: 'number', value: this.o.fontSize, min: 4, max: 1000 });
-      fnt = h('select', ['system-ui', 'Georgia', 'Impact', 'Courier New', 'Comic Sans MS', 'Trebuchet MS', 'Verdana', 'Arial Black'].map((f) => h('option', { value: f, selected: f === this.o.font }, f)));
+      fnt = h('select', FONTS.map((f) => h('option', { value: f, selected: f === this.o.font }, f)));
       bold = h('input', { type: 'checkbox', checked: this.o.bold }); aa = h('input', { type: 'checkbox', checked: this.pixel ? false : this.o.textAA });
       b.appendChild(ta); b.appendChild(h('div.field', h('label', 'Tamaño'), sz)); b.appendChild(h('div.field', h('label', 'Fuente'), fnt));
       b.appendChild(h('label.chk', bold, ' Negrita')); b.appendChild(h('label.chk', aa, ' Suavizado (desactívalo para pixel art)'));
     }, [{ label: 'Cancelar', value: null }, { label: 'Añadir', kind: 'primary', value: true }]);
     if (!ok || !ta.value.trim()) return;
-    Object.assign(this.o, { fontSize: sz.value | 0 || 32, font: fnt.value, bold: bold.checked, textAA: aa.checked }); this.savePrefs();
+    Object.assign(this.o, { fontSize: Math.max(4, Math.min(1000, sz.value | 0 || 32)), font: fnt.value, bold: bold.checked, textAA: aa.checked }); this.savePrefs();
     const d = this.doc; d.pushCel('Texto');
     const tmp = makeCanvas(d.w, d.h), g = ctx2d(tmp);
     g.font = (this.o.bold ? 'bold ' : '') + this.o.fontSize + 'px "' + this.o.font + '", sans-serif'; g.fillStyle = this.colorWithAlpha(color); g.textBaseline = 'top';
@@ -608,7 +761,7 @@ export class PaintPanel {
   }
   fillSel(color) {
     const d = this.doc; if (!d || this.locked()) return; d.pushCel('Rellenar');
-    const tmp = makeCanvas(d.w, d.h), g = ctx2d(tmp); g.fillStyle = this.colorWithAlpha(color); g.fillRect(0, 0, d.w, d.h); this.commitLayer(tmp);
+    const tmp = makeCanvas(d.w, d.h), g = ctx2d(tmp); g.fillStyle = this.colorWithAlpha(color, this.alpha * this.o.opacity); g.fillRect(0, 0, d.w, d.h); this.commitLayer(tmp);
   }
   async copy(cut) {
     const d = this.doc; if (!d) return;
@@ -617,9 +770,11 @@ export class PaintPanel {
     const b = d.selection ? selectionBounds(d.selection) : { x: 0, y: 0, w: d.w, h: d.h }; if (!b) return;
     const out = makeCanvas(b.w, b.h); ctx2d(out).drawImage(c, -b.x, -b.y);
     this.clip = out;
-    try { if (navigator.clipboard && window.ClipboardItem) { const blob = await canvasBlob(out, 'image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } } catch (e) { /* solo portapapeles interno */ }
+    // el corte es inmediato y sobre ESTE documento; el portapapeles del sistema va aparte (puede tardar o pedir
+    // permiso: antes el borrado esperaba a él y, si entretanto se abría otra imagen, se borraba esa)
     if (cut) this.clearSel();
     toast(cut ? 'Cortado' : 'Copiado');
+    try { if (navigator.clipboard && window.ClipboardItem) { const blob = await canvasBlob(out, 'image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } } catch (e) { /* solo portapapeles interno */ }
   }
   paste() { if (this.clip && this.doc) this.pasteImage(this.clip, 'Pegado'); }
   onPaste(e) {
@@ -654,17 +809,27 @@ export class PaintPanel {
   }
   async imageSize(canvasOnly) {
     const d = this.doc; if (!d) return;
-    let wI, hI, keep, anchor;
+    let wI, hI, keep, anchor, algo;
     const ok = await dialog(canvasOnly ? 'Tamaño del lienzo' : 'Tamaño de la imagen', (b) => {
       wI = h('input', { type: 'number', value: d.w, min: 1, max: 8192 }); hI = h('input', { type: 'number', value: d.h, min: 1, max: 8192 }); keep = h('input', { type: 'checkbox', checked: !canvasOnly });
       const ratio = d.w / d.h; wI.oninput = () => { if (keep.checked) hI.value = Math.max(1, Math.round(wI.value / ratio)); }; hI.oninput = () => { if (keep.checked) wI.value = Math.max(1, Math.round(hI.value * ratio)); };
       b.appendChild(h('div.field', h('label', 'Ancho'), wI)); b.appendChild(h('div.field', h('label', 'Alto'), hI)); b.appendChild(h('label.chk', keep, ' Mantener proporción'));
+      if (!canvasOnly) {
+        // Scale2x/3x/4x: pixel art ampliado sin mezclar colores (las diagonales quedan suaves, sin escalones)
+        algo = h('select', { on: { change: () => { const m = /^scale(\d)x$/.exec(algo.value), f = m ? +m[1] : 0; wI.disabled = hI.disabled = keep.disabled = !!f; if (f) { wI.value = d.w * f; hI.value = d.h * f; } } } },
+          [['auto', this.pixel ? 'Automático (píxeles nítidos)' : 'Automático (suave)'], ['nearest', 'Vecino más cercano (píxeles nítidos)'], ['smooth', 'Suave (alta calidad)'], ['scale2x', 'Scale2x · pixel art ×2 (suaviza diagonales)'], ['scale3x', 'Scale3x · pixel art ×3'], ['scale4x', 'Scale4x · pixel art ×4']]
+            .map(([v, t]) => h('option', { value: v, disabled: /^scale/.test(v) && (d.w * +v[5] > 8192 || d.h * +v[5] > 8192) }, t)));
+        b.appendChild(h('div.field', h('label', 'Método'), algo));
+      }
       if (canvasOnly) { anchor = h('select', [['0.5,0.5', 'Centro'], ['0,0', 'Arriba izquierda'], ['0.5,0', 'Arriba'], ['1,0', 'Arriba derecha'], ['0,0.5', 'Izquierda'], ['1,0.5', 'Derecha'], ['0,1', 'Abajo izquierda'], ['0.5,1', 'Abajo'], ['1,1', 'Abajo derecha']].map(([v, t]) => h('option', { value: v }, t))); b.appendChild(h('div.field', h('label', 'Anclaje'), anchor)); }
     }, [{ label: 'Cancelar', value: null }, { label: 'Aplicar', kind: 'primary', value: true }]);
     if (!ok) return;
     const w = wI.value | 0, hh = hI.value | 0; if (w < 1 || hh < 1) return;
     d.pushDoc(canvasOnly ? 'Tamaño del lienzo' : 'Tamaño de la imagen');
-    if (canvasOnly) { const [ax, ay] = anchor.value.split(',').map(Number); d.resizeCanvas(w, hh, ax, ay); } else d.resizeImage(w, hh, !this.pixel);
+    const sm = algo && /^scale(\d)x$/.exec(algo.value);
+    if (canvasOnly) { const [ax, ay] = anchor.value.split(',').map(Number); d.resizeCanvas(w, hh, ax, ay); }
+    else if (sm) { try { d.scalePixelArt(+sm[1]); } catch (e) { toast(e.message, 'warn'); } }
+    else d.resizeImage(w, hh, algo && algo.value !== 'auto' ? algo.value === 'smooth' : !this.pixel);
     this.edges = null; this.changed(true); this.fit();
   }
   transform(kind) {
@@ -684,6 +849,14 @@ export class PaintPanel {
     const g = ctx2d(c); g.save(); g.clearRect(0, 0, d.w, d.h); if (vertical) { g.translate(0, d.h); g.scale(1, -1); } else { g.translate(d.w, 0); g.scale(-1, 1); } g.drawImage(tmp, 0, 0); g.restore();
     this.changed();
   }
+  applyLayerTransform({x=0,y=0,scaleX=1,scaleY=1,angle=0}) {
+    const d=this.doc;if(!d||this.locked())return;if(d.curLayer.alphaLock){toast('Desbloquea el alfa de la capa para transformarla.','warn');return;}
+    const b=selectionBounds(d.selection||d.cel);if(!b)return;
+    const source=makeCanvas(d.w,d.h),sg=ctx2d(source);sg.drawImage(d.cel,0,0);if(d.selection){sg.globalCompositeOperation='destination-in';sg.drawImage(d.selection,0,0);}
+    d.pushCel('Transformar capa');const g=ctx2d(d.cel);g.save();if(d.selection){g.globalCompositeOperation='destination-out';g.drawImage(d.selection,0,0);g.globalCompositeOperation='source-over';}else g.clearRect(0,0,d.w,d.h);
+    g.imageSmoothingEnabled=!this.pixel;g.translate(b.x+b.w/2+x,b.y+b.h/2+y);g.rotate(angle*Math.PI/180);g.scale(scaleX,scaleY);g.drawImage(source,b.x,b.y,b.w,b.h,-b.w/2,-b.h/2,b.w,b.h);g.restore();d.selection=null;this.edges=null;this.changed(true);
+  }
+  async layerTransformDialog(){if(!this.doc||this.locked())return;const fields={};const ok=await dialog('Transformar capa o selección',body=>{body.append(h('p.help','Modifica el fotograma y la capa activos. Fuera del lienzo se recorta; puedes deshacer con Ctrl+Z. En pixel art se conservan bordes sin suavizado.'));for(const[k,label,value,min,max]of [['x','Desplazar X',0,-8192,8192],['y','Desplazar Y',0,-8192,8192],['scaleX','Escala horizontal (%)',100,1,2000],['scaleY','Escala vertical (%)',100,1,2000],['angle','Ángulo (°)',0,-360,360]]){fields[k]=h('input',{type:'number',value,min,max,'aria-label':label});body.append(h('label.field',label,fields[k]));}},[{label:'Cancelar',value:false},{label:'Transformar',value:true,kind:'primary'}]);if(ok){const values={};for(const[k,input]of Object.entries(fields))values[k]=Math.max(+input.min,Math.min(+input.max,+input.value||0));values.scaleX/=100;values.scaleY/=100;this.applyLayerTransform(values);}}
   trim() { const d = this.doc, b = d && d.contentBounds(); if (!b) { toast('La imagen está vacía', 'warn'); return; } d.pushDoc('Recortar al contenido'); d.crop(b.x, b.y, b.w, b.h); this.changed(true); this.fit(); }
   cropToSel() { const d = this.doc, b = d && d.selection && selectionBounds(d.selection); if (!b) { toast('Primero haz una selección', 'warn'); return; } d.pushDoc('Recortar a la selección'); d.crop(b.x, b.y, b.w, b.h); this.edges = null; this.changed(true); this.fit(); }
   undo() { const d = this.doc; if (!d) return; const l = d.undoStep(); if (l) { toast('Deshacer: ' + l); this.edges = null; this.changed(true); } }
@@ -708,9 +881,12 @@ export class PaintPanel {
 
   /* ================================================================ teclado */
   onKey(e) {
-    if (!this.visible || !this.doc || isTyping(e) || document.getElementById('overlay').hidden === false) return;
+    if (!this.visible || document.getElementById('overlay')?.hidden === false) return;
     const k = e.key, ctrl = e.ctrlKey || e.metaKey, kl = k.toLowerCase();
-    if (k === ' ') { this.space = true; const up = (ev) => { if (ev.key === ' ') { this.space = false; document.removeEventListener('keyup', up); } }; document.addEventListener('keyup', up); e.preventDefault(); return; }
+    if (ctrl && (kl === 'o' || kl === 's')) { e.preventDefault(); e.stopPropagation(); if (kl === 'o') this.pickFile(); else if(e.shiftKey || !this.app.editor.project) this.saveEditable(); else this.saveToProject(false); return; }
+    if (k === 'Escape' && this.sideOpen) { this.toggleSide(false); e.preventDefault(); e.stopPropagation(); return; }
+    if (!this.doc || isTyping(e)) return;
+    if (k === ' ') { this.space = true; e.preventDefault(); return; }
     let handled = true;
     if (ctrl && kl === 'z') { if (e.shiftKey) this.redo(); else this.undo(); }
     else if (ctrl && kl === 'y') this.redo();
@@ -725,8 +901,8 @@ export class PaintPanel {
     else if (k === 'Delete' || k === 'Backspace') this.clearSel();
     else if (k === 'Enter' && this.cropRect) this.applyCrop();
     else if (k === 'Escape') { this.cropRect = null; this.preview = null; this.drag = null; this.deselect(); this.renderOpts(); }
-    else if (k === '[') { this.o.size = Math.max(1, Math.round(this.o.size / 1.25)); this.renderOpts(); this.dirtyView = true; }
-    else if (k === ']') { this.o.size = Math.min(500, Math.max(this.o.size + 1, Math.round(this.o.size * 1.25))); this.renderOpts(); this.dirtyView = true; }
+    else if (k === '[') { const sk = this.sizeKey(); this.o[sk] = Math.max(1, this.pixel ? this.o[sk] - 1 : Math.round(this.o[sk] / 1.25)); this.savePrefs(); this.renderOpts(); this.dirtyView = true; }
+    else if (k === ']') { const sk = this.sizeKey(); this.o[sk] = this.pixel ? Math.min(64, this.o[sk] + 1) : Math.min(500, Math.max(this.o[sk] + 1, Math.round(this.o[sk] * 1.25))); this.savePrefs(); this.renderOpts(); this.dirtyView = true; }
     else if (k === '+' || k === '=') this.zoomAt(this.pixel ? 2 : 1.25);
     else if (k === '-') this.zoomAt(this.pixel ? 0.5 : 0.8);
     else if (k === '0') this.fit();
@@ -743,24 +919,36 @@ export class PaintPanel {
   setTool(t) { this.tool = t; if (t !== 'crop') { this.cropRect = null; this.preview = null; } this.renderTools(); this.renderOpts(); this.dirtyView = true; }
 
   /* ================================================================ interfaz */
+  section(key, label, content, open = true) {
+    const el = h('details.paint-section', { open: this.sections[key] ?? open, dataset: { section: key } }, h('summary', label), content);
+    el.addEventListener('toggle', () => { if (el.isConnected) { this.sections[key] = el.open; this.savePrefs(); this.dirtyView = true; } });
+    return el;
+  }
+  toggleSide(on = !this.sideOpen) {
+    this.sideOpen = on; this.el.classList.toggle('side-open', on);
+    this.barEl.querySelector('.paint-side-toggle')?.setAttribute('aria-expanded', String(on));
+    if (on) this.sideEl.querySelector('summary')?.focus();
+    else this.barEl.querySelector('.paint-side-toggle')?.focus();
+  }
   render() {
     const host = this.host; clear(host);
     const ed = this.app.editor;
-    this.el = h('div.paint' + (this.pixel ? '.pixel' : ''));
+    this.el = h('div.paint' + (this.pixel ? '.pixel' : '') + (this.sideOpen ? '.side-open' : ''));
     this.barEl = h('div.paint-bar'); this.optsEl = h('div.paint-opts'); this.toolsEl = h('div.paint-tools');
     this.canvas = h('canvas.paint-canvas', { tabindex: '0', 'aria-label': 'Lienzo' });
     this.statusEl = h('div.paint-status');
-    this.sideEl = h('div.paint-side'); this.framesEl = h('div.paint-frames');
+    this.sideEl = h('div.paint-side', { 'aria-label': 'Paneles de arte' }); this.framesEl = h('div.paint-frames');
     const center = h('div.paint-center', h('div.paint-view', this.canvas, this.doc ? null : this.emptyState(ed)), this.framesEl, this.statusEl);
-    this.el.appendChild(this.barEl); this.el.appendChild(this.optsEl);
-    this.el.appendChild(h('div.paint-main', this.toolsEl, center, this.sideEl));
+    this.optionsSection = this.section('options', 'Opciones de herramienta', this.optsEl);
+    this.el.appendChild(this.barEl); this.el.appendChild(this.optionsSection);
+    this.el.appendChild(h('div.paint-main', this.toolsEl, center, h('button.paint-scrim', { type: 'button', 'aria-label': 'Cerrar paneles de arte', on: { click: () => this.toggleSide(false) } }), this.sideEl));
     host.appendChild(this.el);
     this.bindCanvas();
     this.renderBar(); this.renderOpts(); this.renderTools(); this.renderSide(); this.renderFrames(); this.renderStatus();
     this.dirtyView = true;
     if (this.ro) this.ro.disconnect();
     this.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { this.dirtyView = true; }) : null;
-    if (this.ro) this.ro.observe(this.canvas);
+    if (this.ro) this.ro.observe(this.canvas.parentElement);
   }
   emptyState(ed) {
     const imgs = ed.project ? ed.project.assets.filter((a) => a.type === 'image') : [];
@@ -770,24 +958,32 @@ export class PaintPanel {
       imgs.length ? h('div.help', 'O edita una imagen del proyecto:') : null,
       imgs.length ? h('div.chips', imgs.slice(0, 40).map((a) => h('button.chip', { type: 'button', on: { click: () => this.openAsset(a.id) } }, '🖼 ' + a.name))) : null);
   }
-  pickFile() { const inp = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif' }); inp.onchange = () => { if (inp.files[0]) this.importFile(inp.files[0]); }; inp.click(); }
+  pickFile() { const inp = h('input', { type: 'file', accept: '.ugart,.ugart.json,image/png,image/jpeg,image/webp,image/gif' }); inp.onchange = () => { if (inp.files[0]) this.importFile(inp.files[0]); }; inp.click(); }
   bindCanvas() {
-    const c = this.canvas, pts = new Map(); let pinch = null;
+    const c = this.canvas, pts = new Map(); let pinch = null, active = null;
+    const cancel = () => {
+      if (this.stroke || this.drag?.kind === 'moving') { this.doc.undoStep(); this.doc.redo = []; this.stroke = null; this.changed(); }
+      this.drag = null; this.preview = null; active = null; this.dirtyView = true;
+    };
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
-      c.focus();
-      if (e.pointerType === 'touch') { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { if (this.stroke) { this.doc.undoStep(); this.doc.redo = []; this.stroke = null; this.changed(); } this.drag = null; this.preview = null; const a = Array.from(pts.values()); pinch = { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 }; return; } if (pts.size > 2) return; }
+      c.focus({ preventScroll: true });
+      if (e.pointerType === 'touch') { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) { cancel(); const a = Array.from(pts.values()); pinch = { d0: Math.max(1, Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y)), z0: this.view.z, cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 }; return; } if (pts.size > 2) return; }
+      if (active !== null && (this.stroke || this.drag)) return;
+      active = e.pointerId;
       this.onDown(e);
     });
     c.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'touch' && pts.has(e.pointerId)) { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && pts.size >= 2) { const a = Array.from(pts.values()), d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx = (a[0].x + a[1].x) / 2, cy = (a[0].y + a[1].y) / 2, r = c.getBoundingClientRect(); this.view.x += cx - pinch.cx; this.view.y += cy - pinch.cy; this.zoomAt(d / pinch.d, cx - r.left, cy - r.top); pinch = { d, cx, cy }; return; } }
-      if (pinch) return;
+      if (e.pointerType === 'touch' && pts.has(e.pointerId)) { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && pts.size >= 2) { const a = Array.from(pts.values()), d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), cx = (a[0].x + a[1].x) / 2, cy = (a[0].y + a[1].y) / 2, r = c.getBoundingClientRect(); this.view.x += cx - pinch.cx; this.view.y += cy - pinch.cy; this.zoomTo(pinch.z0 * d / pinch.d0, cx - r.left, cy - r.top); pinch.cx = cx; pinch.cy = cy; return; } }
+      if (pinch || (active !== null && active !== e.pointerId)) return;
       this.onMove(e);
     });
-    const up = (e) => { if (e.pointerType === 'touch') { pts.delete(e.pointerId); if (pinch) { if (pts.size < 2) pinch = null; return; } } this.onUp(e); };
-    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+    const up = (e) => { if (e.pointerType === 'touch') { pts.delete(e.pointerId); if (pinch) { if (pts.size < 2) pinch = null; return; } } if (active !== e.pointerId) return; active = null; this.onUp(e); };
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (active === e.pointerId) cancel(); });
+    c.addEventListener('lostpointercapture', (e) => { if (active === e.pointerId) cancel(); });
     c.addEventListener('pointerleave', () => { this.hoverPt = null; this.dirtyView = true; });
-    c.addEventListener('wheel', (e) => { e.preventDefault(); if (!this.doc) return; const r = c.getBoundingClientRect(); if (e.ctrlKey || e.altKey || !e.shiftKey) this.zoomAt(Math.exp(-e.deltaY * (this.pixel ? 0.004 : 0.0018)), e.clientX - r.left, e.clientY - r.top); else { this.view.x -= e.deltaY; this.dirtyView = true; } }, { passive: false });
+    c.addEventListener('wheel', (e) => { e.preventDefault(); if (!this.doc) return; const r = c.getBoundingClientRect(), delta = wheelPixels(e)*wheelSpeed('art'); if (e.ctrlKey || e.altKey || !e.shiftKey) this.zoomAt(Math.exp(-delta * (this.pixel ? 0.004 : 0.0018)), e.clientX - r.left, e.clientY - r.top); else { this.view.x -= delta; this.snapView(); this.dirtyView = true; } }, { passive: false });
     c.addEventListener('dblclick', () => { if (this.cropRect) this.applyCrop(); });
   }
   renderBar() {
@@ -798,6 +994,7 @@ export class PaintPanel {
     el.appendChild(menu('Archivo', () => [
       { label: 'Nueva imagen…', icon: '＋', action: () => this.newDialog(this.pixel ? 'pixel' : 'photo') },
       { label: 'Abrir archivo…', icon: '⬆', action: () => this.pickFile() },
+      { label: 'Guardar documento editable (.ugart)', icon: '💾', key: 'Ctrl+Mayús+S', disabled: !d, action: () => this.saveEditable() },
       { group: 'Imágenes del proyecto' }].concat((ed.project ? ed.project.assets.filter((a) => a.type === 'image') : []).slice(0, 30).map((a) => ({ label: a.name, icon: '🖼', action: () => this.openAsset(a.id) })), ['-',
       { label: d && d.assetId ? 'Guardar en el proyecto' : 'Guardar como recurso nuevo', icon: '💾', key: 'Ctrl+S', disabled: !d, action: () => this.saveToProject(false) },
       { label: 'Guardar como recurso nuevo', icon: '📄', disabled: !d, action: () => this.saveToProject(true) },
@@ -820,6 +1017,7 @@ export class PaintPanel {
       { label: 'Todo', icon: '▦', key: 'Ctrl+A', disabled: !d, action: () => this.selectAll() }, { label: 'Nada', icon: '▢', key: 'Ctrl+D', disabled: !d, action: () => this.deselect() }, { label: 'Invertir', icon: '◩', key: 'Ctrl+Mayús+I', disabled: !d, action: () => this.invert() },
       { label: 'Seleccionar el contenido de la capa', icon: '◼', disabled: !d, action: () => { const dd = this.doc; combineSelection(dd, (g) => { const m = makeCanvas(dd.w, dd.h), mg = ctx2d(m); mg.drawImage(dd.cel, 0, 0); mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#fff'; mg.fillRect(0, 0, dd.w, dd.h); g.drawImage(m, 0, 0); }, 'new'); this.edges = null; this.dirtyView = true; } }]));
     el.appendChild(menu('Vista', () => [
+      { label: 'Velocidad de la rueda…', icon: '⚙', action: navigationSettings },
       { label: 'Ajustar a la ventana', icon: '⤢', key: '0', disabled: !d, action: () => this.fit() }, { label: 'Tamaño real (100 %)', icon: '1:1', key: '1', disabled: !d, action: () => this.zoomTo(1) },
       { label: 'Acercar', icon: '＋', key: '+', disabled: !d, action: () => this.zoomAt(this.pixel ? 2 : 1.25) }, { label: 'Alejar', icon: '－', key: '-', disabled: !d, action: () => this.zoomAt(this.pixel ? 0.5 : 0.8) }, '-',
       { label: 'Rejilla de píxeles', icon: this.show.pixelGrid ? '✓' : ' ', action: () => { this.show.pixelGrid = !this.show.pixelGrid; this.dirtyView = true; } },
@@ -830,38 +1028,66 @@ export class PaintPanel {
     el.appendChild(h('button.btn.small', { type: 'button', title: 'Deshacer (Ctrl+Z)', disabled: !d || !d.undo.length, on: { click: () => this.undo() } }, '↶'));
     el.appendChild(h('button.btn.small', { type: 'button', title: 'Rehacer (Ctrl+Y)', disabled: !d || !d.redo.length, on: { click: () => this.redo() } }, '↷'));
     el.appendChild(h('span.grow'));
-    el.appendChild(h('button.btn.small.paint-side-toggle', { type: 'button', title: 'Colores, paleta y capas', on: { click: () => this.el.classList.toggle('side-open') } }, '🎨 Capas'));
+    el.appendChild(h('button.btn.small', { type: 'button', title: 'Ampliar el espacio del lienzo · Ctrl+Mayús+F', on: { click: () => this.app.layout?.toggleFocus() } }, '⛶ Lienzo'));
+    el.appendChild(h('a.btn.small', { href: '../docs/studio-art.html', target: '_blank', rel: 'noopener', title: 'Guía ilustrada de Arte' }, '? Guía'));
+    el.appendChild(h('button.btn.small.paint-side-toggle', { type: 'button', title: 'Colores, paleta y capas', 'aria-expanded': String(this.sideOpen), on: { click: () => this.toggleSide() } }, '🎨 Paneles'));
     if (d) el.appendChild(h('span.help', (d.dirty ? '● ' : '') + d.name + ' · ' + d.w + '×' + d.h + (d.frames.length > 1 ? ' · ' + d.frames.length + ' fotogramas' : '')));
-    el.appendChild(h('button.btn.small.primary', { type: 'button', disabled: !d, title: 'Guardar en el proyecto (Ctrl+S)', on: { click: () => this.saveToProject(false) } }, '💾 Guardar'));
+    el.appendChild(h('button.btn.small.primary', { type: 'button', disabled: !d, title: ed.project ? 'Guardar en el proyecto (Ctrl+S)' : 'Descargar documento editable con capas (Ctrl+S)', on: { click: () => ed.project ? this.saveToProject(false) : this.saveEditable() } }, ed.project ? '💾 Guardar' : '💾 Guardar editable'));
   }
   switchMode(mode) {
     if (!this.doc) { this.newDialog(mode); return; }
     if (this.doc.mode === mode) return;
     this.doc.mode = mode;
     if (!this.toolOk(this.tool)) this.tool = mode === 'pixel' ? 'pencil' : 'brush';
-    if (mode === 'pixel' && this.o.size > 8) this.o.size = 1;
     this.render(); this.fit();
   }
   renderTools() {
-    const el = this.toolsEl; if (!el) return; clear(el);
-    Object.keys(TOOLS).forEach((id) => { if (!this.toolOk(id)) return; const T = TOOLS[id]; el.appendChild(h('button', { type: 'button', class: id === this.tool ? 'on' : null, title: T.label, 'aria-label': T.label, on: { click: () => this.setTool(id) } }, T.icon)); });
+    const el = this.toolsEl; if (!el) return; const scroll = el.scrollTop; clear(el);
+    const groups = [
+      ['draw', 'Dibujar', '✎', ['brush', 'pencil', 'eraser', 'bucket', 'gradient', 'dither', 'shade', 'replace']],
+      ['select', 'Seleccionar', '⬚', ['move', 'marquee', 'ellipseSel', 'lasso', 'wand', 'crop']],
+      ['retouch', 'Retocar', '◐', ['clone', 'smudge', 'blurBrush', 'dodge']],
+      ['shapes', 'Formas y texto', '▭', ['line', 'rect', 'ellipse', 'text']],
+      ['navigate', 'Navegar', '✋', ['picker', 'hand', 'zoom']]
+    ];
+    groups.forEach(([key, label, icon, ids]) => {
+      const available = ids.filter((id) => this.toolOk(id)); if (!available.length) return;
+      if (available.includes(this.tool)) this.sections[key] = true;
+      const list = h('div.paint-tool-list', available.map((id) => { const T = TOOLS[id]; return h('button', { type: 'button', class: id === this.tool ? 'on' : null, title: T.label, 'aria-label': T.label, 'aria-pressed': String(id === this.tool), on: { click: () => this.setTool(id) } }, h('span.tool-icon', { 'aria-hidden': 'true' }, T.icon), h('span.tool-name', T.label.replace(/ \(.*/, ''))); }));
+      const section = this.section(key, [h('span.group-icon', { 'aria-hidden': 'true' }, icon), h('span.group-title', label)], list, key === 'draw');
+      section.querySelector('summary').title = label; el.appendChild(section);
+    });
+    el.scrollTop = scroll;
   }
   renderOpts() {
     const el = this.optsEl; if (!el) return; clear(el);
     const t = this.tool, o = this.o;
-    const num = (key, label, min, max, step, fmt) => { const val = h('span.val', fmt ? fmt(o[key]) : String(o[key])); return h('label.opt', label, h('input', { type: 'range', min, max, step: step || 1, value: o[key], on: { input: (e) => { o[key] = +e.target.value; val.textContent = fmt ? fmt(o[key]) : String(o[key]); this.dirtyView = true; this.savePrefs(); } } }), val); };
+    const num = (key, label, min, max, step = 1, fmt) => {
+      const percent = max === 1, factor = percent ? 100 : 1;
+      const value = h('input.paint-number', { type: 'number', min: min * factor, max: max * factor, step: step * factor, value: Math.round(o[key] * factor * 100) / 100, 'aria-label': label + (percent ? ' (%)' : ' (valor)') });
+      const range = h('input', { type: 'range', min, max, step, value: o[key], 'aria-label': label });
+      const update = (v) => { if (!Number.isFinite(v)) v = o[key]; o[key] = Math.max(min, Math.min(max, Math.round(v / step) * step)); range.value = o[key]; value.value = Math.round(o[key] * factor * 100) / 100; this.dirtyView = true; this.savePrefs(); };
+      range.oninput = () => update(+range.value); value.onchange = () => update(value.value === '' ? o[key] : +value.value / factor);
+      return h('div.opt', h('span', label), range, value, percent ? h('span', '%') : null);
+    };
     const chk = (key, label, title) => h('label.chk', { title }, h('input', { type: 'checkbox', checked: !!o[key], on: { change: (e) => { o[key] = e.target.checked; this.savePrefs(); this.dirtyView = true; } } }), ' ' + label);
     const pct = (v) => Math.round(v * 100) + '%';
-    el.appendChild(h('b', TOOLS[t].icon + ' ' + TOOLS[t].label.replace(/ \(.*/, '')));
+    if (this.optionsSection) this.optionsSection.querySelector('summary').textContent = TOOLS[t].icon + ' ' + TOOLS[t].label.replace(/ \(.*/, '') + ' · Opciones';
     if (['brush', 'eraser', 'clone', 'smudge', 'blurBrush', 'dodge'].includes(t) && !this.pixel) el.appendChild(num('size', 'Tamaño', 1, 500));
-    if (['pencil', 'eraser', 'dither', 'shade'].includes(t) && (this.pixel || t === 'pencil')) el.appendChild(num('size', 'Tamaño', 1, this.pixel ? 16 : 100));
+    if (this.pixel && ['brush', 'pencil', 'eraser', 'dither', 'shade'].includes(t)) { el.appendChild(num(this.sizeKey(), 'Tamaño', 1, 64)); el.appendChild(chk('pxRound', 'Punta redonda', 'Punta circular en lugar de cuadrada; visible desde 3 píxeles')); }
+    else if (t === 'pencil') el.appendChild(num('size', 'Tamaño', 1, 100));
     if (['brush', 'eraser', 'clone'].includes(t) && !this.pixel) { el.appendChild(num('hardness', 'Dureza', 0, 1, 0.05, pct)); el.appendChild(num('flow', 'Flujo', 0.02, 1, 0.02, pct)); el.appendChild(num('spacing', 'Espaciado', 0.02, 1, 0.02, pct)); el.appendChild(chk('pressure', 'Presión del lápiz', 'Tabletas y lápices: la presión cambia el tamaño')); }
-    if (['brush', 'eraser', 'pencil', 'clone', 'bucket', 'dither', 'rect', 'ellipse', 'line', 'gradient'].includes(t)) el.appendChild(num('opacity', 'Opacidad', 0.02, 1, 0.02, pct));
+    if (['brush', 'eraser', 'pencil', 'clone', 'bucket', 'dither', 'shade', 'rect', 'ellipse', 'line', 'gradient'].includes(t)) el.appendChild(num('opacity', 'Opacidad', 0.02, 1, 0.02, pct));
     if (['smudge', 'blurBrush', 'dodge'].includes(t)) el.appendChild(num('strength', 'Fuerza', 0.05, 1, 0.05, pct));
     if (['bucket', 'wand', 'replace'].includes(t)) { el.appendChild(num('tol', 'Tolerancia', 0, 255)); if (t !== 'replace') { el.appendChild(chk('contiguous', 'Contiguo')); el.appendChild(chk('sampleAll', 'Todas las capas', 'Mira la imagen compuesta, no solo la capa actual')); } }
+    if (t === 'replace') { el.appendChild(chk('replaceAllFrames', 'Todos los fotogramas', 'Desactivado: solo cambia el fotograma actual. Respeta la selección y conserva el alfa.')); }
     if (['marquee', 'ellipseSel', 'lasso', 'wand'].includes(t)) el.appendChild(h('div.seg', [['new', 'Nueva'], ['add', '＋ Añadir'], ['sub', '－ Restar'], ['inter', '∩ Intersecar']].map(([v, lbl]) => h('button', { type: 'button', class: o.selMode === v ? 'on' : null, on: { click: () => { o.selMode = v; this.renderOpts(); } } }, lbl))), h('span.help', 'Mayús: añadir · Alt: restar'));
     if (t === 'pencil' && this.pixel) el.appendChild(chk('pixelPerfect', 'Píxel perfecto', 'Quita las esquinas dobles al dibujar líneas a mano'));
-    if (this.pixel && ['pencil', 'eraser', 'dither', 'shade'].includes(t)) { el.appendChild(chk('symX', 'Simetría ↔')); el.appendChild(chk('symY', 'Simetría ↕')); }
+    if (this.pixel && ['brush', 'pencil', 'eraser', 'dither', 'shade'].includes(t)) {
+      el.appendChild(chk('symX', 'Simetría ↔')); el.appendChild(chk('symY', 'Simetría ↕'));
+      // al activarlo se ve la imagen repetida 3×3 para dibujar sobre la costura
+      el.appendChild(h('label.chk', { title: 'El trazo sigue por el borde opuesto: texturas y fondos que se repiten sin costuras' }, h('input', { type: 'checkbox', checked: !!o.wrap, on: { change: (e) => { o.wrap = e.target.checked; if (o.wrap && !this.show.tile) this.show.tile = true; this.savePrefs(); this.dirtyView = true; } } }), ' Mosaico continuo'));
+    }
     if (t === 'dither') { el.appendChild(num('ditherLevel', 'Densidad', 1, 15, 1, (v) => v + '/16')); el.appendChild(chk('ditherTransparent', 'Secundario transparente')); }
     if (t === 'shade') { el.appendChild(num('shadeAmt', 'Cantidad', 1, 40, 1, (v) => v + '%')); el.appendChild(h('span.help', 'Clic: iluminar · clic derecho: oscurecer (usa la paleta si el color está en ella)')); }
     if (['rect', 'ellipse'].includes(t)) { el.appendChild(chk('shapeFill', 'Relleno (color secundario)')); if (!this.pixel) el.appendChild(num('strokeW', 'Borde', 0, 60)); }
@@ -877,14 +1103,15 @@ export class PaintPanel {
   renderSide() {
     const el = this.sideEl; if (!el) return; clear(el);
     this.colorsEl = h('div.card.paint-colors'); this.paletteEl = h('div.card.paint-palette'); this.layersEl = h('div.card.paint-layers');
-    el.appendChild(this.colorsEl);
-    if (this.pixel) { this.miniCanvas = h('canvas.paint-mini'); el.appendChild(h('div.card', h('b', 'Vista previa'), this.miniCanvas)); } else this.miniCanvas = null;
-    el.appendChild(this.paletteEl); el.appendChild(this.layersEl);
+    el.appendChild(h('button.btn.small.paint-side-close', { type: 'button', on: { click: () => this.toggleSide(false) } }, 'Cerrar paneles ×'));
+    el.appendChild(this.section('colors', 'Color', this.colorsEl));
+    if (this.pixel) { this.miniCanvas = h('canvas.paint-mini', { 'aria-label': 'Vista previa del pixel art' }); el.appendChild(this.section('preview', 'Vista previa', h('div.card', this.miniCanvas), false)); } else this.miniCanvas = null;
+    el.appendChild(this.section('palette', 'Paleta', this.paletteEl)); el.appendChild(this.section('layers', 'Capas', this.layersEl));
     this.renderColors(); this.renderPalette(); this.renderLayers();
   }
   drawMini() {
     const d = this.doc, c = this.miniCanvas; if (!d || !c) return;
-    const k = Math.max(1, Math.min(4, Math.floor(160 / Math.max(d.w, d.h)))), W = d.w * k, H = d.h * k;
+    const k = Math.min(4, 160 / Math.max(d.w, d.h)), W = Math.max(1, Math.round(d.w * k)), H = Math.max(1, Math.round(d.h * k));
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.clearRect(0, 0, W, H);
     g.drawImage(this.playing ? d.composite(d.frames[this.animFrame || 0]) : this.comp || d.composite(), 0, 0, W, H);
@@ -902,14 +1129,62 @@ export class PaintPanel {
   }
   renderPalette() {
     const el = this.paletteEl; if (!el) return; clear(el);
-    const sel = h('select', { 'aria-label': 'Paleta', on: { change: (e) => { const k = e.target.value; if (k === '__doc') this.palette = this.docColors(); else if (PALETTES[k]) this.palette = PALETTES[k].list.slice(); this.paletteKey = k; this.renderPalette(); } } },
+    const sel = h('select', { 'aria-label': 'Paleta', on: { change: (e) => { const k = e.target.value; if (k === '__doc') this.setPalette(this.docColors(), k); else if (PALETTES[k]) this.setPalette(PALETTES[k].list, k); else { this.paletteKey = k; this.savePrefs(); this.renderPalette(); } } } },
       Object.keys(PALETTES).map((k) => h('option', { value: k, selected: k === this.paletteKey }, PALETTES[k].label + ' (' + PALETTES[k].list.length + ')')), h('option', { value: '__doc', selected: this.paletteKey === '__doc' }, 'Colores de la imagen'), h('option', { value: '__custom', selected: this.paletteKey === '__custom' }, 'Personalizada'));
     el.appendChild(h('div.card-head', h('b.grow', 'Paleta'), sel));
     el.appendChild(h('div.swatches.pal', this.palette.map((c, i) => h('button.sw', { type: 'button', title: c + ' · clic: principal · clic derecho: secundario · Mayús+clic: quitar', class: c === this.primary ? 'on' : null, style: { background: c },
-      on: { click: (e) => { if (e.shiftKey) { this.palette.splice(i, 1); this.paletteKey = '__custom'; this.renderPalette(); return; } this.primary = c; this.alpha = 1; this.renderColors(); this.renderPalette(); }, contextmenu: (e) => { e.preventDefault(); this.secondary = c; this.renderColors(); } } }))));
-    el.appendChild(h('div.row-actions', h('button.btn.small', { type: 'button', title: 'Añadir el color principal', on: { click: () => { if (!this.palette.includes(this.primary) && this.palette.length < 256) { this.palette.push(this.primary); this.paletteKey = '__custom'; this.renderPalette(); } } } }, '＋ Color'),
+      on: { click: (e) => { if (e.shiftKey) { const l = this.palette.slice(); l.splice(i, 1); this.setPalette(l, '__custom'); return; } this.primary = c; this.alpha = 1; this.renderColors(); this.renderPalette(); }, contextmenu: (e) => { e.preventDefault(); this.secondary = c; this.renderColors(); } } }))));
+    el.appendChild(h('div.row-actions', h('button.btn.small', { type: 'button', title: 'Añadir el color principal', on: { click: () => { if (!this.palette.includes(this.primary) && this.palette.length < 256) this.setPalette(this.palette.concat([this.primary]), '__custom'); } } }, '＋ Color'),
       h('button.btn.small', { type: 'button', title: 'Reducir la capa a esta paleta', disabled: !this.doc, on: { click: () => this.filterDialog('palette') } }, 'Aplicar a la capa'),
-      h('button.btn.small', { type: 'button', title: 'Descargar como .hex (Lospec/Aseprite)', on: { click: () => downloadBlob(new Blob([this.palette.map((c) => c.slice(1)).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.hex') } }, '⬇ .hex')));
+      h('button.btn.small', { type: 'button', title: 'Rampa de color: sombras y luces del principal, o del principal al secundario', on: { click: () => this.rampDialog() } }, '🌈 Rampa'),
+      h('button.btn.small', { type: 'button', title: 'Importar una paleta: .hex (Lospec), .gpl (GIMP, Aseprite), .pal (JASC), .txt (Paint.NET) o los colores de una imagen', on: { click: () => this.importPalette() } }, '⬆ Importar'),
+      h('button.btn.small', { type: 'button', title: 'Descargar la paleta', on: { click: (e) => showMenu([
+        { label: '.hex (Lospec, Aseprite)', icon: '⬇', action: () => downloadBlob(new Blob([this.palette.map((c) => c.slice(1)).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.hex') },
+        { label: '.gpl (GIMP, Aseprite, Inkscape)', icon: '⬇', action: () => downloadBlob(new Blob(['GIMP Palette\nName: UltraGame\nColumns: 8\n#\n' + this.palette.map((c) => { const [r, g, b] = hexToRgb(c); return String(r).padStart(3) + ' ' + String(g).padStart(3) + ' ' + String(b).padStart(3) + '\t' + c; }).join('\n') + '\n'], { type: 'text/plain' }), 'paleta.gpl') },
+        { label: 'PNG (una fila, 1 px por color)', icon: '⬇', action: () => { const c = makeCanvas(Math.max(1, this.palette.length), 1), g = ctx2d(c); this.palette.forEach((col, i) => { g.fillStyle = col; g.fillRect(i, 0, 1, 1); }); c.toBlob((b) => { if (b) downloadBlob(b, 'paleta.png'); }, 'image/png'); } }
+      ], e.currentTarget) } }, '⬇ ▾')));
+  }
+  /** Importa una paleta desde un archivo de texto o una imagen */
+  importPalette() {
+    const inp = h('input', { type: 'file', accept: '.hex,.gpl,.pal,.txt,.ase,image/png,image/gif,image/webp,image/jpeg,image/bmp' });
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      if (f.size > 16 * 1048576) { toast('Archivo demasiado grande para una paleta', 'warn'); return; }
+      let list = [];
+      try {
+        if (/^image\//.test(f.type)) {
+          const bmp = await createImageBitmap(f), c = makeCanvas(Math.min(bmp.width, 2048), Math.min(bmp.height, 2048)), g = ctx2d(c);
+          g.drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+          list = imageColors(g.getImageData(0, 0, c.width, c.height), 256);
+        } else if (/\.ase$/i.test(f.name)) { toast('Los .ase de Adobe no están soportados: exporta la paleta como .gpl o .hex', 'warn', 6000); return; }
+        else list = parsePalette(await f.text());
+      } catch (e) { toast('No se pudo leer la paleta: ' + e.message, 'error'); return; }
+      if (!list.length) { toast('No se encontraron colores en «' + f.name + '»', 'warn'); return; }
+      this.setPalette(list, '__custom');
+      toast('Paleta importada: ' + list.length + ' colores' + (list.length >= 256 ? ' (máximo 256)' : ''), 'ok');
+    };
+    inp.click();
+  }
+  /** Generador de rampas: sombras→luces del color principal (con giro de tono) o degradado principal→secundario */
+  async rampDialog() {
+    let mode = 'shades', n = 6, shift = 20, add = 'append', prev;
+    const draw = () => { clear(prev); colorRamp(this.primary, this.secondary, n, mode, shift).forEach((c) => prev.appendChild(h('span.sw', { style: { background: c }, title: c }))); };
+    const ok = await dialog('Rampa de color', (b) => {
+      const modeSel = h('select', { on: { change: (e) => { mode = e.target.value; shiftRow.hidden = mode !== 'shades'; draw(); } } }, h('option', { value: 'shades' }, 'Sombras y luces del color principal'), h('option', { value: 'hsl' }, 'Del principal al secundario (tono)'), h('option', { value: 'rgb' }, 'Del principal al secundario (mezcla RGB)'));
+      const nIn = h('input', { type: 'range', min: 2, max: 16, value: n, on: { input: (e) => { n = +e.target.value; nVal.textContent = n; draw(); } } }), nVal = h('span.val', String(n));
+      const sIn = h('input', { type: 'range', min: 0, max: 90, value: shift, on: { input: (e) => { shift = +e.target.value; sVal.textContent = shift + '°'; draw(); } } }), sVal = h('span.val', shift + '°');
+      const shiftRow = h('div.field', h('label', 'Giro del tono (sombras frías, luces cálidas)'), sIn, sVal);
+      const addSel = h('select', { on: { change: (e) => { add = e.target.value; } } }, h('option', { value: 'append' }, 'Añadir a la paleta actual'), h('option', { value: 'replace' }, 'Sustituir la paleta'));
+      prev = h('div.swatches.ramp-preview');
+      b.appendChild(h('div.field', h('label', 'Tipo'), modeSel)); b.appendChild(h('div.field', h('label', 'Colores'), nIn, nVal)); b.appendChild(shiftRow);
+      b.appendChild(prev); b.appendChild(h('div.field', h('label', 'Resultado'), addSel));
+      draw();
+    }, [{ label: 'Cancelar', value: null }, { label: 'Crear rampa', kind: 'primary', value: true }]);
+    if (!ok) return;
+    const ramp = colorRamp(this.primary, this.secondary, n, mode, shift);
+    const list = add === 'replace' ? ramp : this.palette.concat(ramp.filter((c) => !this.palette.includes(c)));
+    this.setPalette(Array.from(new Set(list)).slice(0, 256), '__custom');
+    toast('Rampa de ' + ramp.length + ' colores ' + (add === 'replace' ? 'como paleta' : 'añadida a la paleta'), 'ok');
   }
   docColors() {
     const d = this.doc; if (!d) return [];
@@ -962,7 +1237,7 @@ export class PaintPanel {
       b.onclick = () => { this.stopAnim(); d.frame = i; this.changed(true); };
       strip.appendChild(b);
     });
-    el.appendChild(bar); el.appendChild(strip);
+    el.appendChild(this.section('frames', 'Fotogramas · ' + d.frames.length, h('div.paint-frame-body', bar, strip)));
   }
   renderStatus(p) {
     const el = this.statusEl; if (!el) return;

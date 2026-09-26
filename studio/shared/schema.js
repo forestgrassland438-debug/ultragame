@@ -227,7 +227,7 @@
     smoke: { label: 'Humo', cfg: { speed: { min: 20, max: 60 }, angle: { min: 250, max: 290 }, lifespan: { min: 1200, max: 2400 }, scale: { start: 0.6, end: 2.2 }, alpha: { start: 0.45, end: 0 }, color: [0x999999, 0x444444], frequency: 60, quantity: 1, gravityY: -20 } },
     sparks: { label: 'Chispas', cfg: { speed: { min: 150, max: 380 }, lifespan: { min: 250, max: 650 }, scale: { start: 0.3, end: 0 }, alpha: { start: 1, end: 0 }, color: [0xffffff, 0xffc94d], blendMode: 'add', frequency: 30, quantity: 3, gravityY: 500 } },
     magic: { label: 'Magia', cfg: { speed: { min: 10, max: 60 }, lifespan: { min: 600, max: 1400 }, scale: { start: 0.5, end: 0 }, alpha: { start: 1, end: 0 }, color: [0x8ec5ff, 0xd07bff], blendMode: 'add', frequency: 25, quantity: 1, x: { min: -24, max: 24 }, y: { min: -24, max: 24 } } },
-    rain: { label: 'Lluvia', cfg: { speedY: { min: 700, max: 900 }, speedX: { min: -40, max: -20 }, lifespan: 1200, scale: { start: 0.12, end: 0.12 }, alpha: { start: 0.5, end: 0.5 }, color: [0xaec8e8], frequency: 5, quantity: 4, stretch: 8, x: { min: -700, max: 700 } } },
+    rain: { label: 'Lluvia', cfg: { speedY: { min: 700, max: 900 }, speedX: { min: -40, max: -20 }, lifespan: 1200, scale: { start: 0.55, end: 0.55 }, alpha: { start: 0.6, end: 0.6 }, color: [0xc8daf0], frequency: 5, quantity: 4, angleAlign: true, x: { min: -700, max: 700 } } },
     snow: { label: 'Nieve', cfg: { speedY: { min: 40, max: 90 }, speedX: { min: -20, max: 20 }, lifespan: 9000, scale: { start: 0.25, end: 0.25 }, alpha: { start: 0.9, end: 0.9 }, color: [0xffffff], frequency: 40, quantity: 2, x: { min: -700, max: 700 } } },
     confetti: { label: 'Confeti', cfg: { speed: { min: 200, max: 420 }, angle: { min: 230, max: 310 }, lifespan: { min: 1500, max: 2600 }, scale: { start: 0.35, end: 0.25 }, alpha: { start: 1, end: 0.8 }, tint: [0xff6b6b, 0xffd43b, 0x69db7c, 0x4dabf7, 0xda77f2], frequency: 30, quantity: 3, gravityY: 420, rotate: { start: 0, end: 720 } } },
     bubbles: { label: 'Burbujas', cfg: { speed: { min: 20, max: 60 }, angle: { min: 260, max: 280 }, lifespan: { min: 2000, max: 3500 }, scale: { start: 0.2, end: 0.6 }, alpha: { start: 0.6, end: 0 }, color: [0xbde0fe], frequency: 120, quantity: 1, gravityY: -30, x: { min: -40, max: 40 } } },
@@ -240,27 +240,34 @@
   /* --------------------------------------------------------------- física */
   S.PHYSICS_2D = [
     { key: 'type', label: 'Física', type: 'select', def: 'none', options: [['none', 'Ninguna'], ['dynamic', 'Dinámica (cae, choca)'], ['static', 'Estática (suelo, muro)'], ['kinematic', 'Cinemática (se mueve sin gravedad)']] },
-    { key: 'gravity', label: 'Le afecta la gravedad', type: 'bool', def: true },
+    { key: 'gravity', label: 'Le afecta la gravedad', type: 'bool', def: true, types: ['dynamic'] },
     { key: 'bounce', label: 'Rebote', type: 'number', def: 0, min: 0, max: 1, step: 0.05 },
-    { key: 'drag', label: 'Rozamiento del aire', type: 'number', def: 0, min: 0, max: 5000, step: 10 },
-    { key: 'worldBounds', label: 'Choca con los bordes', type: 'bool', def: true },
+    { key: 'drag', label: 'Rozamiento del aire', type: 'number', def: 0, min: 0, max: 5000, step: 10, types: ['dynamic', 'kinematic'] },
+    { key: 'worldBounds', label: 'Choca con los bordes', type: 'bool', def: true, types: ['dynamic', 'kinematic'] },
+    // forma del cuerpo (lo que choca): por defecto se ajusta a los píxeles visibles del sprite
+    { key: 'fit', label: 'Tamaño del cuerpo', type: 'select', def: 'trim', options: [['trim', 'Ajustado al dibujo (sin bordes transparentes)'], ['full', 'Toda la imagen'], ['custom', 'A medida']] },
+    { key: 'bodyW', label: 'Ancho del cuerpo (0 = auto)', type: 'number', def: 0, min: 0, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyH', label: 'Alto del cuerpo (0 = auto)', type: 'number', def: 0, min: 0, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyX', label: 'Desplazamiento X del cuerpo', type: 'number', def: 0, min: -100000, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
+    { key: 'bodyY', label: 'Desplazamiento Y del cuerpo', type: 'number', def: 0, min: -100000, max: 100000, step: 1, when: { key: 'fit', eq: 'custom' } },
     { key: 'circle', label: 'Cuerpo circular', type: 'bool', def: false },
-    { key: 'pushable', label: 'Se puede empujar', type: 'bool', def: true },
-    { key: 'solid', label: 'Sólido para otros dinámicos', type: 'bool', def: false },
+    { key: 'oneWay', label: 'Plataforma de un sentido (se atraviesa desde abajo)', type: 'bool', def: false, types: ['static', 'kinematic'], engine: 'arcade' },
+    { key: 'pushable', label: 'Se puede empujar', type: 'bool', def: true, types: ['dynamic'], engine: 'arcade' },
+    { key: 'solid', label: 'Sólido para otros dinámicos', type: 'bool', def: false, types: ['dynamic', 'kinematic'], engine: 'arcade' },
     // solo con el motor de cuerpos rígidos (escena 2D con «Física: cuerpos rígidos»)
-    { key: 'density', label: 'Densidad (rígida)', type: 'number', def: 1, min: 0.01, max: 1000, step: 0.1 },
-    { key: 'friction', label: 'Fricción (rígida)', type: 'number', def: 0.4, min: 0, max: 5, step: 0.05 },
-    { key: 'fixedRotation', label: 'No gira (rígida)', type: 'bool', def: false },
+    { key: 'density', label: 'Densidad (rígida)', type: 'number', def: 1, min: 0.01, max: 1000, step: 0.1, engine: 'rigid' },
+    { key: 'friction', label: 'Fricción (rígida)', type: 'number', def: 0.4, min: 0, max: 5, step: 0.05, engine: 'rigid' },
+    { key: 'fixedRotation', label: 'No gira (rígida)', type: 'bool', def: false, engine: 'rigid' },
     // luces 2D: el objeto tapa la luz
-    { key: 'shadow', label: 'Proyecta sombra (luces 2D)', type: 'bool', def: false }
+    { key: 'shadow', label: 'Proyecta sombra (luces 2D)', type: 'bool', def: false, always: true }
   ];
   S.PHYSICS_3D = [
     { key: 'type', label: 'Física', type: 'select', def: 'none', options: [['none', 'Ninguna'], ['static', 'Estática (caja)'], ['mesh', 'Estática exacta (malla: casas, rampas)'], ['body', 'Cuerpo dinámico'], ['character', 'Personaje'], ['trigger', 'Zona (sin choque)']] },
-    { key: 'shape', label: 'Forma del cuerpo', type: 'select', def: 'box', options: [['box', 'Caja'], ['sphere', 'Esfera']] },
-    { key: 'mass', label: 'Masa', type: 'number', def: 1, min: 0.01, max: 10000, step: 0.1 },
-    { key: 'bounce', label: 'Rebote', type: 'number', def: 0.2, min: 0, max: 1, step: 0.05 },
-    { key: 'radius', label: 'Radio (personaje/esfera)', type: 'number', def: 0.4, min: 0.05, max: 50, step: 0.05 },
-    { key: 'height', label: 'Altura (personaje)', type: 'number', def: 1.8, min: 0.1, max: 50, step: 0.05 }
+    { key: 'shape', label: 'Forma del cuerpo', type: 'select', def: 'box', options: [['box', 'Caja'], ['sphere', 'Esfera']], types: ['body'] },
+    { key: 'mass', label: 'Masa', type: 'number', def: 1, min: 0.01, max: 10000, step: 0.1, types: ['body'] },
+    { key: 'bounce', label: 'Rebote', type: 'number', def: 0.2, min: 0, max: 1, step: 0.05, types: ['static', 'mesh', 'body'] },
+    { key: 'radius', label: 'Radio (personaje/esfera)', type: 'number', def: 0.4, min: 0.05, max: 50, step: 0.05, types: ['character', 'body'] },
+    { key: 'height', label: 'Altura (personaje)', type: 'number', def: 1.8, min: 0.1, max: 50, step: 0.05, types: ['character'] }
   ];
 
   /* --------------------------------------------------------------- comportamientos (sin código) */
@@ -286,9 +293,10 @@
     cameraFollow: { kind: '2d', label: 'La cámara me sigue', icon: '🎥', params: [
       { key: 'lerp', label: 'Suavidad (0..1)', type: 'number', def: 0.12, min: 0.01, max: 1, step: 0.01 }, { key: 'zoom', label: 'Zoom', type: 'number', def: 1, min: 0.05, max: 20, step: 0.05 },
       { key: 'bounds', label: 'Limitar a este tamaño de mundo (ancho×alto, vacío = sin límite)', type: 'text', def: '' }] },
-    chase: { kind: 'both', label: 'Perseguir', icon: '👾', desc: 'Va hacia el objeto con la etiqueta indicada cuando está cerca.', params: [
+    chase: { kind: 'both', label: 'Perseguir', icon: '👾', desc: 'Va hacia el objeto con la etiqueta indicada cuando está cerca. En 3D rodea paredes y obstáculos buscando un camino (A*).', params: [
       { key: 'target', label: 'Etiqueta del objetivo', type: 'tag', def: 'jugador' }, { key: 'speed', label: 'Velocidad', type: 'number', def: 120, step: 5 },
-      { key: 'range', label: 'Distancia de detección', type: 'number', def: 400, min: 0, step: 10 }] },
+      { key: 'range', label: 'Distancia de detección', type: 'number', def: 400, min: 0, step: 10 },
+      { key: 'avoid', label: 'Rodear paredes y obstáculos (3D)', type: 'bool', def: true }] },
     patrol: { kind: 'both', label: 'Patrullar', icon: '↔️', params: [
       { key: 'axis', label: 'Eje', type: 'select', def: 'x', options: [['x', 'Horizontal (X)'], ['y', 'Vertical (Y en 2D)'], ['z', 'Profundidad (Z en 3D)']] },
       { key: 'distance', label: 'Distancia', type: 'number', def: 160, min: 0, step: 5 }, { key: 'speed', label: 'Velocidad', type: 'number', def: 80, min: 0, step: 5 }] },
@@ -364,7 +372,7 @@
     callFunction: { label: 'Llamar a una función del script de escena', icon: 'ƒ', params: [{ key: 'name', label: 'Nombre de la función', type: 'text', def: 'miFuncion' }] },
     log: { label: 'Escribir en la consola', icon: '🖨️', params: [{ key: 'message', label: 'Mensaje ({variable} se sustituye)', type: 'text', def: 'Puntos: {puntos}' }] },
     impulse: { label: 'Empujar (impulso)', icon: '👊', params: [TARGET, { key: 'x', label: 'X', type: 'number', def: 0, step: 10 }, { key: 'y', label: 'Y', type: 'number', def: -300, step: 10 }, { key: 'z', label: 'Z (3D)', type: 'number', def: 0, step: 0.5 }] },
-    setWeather: { label: 'Cambiar el clima', icon: '🌦️', params: [{ key: 'weather', label: 'Clima', type: 'select', def: 'rain', options: [['clear', 'Despejado'], ['cloudy', 'Nublado (3D)'], ['overcast', 'Cubierto (3D)'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla (3D)']] }] },
+    setWeather: { label: 'Cambiar el clima', icon: '🌦️', params: [{ key: 'weather', label: 'Clima', type: 'select', def: 'rain', options: [['clear', 'Despejado'], ['cloudy', 'Nublado (3D)'], ['overcast', 'Cubierto (3D)'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla']] }] },
     setTimeOfDay: { label: 'Poner la hora del día (3D)', icon: '🕒', params: [{ key: 'hour', label: 'Hora (0..24)', type: 'number', def: 20, min: 0, max: 24, step: 0.5 }] },
     addDecal: { label: 'Marca en el suelo o pared (3D)', icon: '🩸', params: [{ key: 'kind', label: 'Tipo', type: 'select', def: 'scorch', options: [['bullet', 'Agujero de bala'], ['blood', 'Sangre'], ['pool', 'Charco'], ['scorch', 'Quemadura'], ['crack', 'Grieta']] }, { key: 'at', label: 'Bajo', type: 'target', def: 'self' }, { key: 'size', label: 'Tamaño', type: 'number', def: 1.5, min: 0.05, max: 50, step: 0.1 }] },
     web3Connect: { label: 'Conectar la cartera (web3)', icon: '🦊', params: [] },
@@ -439,9 +447,11 @@
   S.cleanWeb3 = function (w) {
     w = w && typeof w === 'object' ? w : {};
     var d = S.defaultWeb3(), ids = {};
-    var chains = cleanList(w.chains, 20, function (c) { c = Number(c); return Number.isInteger(c) && c > 0 && c < 9007199254740991 ? c : null; });
-    return { enabled: S.bool(w.enabled, false), mode: w.mode === 'wallet' ? 'wallet' : 'mock', chains: chains.length ? chains : d.chains,
-      defaultChain: Number.isInteger(Number(w.defaultChain)) && Number(w.defaultChain) > 0 ? Number(w.defaultChain) : (chains[0] || d.defaultChain),
+    var seen = {}, chains = cleanList(w.chains, 20, function (c) { c = Number(c); if (!(Number.isInteger(c) && c > 0 && c < 9007199254740991) || seen[c]) return null; seen[c] = 1; return c; });
+    if (!chains.length) chains = d.chains;
+    // la red principal siempre es una de las permitidas
+    return { enabled: S.bool(w.enabled, false), mode: w.mode === 'wallet' ? 'wallet' : 'mock', chains: chains,
+      defaultChain: chains.indexOf(Number(w.defaultChain)) >= 0 ? Number(w.defaultChain) : chains[0],
       maxValue: typeof w.maxValue === 'string' && /^\d{1,12}(\.\d{1,18})?$/.test(w.maxValue) ? w.maxValue : d.maxValue,
       contracts: cleanList(w.contracts, 50, function (c) {
         if (!c || typeof c !== 'object') return null; var id = S.id(c.id); if (!id || ids[id]) return null; ids[id] = 1;
@@ -479,7 +489,7 @@
   S.SCENE_ENV_2D = [
     { key: 'engine', label: 'Física', type: 'select', def: 'arcade', options: [['arcade', 'Arcade (rápida: plataformas, naves)'], ['rigid', 'Cuerpos rígidos (giran, se apilan, uniones)']] },
     { key: 'lights', label: 'Luces 2D con sombras', type: 'bool', def: false }, { key: 'ambient', label: 'Luz ambiente (color «apagado»)', type: 'color', def: '#1a1e30' },
-    { key: 'weather', label: 'Clima', type: 'select', def: 'none', options: [['none', 'Ninguno'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve']] }
+    { key: 'weather', label: 'Clima', type: 'select', def: 'none', options: [['none', 'Ninguno'], ['rain', 'Lluvia'], ['storm', 'Tormenta'], ['snow', 'Nieve'], ['fog', 'Niebla']] }
   ];
 
   /* --------------------------------------------------------------- saneado (entrada no confiable: archivo, red) */
@@ -531,9 +541,11 @@
     o.nodes.forEach(function (n) { if (n.parent && !ids[n.parent]) n.parent = null; });
     var byId = {}; o.nodes.forEach(function (n) { byId[n.id] = n; });
     o.nodes.forEach(function (n) { var seen = {}, p = n.parent; while (p) { if (seen[p] || p === n.id) { n.parent = null; break; } seen[p] = 1; p = byId[p] ? byId[p].parent : null; } });
+    var evIds = {};
     o.events = cleanList(sc.events, 500, function (ev) {
       if (!ev || typeof ev !== 'object') return null;
-      return { id: S.id(ev.id) || S.uid('e'), enabled: S.bool(ev.enabled, true), once: S.bool(ev.once, false), comment: S.str(ev.comment, '', 200),
+      var eid = S.id(ev.id); if (!eid || evIds[eid]) eid = S.uid('e'); evIds[eid] = 1; // ids únicos: el editor localiza cada evento por su id
+      return { id: eid, enabled: S.bool(ev.enabled, true), once: S.bool(ev.once, false), comment: S.str(ev.comment, '', 200),
         conditions: cleanList(ev.conditions, 8, function (c) { var r = cleanBlock(c, S.CONDITIONS); if (r) r.not = S.bool(c.not, false); return r; }),
         actions: cleanList(ev.actions, 24, function (a) { return cleanBlock(a, S.ACTIONS); }) };
     });

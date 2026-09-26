@@ -42,7 +42,10 @@ test('HTML único conserva scripts con comentarios HTML y String.raw sin romper 
   let hooks; const context = { window: {}, UGStudio: { runtime: { registerScript: (_id, fn) => { hooks = fn({}, {}, null); } } } };
   scripts.forEach((s) => vm.runInNewContext(s, context));
   assert.equal(hooks.onStart(), '</script><!--');
-  assert.equal(Buffer.from(context.window.UGS_ASSETS.a.split(',')[1], 'base64').toString(), 'assets/a.bin');
+  // los recursos van en un bloque JSON (no ejecutable) y no dentro de un script
+  const block = /<script type="application\/json" id="ugs-assets">([^<]*)<\/script>/.exec(html);
+  assert.ok(block, 'falta el bloque de recursos');
+  assert.equal(Buffer.from(JSON.parse(block[1]).a.split(',')[1], 'base64').toString(), 'assets/a.bin');
 }));
 
 test('La exportación fija proyecto y almacén aunque cambie el editor durante await', async () => withSources(async () => {

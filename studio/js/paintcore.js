@@ -34,6 +34,92 @@ export function hslToRgb(h, s, l) {
   const f = (t) => { t = (t % 1 + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 0.5 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
   return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
 }
+/**
+ * Lee una paleta de texto: .hex (Lospec), .gpl (GIMP/Aseprite/Inkscape), .pal (JASC, Paint Shop Pro), .txt (Paint.NET,
+ * AARRGGBB) o cualquier texto con colores #rgb / #rrggbb. Devuelve hasta 256 colores '#rrggbb' sin repetir.
+ */
+export function parsePalette(text) {
+  const out = [], seen = new Set(), add = (r, g, b) => { if (out.length >= 256) return; const c = rgbToHex(r, g, b); if (!seen.has(c)) { seen.add(c); out.push(c); } };
+  const src = String(text || '').replace(/^﻿/, '').slice(0, 200000), lines = src.split(/\r?\n/);
+  const head = (lines[0] || '').trim();
+  if (/^GIMP Palette/i.test(head)) {
+    // GIMP: «R G B nombre» tras la cabecera (Name:, Columns:, comentarios #)
+    lines.slice(1).forEach((l) => { const m = /^\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})(\s|$)/.exec(l); if (m) add(+m[1], +m[2], +m[3]); });
+    return out;
+  }
+  if (/^JASC-PAL/i.test(head)) {
+    lines.slice(3).forEach((l) => { const m = /^\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})\s*$/.exec(l); if (m) add(+m[1], +m[2], +m[3]); });
+    return out;
+  }
+  lines.forEach((raw) => {
+    const l = raw.trim(); if (!l || l[0] === ';') return; // Paint.NET: líneas de comentario con ;
+    let m = /^([0-9a-f]{2})([0-9a-f]{6})$/i.exec(l); // AARRGGBB (Paint.NET)
+    if (m) { const v = parseInt(m[2], 16); add((v >> 16) & 255, (v >> 8) & 255, v & 255); return; }
+    m = /^#?([0-9a-f]{6})$/i.exec(l); // RRGGBB (Lospec .hex)
+    if (m) { const v = parseInt(m[1], 16); add((v >> 16) & 255, (v >> 8) & 255, v & 255); return; }
+    const re = /#([0-9a-f]{6}|[0-9a-f]{3})\b/gi; let t; // texto libre (CSS, listas…)
+    while ((t = re.exec(l))) { let hx = t[1]; if (hx.length === 3) hx = hx.split('').map((c) => c + c).join(''); const v = parseInt(hx, 16); add((v >> 16) & 255, (v >> 8) & 255, v & 255); }
+  });
+  return out;
+}
+/** Colores distintos de una imagen (píxeles opacos, en orden de aparición), hasta max */
+export function imageColors(imgData, max) {
+  const d = imgData.data, out = [], seen = new Set(), lim = Math.max(1, Math.min(256, max || 256));
+  for (let i = 0; i < d.length && out.length < lim; i += 4) { if (d[i + 3] < 128) continue; const c = rgbToHex(d[i], d[i + 1], d[i + 2]); if (!seen.has(c)) { seen.add(c); out.push(c); } }
+  return out;
+}
+/**
+ * Rampa de n colores (pixel art). mode: 'rgb' o 'hsl' = de a hasta b; 'shades' = de sombra a luz del color a, con las
+ * sombras hacia el azul y las luces hacia el amarillo (shift = grados de giro del tono en los extremos).
+ */
+export function colorRamp(a, b, n, mode, shift) {
+  n = Math.max(2, Math.min(32, n | 0)); const out = [], A = hexToRgb(a), B = hexToRgb(b);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    if (mode === 'rgb') { out.push(rgbToHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t)); continue; }
+    if (mode === 'hsl') {
+      const [h0, s0, l0] = rgbToHsl(A[0], A[1], A[2]), [h1, s1, l1] = rgbToHsl(B[0], B[1], B[2]);
+      let dh = h1 - h0; if (dh > 0.5) dh -= 1; if (dh < -0.5) dh += 1; // por el camino corto del círculo de tonos
+      const hh = s0 < 0.02 ? h1 : s1 < 0.02 ? h0 : h0 + dh * t; // un gris no tiene tono: se usa el del otro color
+      out.push(rgbToHex(...hslToRgb(((hh % 1) + 1) % 1, s0 + (s1 - s0) * t, l0 + (l1 - l0) * t)));
+      continue;
+    }
+    const [h, s] = rgbToHsl(A[0], A[1], A[2]), k = t * 2 - 1, sh = Math.max(0, Math.min(180, shift === undefined ? 20 : shift)) / 360;
+    const target = k < 0 ? 0.66 : 0.16; let d = target - h; if (d > 0.5) d -= 1; if (d < -0.5) d += 1;
+    const hh = s < 0.02 ? h : h + Math.sign(d) * Math.min(Math.abs(d), sh * Math.abs(k));
+    const S = Math.max(0, Math.min(1, s * (1 - 0.2 * Math.abs(k)) + (k < 0 ? 0.06 * -k : 0)));
+    out.push(rgbToHex(...hslToRgb(((hh % 1) + 1) % 1, S, 0.1 + t * 0.8)));
+  }
+  return out;
+}
+/**
+ * Amplía pixel art con Scale2x / Scale3x (EPX, AdvMAME): suaviza las diagonales y las curvas sin mezclar colores (cada
+ * píxel nuevo es uno de los originales). factor 2, 3 o 4 (= Scale2x dos veces). src y el resultado: ImageData.
+ */
+export function scalePixels(src, factor) {
+  if (factor === 4) return scalePixels(scalePixels(src, 2), 2);
+  const n = factor === 3 ? 3 : 2, w = src.width, h = src.height, W = w * n, H = h * n;
+  const S = new Uint32Array(src.data.buffer.slice(src.data.byteOffset, src.data.byteOffset + w * h * 4)), out = new ImageData(W, H), D = new Uint32Array(out.data.buffer);
+  const at = (x, y) => S[(y < 0 ? 0 : y >= h ? h - 1 : y) * w + (x < 0 ? 0 : x >= w ? w - 1 : x)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const A = at(x - 1, y - 1), B = at(x, y - 1), C = at(x + 1, y - 1), Dd = at(x - 1, y), E = at(x, y), F = at(x + 1, y), G = at(x - 1, y + 1), Hh = at(x, y + 1), I = at(x + 1, y + 1);
+    const o = y * n * W + x * n;
+    if (n === 2) {
+      let e0 = E, e1 = E, e2 = E, e3 = E;
+      if (B !== Hh && Dd !== F) { e0 = Dd === B ? Dd : E; e1 = B === F ? F : E; e2 = Dd === Hh ? Dd : E; e3 = Hh === F ? F : E; }
+      D[o] = e0; D[o + 1] = e1; D[o + W] = e2; D[o + W + 1] = e3;
+    } else {
+      let e = [E, E, E, E, E, E, E, E, E];
+      if (B !== Hh && Dd !== F) {
+        e = [Dd === B ? Dd : E, (Dd === B && E !== C) || (B === F && E !== A) ? B : E, B === F ? F : E,
+          (Dd === B && E !== G) || (Dd === Hh && E !== A) ? Dd : E, E, (B === F && E !== I) || (Hh === F && E !== C) ? F : E,
+          Dd === Hh ? Dd : E, (Dd === Hh && E !== I) || (Hh === F && E !== G) ? Hh : E, Hh === F ? F : E];
+      }
+      for (let j = 0; j < 3; j++) { D[o + j * W] = e[j * 3]; D[o + j * W + 1] = e[j * 3 + 1]; D[o + j * W + 2] = e[j * 3 + 2]; }
+    }
+  }
+  return out;
+}
 export function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, w | 0); c.height = Math.max(1, h | 0); return c; }
 export function ctx2d(c) { return c.getContext('2d', { willReadFrequently: true }); }
 
@@ -149,6 +235,13 @@ export class PaintDoc {
     w = Math.max(1, Math.min(8192, w | 0)); h = Math.max(1, Math.min(8192, h | 0));
     this.frames.forEach((fr) => { fr.cels = fr.cels.map((c) => { const n = makeCanvas(w, h), g = ctx2d(n); g.imageSmoothingEnabled = !!smooth; g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, w, h); return n; }); });
     this.w = w; this.h = h; this.selection = null;
+  }
+  /** Amplía todas las capas y fotogramas con Scale2x (2), Scale3x (3) o Scale4x (4) */
+  scalePixelArt(factor) {
+    const f = factor === 3 ? 3 : factor === 4 ? 4 : 2;
+    if (this.w * f > 8192 || this.h * f > 8192) throw new Error('El resultado pasaría de 8192 px');
+    this.frames.forEach((fr) => { fr.cels = fr.cels.map((c) => { const img = scalePixels(ctx2d(c).getImageData(0, 0, this.w, this.h), f), n = makeCanvas(img.width, img.height); ctx2d(n).putImageData(img, 0, 0); return n; }); });
+    this.w *= f; this.h *= f; this.selection = null;
   }
   crop(x, y, w, h) {
     x = Math.round(x); y = Math.round(y); w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));

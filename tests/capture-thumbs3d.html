@@ -83,11 +83,13 @@ async function thumb(id, frames) {
 window.__smoke3d = { done: false };
 async function runSmoke(backends) {
   var tot = { errors: 0, leaks: 0, fails: 0, runs: 0 }, R = backends || ['webgpu', 'webgl2', 'webgl'];
-  // ?only=shooter,city limita los juegos; ?r=webgl2 limita los backends
+  // ?only=shooter,city limita los juegos; ?r=webgl2 limita los backends; ?frames=300 acorta la prueba
   var qs = new URLSearchParams(location.search), only = qs.get('only'), list = GAMES.filter(function (x) { return !only || only.split(',').indexOf(x.id) >= 0; });
   if (qs.get('r')) R = qs.get('r').split(',');
   for (var i = 0; i < list.length; i++) for (var j = 0; j < R.length; j++) {
-    try { var r = await smoke(list[i].id, list[i].frames * 2, R[j]); tot.errors += r.errors; tot.leaks += r.leaks; }
+    // ?frames=N fija los pasos por juego (útil con renderizado por software, que es lento)
+    var nf = +qs.get('frames') > 0 ? Math.min(5000, +qs.get('frames') | 0) : list[i].frames * 2;
+    try { var r = await smoke(list[i].id, nf, R[j]); tot.errors += r.errors; tot.leaks += r.leaks; }
     catch (e) { tot.fails++; log(list[i].id + ' · ' + R[j] + ': FALLO ' + e.message); }
     tot.runs++;
   }

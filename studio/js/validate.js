@@ -71,11 +71,14 @@ export function checkProject(project, sizes) {
 /** Ejecuta el juego en un iframe aislado invisible y recoge errores y avisos */
 export function smokeRun(app, project, ms) {
   return new Promise(async (resolve) => {
-    const logs = [], player = app.player, files = await player.files(project), scripts = player.scripts(project);
+    const logs = [], player = app.player;
+    let files, scripts;
+    try { files = await player.files(project); scripts = player.scripts(project); }
+    catch (e) { resolve({ started: false, logs: [{ level: 'error', text: 'No se pudo preparar la prueba: ' + (e && e.message || e), source: 'Studio' }], why: 'failed' }); return; }
     const f = h('iframe', { sandbox: 'allow-scripts', title: 'Prueba automática', style: { position: 'fixed', left: '-10000px', top: '0', width: '640px', height: '360px', border: '0' } });
     f.src = 'player.html#origin=' + encodeURIComponent(location.origin);
-    let started = false, done = false;
-    const finish = (why) => { if (done) return; done = true; window.removeEventListener('message', onMsg); try { f.contentWindow.postMessage({ type: 'stop' }, '*'); } catch (e) { /* cerrado */ } setTimeout(() => f.remove(), 100); resolve({ started, logs, why }); };
+    let started = false, done = false, limit = 0;
+    const finish = (why) => { if (done) return; done = true; clearTimeout(limit); window.removeEventListener('message', onMsg); try { f.contentWindow.postMessage({ type: 'stop' }, '*'); } catch (e) { /* cerrado */ } setTimeout(() => f.remove(), 100); resolve({ started, logs, why }); };
     const onMsg = (e) => {
       if (e.source !== f.contentWindow) return; const m = e.data; if (!m || typeof m !== 'object') return;
       if (m.type === 'ready') f.contentWindow.postMessage({ type: 'run', project, files, scripts, renderer: 'auto', startScene: null, web3: '', backend: null }, '*');
@@ -86,7 +89,7 @@ export function smokeRun(app, project, ms) {
     };
     window.addEventListener('message', onMsg);
     document.body.appendChild(f);
-    setTimeout(() => finish(started ? 'ok' : 'timeout'), 20000);
+    limit = setTimeout(() => finish(started ? 'ok' : 'timeout'), 20000);
   });
 }
 
@@ -95,7 +98,8 @@ export async function validateAndTest(app) {
   app.code.commit.flush();
   const project = JSON.parse(JSON.stringify(ed.project));
   const sizes = {};
-  for (const a of project.assets) { try { const d = app.player.cache.get(a.file + '|' + (ed.assetVersion[a.id] || 0)) || await ed.store.assetData(ed.projectId, a.file); sizes[a.id] = d.byteLength; } catch (e) { sizes[a.id] = 0; } }
+  // misma clave que la caché de Jugar (proyecto|archivo|versión): lo ya leído no se vuelve a pedir al disco
+  for (const a of project.assets) { try { const d = app.player.cache.get(ed.projectId + '|' + a.file + '|' + (ed.assetVersion[a.id] || 0)) || await ed.store.assetData(ed.projectId, a.file); sizes[a.id] = d.byteLength; } catch (e) { sizes[a.id] = 0; } }
   const results = checkProject(project, sizes);
   let box = null;
   const draw = (extra) => {

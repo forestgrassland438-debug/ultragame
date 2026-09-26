@@ -666,10 +666,14 @@
   }
 
   /* ============================================================ INTERACCIÓN / ESCENAS */
+  /** Como un navegador real: el evento de puntero y, para el ratón, su evento de compatibilidad (mousedown/mouseup),
+   * que es por donde el motor recibe cada botón (así funcionan apuntar + disparar con dos botones a la vez). */
   function pointer(canvas, type, x, y, id) {
-    var r = canvas.getBoundingClientRect();
-    var ev = new PointerEvent(type, { clientX: r.left + x * r.width / 64, clientY: r.top + y * r.height / 64, pointerId: id || 1, pointerType: 'mouse', isPrimary: true, bubbles: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    var r = canvas.getBoundingClientRect(), cx = r.left + x * r.width / 64, cy = r.top + y * r.height / 64, buttons = type === 'pointerup' ? 0 : 1;
+    var ev = new PointerEvent(type, { clientX: cx, clientY: cy, pointerId: id || 1, pointerType: 'mouse', isPrimary: true, bubbles: true, button: type === 'pointermove' ? -1 : 0, buttons: buttons });
     (type === 'pointerdown' ? canvas : window).dispatchEvent(ev);
+    var compat = type === 'pointerdown' ? 'mousedown' : type === 'pointerup' ? 'mouseup' : 'mousemove';
+    (compat === 'mousedown' ? canvas : window).dispatchEvent(new MouseEvent(compat, { clientX: cx, clientY: cy, bubbles: true, button: 0, buttons: buttons }));
   }
   suite('Entrada y escenas', function (t) {
     var K = null;
@@ -1046,7 +1050,8 @@
     suites = UNIT.slice();
     var backends = await detect(); R.backends = backends;
     var qs = new URLSearchParams(location.search), only = qs.get('only'), filterB = qs.get('backend');
-    var BK = filterB ? backends.filter(function (x) { return x === filterB; }) : backends;
+    // ?backend=webgl2 o una lista: ?backend=webgl2,webgl,canvas (p. ej. sin WebGPU en máquinas sin GPU)
+    var BK = filterB ? backends.filter(function (x) { return filterB.split(',').indexOf(x) >= 0; }) : backends;
     BK.forEach(function (k) { renderSuite(k); });
     if (BK.indexOf('webgl') >= 0) renderSuite('webgl', 'webgl1 sin instancing (legado)', { instancing: false });
     if (document.getElementById('leaks').checked && qs.get('leaks') !== '0') BK.forEach(leakSuite);

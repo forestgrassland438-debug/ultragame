@@ -1,5 +1,6 @@
 /* UltraGame Studio · vista de edición 3D: cámara orbital del editor, rejilla, iconos de luces/cámaras,
  * selección por rayo y gizmos de mover/rotar/escalar (arrastre sobre el eje exacto, como en Unity/Godot). */
+import { wheelSpeed } from './navigation.js';
 const S = window.UGStudio.schema, RT = window.UGStudio.runtime, UG = window.UG, V3 = UG.Vec3, DEG = Math.PI / 180;
 const AXES = { x: new V3(1, 0, 0), y: new V3(0, 1, 0), z: new V3(0, 0, 1) }, AXCOL = { x: 0xff5c5c, y: 0x5ce67a, z: 0x5c9dff };
 
@@ -8,7 +9,7 @@ export class Viewport3D {
     this.app = app; this.host = host; this.kind = '3d'; this.game = null; this.scene = null; this.built = null; this.loaded = new Map();
     this.tool = 'select'; this.snap = true; this.snapStep = 0.5; this.drag = null; this.destroyed = false; this.keys = new Set();
     this.orbit = { target: new V3(0, 0, 0), yaw: 0.7, pitch: 0.55, dist: 18, inited: false };
-    this.helpers = []; this.gizmo = null; this.selBox = null;
+    this.helpers = []; this.gizmo = null; this.selBox = null; this.showColliders = true;
   }
   mount() {
     const self = this, w = Math.max(64, this.host.clientWidth), h = Math.max(64, this.host.clientHeight);
@@ -32,7 +33,7 @@ export class Viewport3D {
     sc.input.on('pointerdown', (p) => this.onDown(p));
     sc.input.on('pointermove', (p) => this.onMove(p));
     sc.input.on('pointerup', (p) => this.onUp(p));
-    sc.input.on('wheel', (p, objs, dx, dy) => { this.orbit.dist = Math.max(0.5, Math.min(2000, this.orbit.dist * Math.exp(dy * 0.0012))); });
+    sc.input.on('wheel', (p, objs, dx, dy) => { this.orbit.dist = Math.max(0.5, Math.min(2000, this.orbit.dist * Math.exp(dy * 0.0012 * wheelSpeed('scene3d')))); });
     if (!sc.textures.exists('ugs-grid')) sc.textures.generate('ugs-grid', 256, 256, (ctx, w, h) => {
       ctx.clearRect(0, 0, w, h); ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 1;
       for (let i = 0; i <= 8; i++) { const v = Math.round(i * w / 8) + 0.5; ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, h); ctx.moveTo(0, v); ctx.lineTo(w, v); ctx.stroke(); }
@@ -296,8 +297,25 @@ export class Viewport3D {
     const o = this.overlay; o.clear();
     this.fitHud();
     const f = this.hudFit; o.lineStyle(1, 0x6d83ff, 0.5).strokeRect(f.x, f.y, f.w, f.h);
+    if (this.showColliders) this.drawColliders(o, v);
     for (const id of ed.selection) { const e = this.built.byNode[id]; if (!e || e.is3d || !e.obj) continue; try { const b = e.obj.getBounds(); o.lineStyle(1.5, 0x3fd6b4, 1).strokeRect(f.x + b.x * f.s, f.y + b.y * f.s, b.width * f.s, b.height * f.s); } catch (err) { /* sin límites */ } }
     const info = document.getElementById('vp-info'); if (info && this.app.viewport === this) { const t = this.orbit.target; info.textContent = 'objetivo ' + t.x.toFixed(1) + ', ' + t.y.toFixed(1) + ', ' + t.z.toFixed(1) + '  ·  dist ' + this.orbit.dist.toFixed(1); }
+  }
+  /** Colisionadores 3D tal como los creará el juego: naranja estático, amarillo dinámico, azul personaje, rosa zona */
+  drawColliders(g, v) {
+    const ed = this.app.editor, rt = this.built.rt, sel = new Set(ed.selection);
+    let seg = null;
+    for (const n of ed.scene.nodes) {
+      const ph = n.physics; if (!ph || ph.type === 'none') continue;
+      const e = this.built.byNode[n.id]; if (!e || !e.is3d || !e.obj) continue;
+      let s = null; try { s = rt.colliderShape3D(e); } catch (err) { s = null; }
+      if (!s) continue;
+      if (!seg) seg = RT.projector3D(v);
+      const on = sel.has(n.id), exact = s.type === 'mesh';
+      // malla exacta: choca con los triángulos visibles (se puede entrar en una casa); su caja solo orienta, tenue
+      g.lineStyle(on ? 2 : 1, RT.COLLIDER_COLORS_3D[s.type] || 0xff9f43, exact ? (on ? 0.6 : 0.18) : (on ? 1 : 0.75));
+      RT.drawShape3D(g, seg, s);
+    }
   }
   applyTransforms() {
     if (!this.built) return this.rebuild();

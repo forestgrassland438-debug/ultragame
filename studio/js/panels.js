@@ -7,6 +7,7 @@ import { DEFAULT_SCRIPT } from './editor.js';
 
 const S = window.UGStudio.schema;
 const TYPE_ICON = { image: '🖼️', audio: '🔊', model: '🗿', tilemap: '🗺️', font: '🔤', data: '📄' };
+const ASSET_TYPE_LABEL = { image: 'imagen', audio: 'sonido', model: 'modelo 3D', tilemap: 'mapa', font: 'fuente', data: 'datos' };
 
 /* =================================================================== escenas */
 export class ScenesPanel {
@@ -52,6 +53,9 @@ export class TreePanel {
     ed.on('change', (d) => { if (d.kind !== 'transform' && d.kind !== 'assets') this.render(); });
     this.filter.addEventListener('input', () => this.render());
     this.filter.addEventListener('keydown', (e) => e.stopPropagation());
+    this.tagFilter=h('select',{'aria-label':'Filtrar por etiqueta',on:{change:()=>this.render()}});
+    this.filter.after(this.tagFilter);
+    this.filter.placeholder='Buscar nombre o #etiqueta';
     document.getElementById('btn-add-node').onclick = (e) => this.app.addNodeMenu(e.currentTarget, null);
     this.el.addEventListener('contextmenu', (e) => { if (e.target === this.el) { e.preventDefault(); this.app.addNodeMenu({ x: e.clientX, y: e.clientY }, null); } });
     this.el.addEventListener('dragover', (e) => { if (this.dragId && e.target === this.el) e.preventDefault(); });
@@ -60,16 +64,18 @@ export class TreePanel {
   render() {
     const ed = this.app.editor; clear(this.el);
     const sc = ed.scene; if (!sc) return;
-    const q = this.filter.value.trim().toLowerCase(), sel = new Set(ed.selection);
+    const q = this.filter.value.trim().toLowerCase().replace(/^#/,''), sel = new Set(ed.selection), tag=sc.nodes.some(n=>n.tags.includes(this.tagFilter.value))?this.tagFilter.value:'';
+    clear(this.tagFilter);this.tagFilter.append(h('option',{value:''},'Todas las etiquetas'));
+    [...new Set(sc.nodes.flatMap(n=>n.tags))].sort().forEach(t=>this.tagFilter.append(h('option',{value:t,selected:t===tag},'#'+t)));
     let show = null;
-    if (q) { show = new Set(); const byId = new Map(sc.nodes.map((n) => [n.id, n])); sc.nodes.forEach((n) => { if (n.name.toLowerCase().includes(q) || n.tags.some((t) => t.toLowerCase().includes(q))) { for (let p = n; p; p = byId.get(p.parent)) show.add(p.id); } }); }
+    if (q || tag) { show = new Set(); const byId = new Map(sc.nodes.map((n) => [n.id, n])); sc.nodes.forEach((n) => { if ((!tag||n.tags.includes(tag)) && (!q||n.name.toLowerCase().includes(q)||n.tags.some((t) => t.toLowerCase().includes(q)))) { for (let p = n; p; p = byId.get(p.parent)) show.add(p.id); } }); }
     const kids = new Map(); sc.nodes.forEach((n) => { const k = n.parent || ''; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(n); });
     const build = (pid, ul, depth) => {
       (kids.get(pid) || []).forEach((n) => {
         if (show && !show.has(n.id)) return;
-        const T = S.NODE_TYPES[n.type], has = kids.has(n.id), col = this.collapsed.has(n.id) && !q;
+        const T = S.NODE_TYPES[n.type], has = kids.has(n.id), col = this.collapsed.has(n.id) && !q && !tag;
         const row = h('div.row', { class: [sel.has(n.id) ? 'on' : '', n.visible ? '' : 'hidden-node'].join(' ').trim() || null, draggable: true, title: T.label + (n.tags.length ? ' · #' + n.tags.join(' #') : '') },
-          h('span.tw', has ? (col ? '▸' : '▾') : ''), h('span.ic', T.icon), h('span.name', n.name), n.prefab ? h('span.badge-prefab', 'plantilla') : null,
+          h('span.tw', has ? (col ? '▸' : '▾') : ''), h('span.ic', T.icon), h('span.name', n.name), n.tags.length ? h('span.tag-badge',{title:n.tags.map(t=>'#'+t).join(' ')},'#'+n.tags[0]+(n.tags.length>1?' +'+(n.tags.length-1):'')) : null, n.prefab ? h('span.badge-prefab', 'plantilla') : null,
           n.script ? h('span', { title: 'Tiene script' }, '{ }') : null, n.behaviors.length ? h('span', { title: n.behaviors.length + ' comportamiento(s)' }, '⚙') : null,
           h('button.icon.vis', { type: 'button', title: n.visible ? 'Ocultar' : 'Mostrar' }, n.visible ? '👁' : '🚫'));
         row.querySelector('.tw').onclick = (e) => { e.stopPropagation(); if (this.collapsed.has(n.id)) this.collapsed.delete(n.id); else this.collapsed.add(n.id); this.render(); };
@@ -127,7 +133,7 @@ export class Inspector {
     const ed = this.app.editor, top = this.el.scrollTop; clear(this.el);
     if (!ed.project) { this.title.textContent = 'Inspector'; this.el.appendChild(h('div.empty', 'Abre o crea un proyecto.')); return; }
     if (this.assetSel && ed.assetById(this.assetSel)) this.renderAsset(ed.assetById(this.assetSel));
-    else if (ed.selection.length > 1) { this.title.textContent = 'Inspector'; this.el.appendChild(h('div.empty', ed.selection.length + ' objetos seleccionados. Arrástralos en la vista para moverlos juntos, o Supr para borrarlos.')); }
+    else if (ed.selection.length > 1) { this.title.textContent = 'Inspector'; this.el.appendChild(h('div.empty', ed.selection.length + ' objetos seleccionados. Arrástralos en la vista para moverlos juntos, o Supr para borrarlos.'));this.el.appendChild(section('tags','Etiquetas de la selección',this.tagsEditor(ed.selected,true))); }
     else if (ed.selected) this.renderNode(ed.selected);
     else this.renderScene(ed.scene);
     this.el.scrollTop = top;
@@ -163,7 +169,12 @@ export class Inspector {
     this.el.appendChild(section('beh', 'Comportamientos (sin código)', this.blocksEditor(n, 'behaviors', S.BEHAVIORS, is3d ? '3d' : '2d'), { count: n.behaviors.length }));
     // física
     const phys = is3d ? S.PHYSICS_3D : S.PHYSICS_2D;
-    const physFields = phys.filter((f) => f.key === 'type' || n.physics.type !== 'none').map((f) => field(f, n.physics[f.key], set('physics.' + f.key, 'Física: ' + f.label), ctx));
+    // solo los campos que aplican a este tipo de cuerpo y al motor de la escena (arcade o rígido)
+    const engine = !is3d && ed.scene && ed.scene.env2d ? ed.scene.env2d.engine : 'arcade', pt = n.physics.type;
+    const applies = (f) => f.key === 'type' || f.always || (pt !== 'none' && (!f.types || f.types.includes(pt)) && (!f.engine || f.engine === engine) && (!f.when || n.physics[f.when.key] === f.when.eq));
+    const physFields = phys.filter(applies).map((f) => field(f, n.physics[f.key], set('physics.' + f.key, 'Física: ' + f.label), ctx));
+    if (!is3d && pt !== 'none' && !n.hud) physFields.push(h('div.help', 'El recuadro naranja de la vista es el cuerpo que choca. «Ajustado al dibujo» ignora los bordes transparentes de la imagen.'));
+    else if (is3d && pt !== 'none') physFields.push(h('div.help', pt === 'mesh' ? 'Choca con los triángulos del modelo (se puede entrar en casas y subir rampas). En la vista solo se marca su caja, tenue.' : pt === 'character' ? 'La cápsula azul de la vista es lo que choca: empieza en la base del modelo; ajusta el radio y la altura.' : 'Las líneas de la vista (casilla «Colisiones») son lo que choca en el juego.'));
     if (!is3d && n.hud) physFields.push(h('div.help', 'Los objetos del HUD no tienen física.'));
     this.el.appendChild(section('phys', 'Física', physFields, { closed: n.physics.type === 'none' }));
     // efectos (2D)
@@ -176,18 +187,27 @@ export class Inspector {
     if (!clips.length) return field(f, n.props.clip, commit, this.ctx());
     return field({ key: 'clip', label: f.label, type: 'select', options: [['', '— ninguna —']].concat(clips.map((c) => [c, c])) }, n.props.clip, commit, this.ctx());
   }
-  tagsEditor(n) {
+  tagsEditor(n, multiple = false) {
     const ed = this.app.editor;
-    const chips = h('div.chips', n.tags.map((t) => h('span.chip', '#' + t, h('button', { type: 'button', title: 'Quitar', on: { click: () => ed.setField(n.id, 'tags', n.tags.filter((x) => x !== t), 'Quitar etiqueta') } }, '✕'))));
-    const inp = h('input', { type: 'text', placeholder: 'nueva etiqueta + Intro (ej. jugador, enemigo)', maxlength: 32, spellcheck: 'false' });
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const v = inp.value.trim().replace(/\s+/g, '-'); if (/^[A-Za-z0-9_\u00c0-\u024f-]{1,32}$/.test(v) && !n.tags.includes(v) && n.tags.length < 16) ed.setField(n.id, 'tags', n.tags.concat([v]), 'Añadir etiqueta'); else if (v) toast('Etiqueta no válida (letras, números, - y _)', 'warn'); } });
-    return [chips, h('div.field.wide', inp), h('div.help', 'Las etiquetas agrupan objetos: «Perseguir», «Coleccionable» o los eventos de colisión usan tag:nombre.')];
+    const nodes=multiple?ed.selection.map(id=>ed.node(id)).filter(Boolean):[n], tags=[...new Set(nodes.flatMap(node=>node.tags))].sort();
+    const remove=t=>ed.edit('Quitar etiqueta',()=>nodes.forEach(node=>{node.tags=node.tags.filter(x=>x!==t);}));
+    const chips = h('div.chips', tags.map((t) => h('span.chip', '#' + t+(multiple?' ('+nodes.filter(node=>node.tags.includes(t)).length+'/'+nodes.length+')':''), h('button', { type: 'button', title: 'Quitar #'+t+' de la selección', on: { click: () => remove(t) } }, '✕'))));
+    const inp = h('input', { type: 'text', placeholder: 'nueva etiqueta (ej. jugador)', maxlength: 32, spellcheck: 'false' });
+    const addIt = () => {
+      const v = inp.value.trim().replace(/\s+/g, '-'); if (!v) return;
+      if (!/^[A-Za-z0-9_\u00c0-\u024f-]{1,32}$/.test(v)) { toast('Etiqueta no válida (letras, números, - y _)', 'warn'); return; }
+      if (nodes.every(node=>node.tags.includes(v))) { toast('Ya tienen la etiqueta #' + v, 'warn'); inp.value = ''; return; }
+      if (nodes.some(node=>node.tags.length>=16&&!node.tags.includes(v))) { toast('Máximo 16 etiquetas por objeto', 'warn'); return; }
+      ed.edit('Añadir etiqueta a la selección',()=>nodes.forEach(node=>{if(!node.tags.includes(v))node.tags.push(v);}));
+    };
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); addIt(); } });
+    return [chips, h('div.field.wide', h('div.row-actions', inp, h('button.btn.small', { type: 'button', on: { click: addIt } }, 'Añadir'))), h('div.help', 'Las etiquetas agrupan objetos: «Perseguir», «Coleccionable» o los eventos de colisión usan tag:nombre.')];
   }
   varsEditor(vars, commit) {
     const rows = Object.keys(vars).map((k) => {
       const v = h('input', { type: 'text', value: String(vars[k]), spellcheck: 'false' });
       v.addEventListener('keydown', (e) => e.stopPropagation());
-      v.addEventListener('change', () => { const o = Object.assign({}, vars); const t = v.value.trim(); o[k] = t !== '' && isFinite(Number(t)) ? Number(t) : t === 'true' ? true : t === 'false' ? false : v.value; commit(o); });
+      v.addEventListener('change', () => { const o = Object.assign({}, vars); const t = v.value.trim(); o[k] = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(t) && Number.isFinite(Number(t)) && (Number.isSafeInteger(Number(t)) || !/^[+-]?\d+$/.test(t)) ? Number(t) : t === 'true' ? true : t === 'false' ? false : v.value; commit(o); }); // 0x… y enteros enormes quedan como texto
       return h('div.field', h('label', { title: k }, k), h('div', { style: { display: 'flex', gap: '4px' } }, v, h('button.icon', { type: 'button', title: 'Borrar variable', on: { click: () => { const o = Object.assign({}, vars); delete o[k]; commit(o); } } }, '✕')));
     });
     const add = h('button.btn.small', { type: 'button', on: { click: async () => { const k = await prompt('Nueva variable', 'Nombre (letras, números y _)', ''); if (!k) return; if (!/^[A-Za-z_\u00c0-\u024f][A-Za-z0-9_\u00c0-\u024f]{0,39}$/.test(k) || S.isForbiddenKey(k)) { toast('Nombre no válido', 'warn'); return; } const o = Object.assign({}, vars); o[k] = 0; commit(o); } } }, '＋ Variable');
@@ -310,7 +330,7 @@ export class AssetsPanel {
     if (!ed.project.assets.length) { this.el.appendChild(h('div.drop-note', 'Arrastra aquí imágenes, sonidos, modelos GLB/glTF/OBJ (Blender: Archivo › Exportar › glTF 2.0 .glb) o mapas de Tiled. También puedes usar la pestaña Biblioteca.')); return; }
     for (const a of ed.project.assets) {
       const th = h('div.th', TYPE_ICON[a.type] || '📄');
-      const card = h('div.asset', { draggable: true, title: a.name + ' (' + a.file + ')', class: this.app.inspector.assetSel === a.id ? 'on' : null }, th, h('div.nm', a.name), h('div.tp', a.type + (a.frameWidth ? ' · hoja ' + a.frameWidth + 'px' : '')),
+      const card = h('div.asset', { draggable: true, title: a.name + ' (' + a.file + ')', class: this.app.inspector.assetSel === a.id ? 'on' : null }, th, h('div.nm', a.name), h('div.tp', (ASSET_TYPE_LABEL[a.type] || a.type) + (a.frameWidth ? ' · hoja ' + a.frameWidth + 'px' : '')),
         h('button.icon.del', { type: 'button', title: 'Borrar', on: { click: (e) => { e.stopPropagation(); this.app.deleteAsset(a); } } }, '✕'));
       card.ondragstart = (e) => { e.dataTransfer.setData('application/x-ugs-asset', a.id); e.dataTransfer.effectAllowed = 'copy'; };
       card.onclick = () => { this.app.inspector.assetSel = a.id; this.app.inspector.render(); this.el.querySelectorAll('.asset.on').forEach((x) => x.classList.remove('on')); card.classList.add('on'); };
